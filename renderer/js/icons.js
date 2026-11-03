@@ -136,6 +136,8 @@
     memory_search: 'database',
     read_skill: 'layers',
     delegate: 'bot',
+    team_delegate: 'bot',
+    ssh_run: 'terminal',
     list_media: 'image',
     generate_media: 'wand',
     edit_media: 'sliders',

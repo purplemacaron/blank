@@ -4,3 +4,9 @@ dist/
 *.log
 .blank/
 preview-shots/
+.tmp-*/
+qa/
+scripts/cdp-*.js
+scripts/qa-ko.js
+scripts/extract-strings.js
+scripts/qa-site-interactions.js

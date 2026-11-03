@@ -1,0 +1,1240 @@
+/* Blank Korean interface layer.
+   Translates interface chrome at runtime, leaving messages, session titles,
+   file contents and user-authored media text untouched. */
+(function () {
+  'use strict';
+
+  const LANG_KEY = 'blank.lang';
+  let activeLanguage = 'ko';
+  try { activeLanguage = localStorage.getItem(LANG_KEY) || 'ko'; } catch {}
+  if (activeLanguage !== 'ko') {
+    document.documentElement.lang = activeLanguage === 'en' ? 'en' : 'ko';
+    window.__blankI18n = {
+      enabled: false,
+      language: activeLanguage,
+      stats: { text: 0, attrs: 0, flushes: 0, scheduled: 0 },
+      pause() {},
+      resume() {},
+      run() {},
+    };
+    return;
+  }
+
+  const DICT = {
+    /* ---------------------------------------------------------------- chrome */
+    'New session': '새 세션',
+    'Chat': '채팅',
+    'Studio': '스튜디오',
+    'Models': '모델',
+    'Skills': '스킬',
+    'Memory': '메모리',
+    'Plugins': '플러그인',
+    'Learning': '학습',
+    'Settings': '설정',
+    'Sessions': '세션',
+    'Plan': '계획',
+    'Files': '파일',
+    'Context': '컨텍스트',
+    'Open in VS Code': 'VS Code에서 열기',
+    'Reveal': '폴더 열기',
+    'Hide panel': '패널 숨기기',
+    'Toggle context panel': '컨텍스트 패널 전환',
+    'Search or jump to…': '검색하거나 이동…',
+    'Local': '로컬',
+    'Local runtime': '로컬 런타임',
+    'Default model': '기본 모델',
+    'Start with a clean context': '새 컨텍스트로 시작',
+    'Go to Chat': '채팅으로 이동',
+    'Open Studio': '스튜디오 열기',
+    'Switch default model…': '기본 모델 변경…',
+    'Providers, keys and discovery': '제공자, 키 및 검색',
+    'Reusable workflows and instructions': '재사용 가능한 워크플로와 지침',
+    'Facts and preferences Blank remembers': 'Blank가 기억하는 사실과 선호',
+    'Connected tool servers': '연결된 도구 서버',
+    'One-click MCP servers and skills': '원클릭 MCP 서버와 스킬',
+    'Web search settings': '웹 검색 설정',
+    'Search backend and API keys': '검색 백엔드 및 API 키',
+    'Computer settings': '컴퓨터 설정',
+    'Cursor overlay and screen access': '커서 오버레이 및 화면 접근',
+    'Remote control settings': '원격 제어 설정',
+    'Pair a phone over your network': '네트워크를 통해 휴대폰 연결',
+    'Review self-improvement insights': '자기 개선 인사이트 검토',
+    'Permissions, agent behavior and data': '권한, 에이전트 동작 및 데이터',
+    'Switch to dark theme': '다크 테마로 전환',
+    'Switch to light theme': '라이트 테마로 전환',
+    'Appearance only affects this window': '모양은 이 창에만 적용됩니다',
+    'Open workspace folder…': '작업 공간 폴더 열기…',
+    'Install command line tool': '명령줄 도구 설치',
+    'Run Blank from any terminal': '어느 터미널에서든 Blank 실행',
+    'Open data folder': '데이터 폴더 열기',
+    'navigate': '이동',
+    'Navigate': '이동',
+    'open': '열기',
+    'Open': '열기',
+    'close': '닫기',
+    'Close': '닫기',
+    'esc': '닫기',
+    'Esc': '닫기',
+    'Command palette': '명령 팔레트',
+    'Command': '명령',
+    'Command line': '명령줄',
+    'Actions': '작업',
+    'Minimize': '최소화',
+    'Maximize': '최대화',
+    'Window controls': '창 컨트롤',
+    'Sidebar': '사이드바',
+    'Session context': '세션 컨텍스트',
+    'Page': '페이지',
+    'Workspace': '작업 공간',
+    'Open navigation': '탐색 열기',
+    'Clear': '지우기',
+    'Dismiss': '닫기',
+    'Change the default model': '기본 모델 변경',
+    'Session options': '세션 옵션',
+    'Attach text files': '텍스트 파일 첨부',
+    'Stop run': '실행 중지',
+    'Send': '전송',
+    'send': '전송',
+    'newline': '줄바꿈',
+    'commands': '명령',
+    'Switch model': '모델 전환',
+    'Filter sessions': '세션 필터',
+    'Filter': '필터',
+    'Preview data': '미리보기 데이터',
+    'Blank 1.0': 'Blank 1.0',
+    'Update': '업데이트',
+    'Updates': '업데이트',
+    'Attach': '첨부',
+    'Agent': '에이전트',
+    'AGENT': '에이전트',
+    'approvals on writes': '쓰기 시 승인',
+    'Asks before writes & commands': '쓰기 및 명령 전에 확인',
+    'Asks before commands': '명령 전에 확인',
+    'Asks before writes': '쓰기 전에 확인',
+    'Enter': 'Enter',
+    'Shift Enter': 'Shift Enter',
+    'Ctrl K': 'Ctrl K',
+    'Ctrl N': 'Ctrl N',
+    'Ctrl M': 'Ctrl M',
+    'Ctrl ,': 'Ctrl ,',
+    'Ctrl ↵': 'Ctrl ↵',
+    'Ctrl B': 'Ctrl B',
+    'Ctrl L': 'Ctrl L',
+    'Ctrl Shift B': 'Ctrl Shift B',
+    'Ctrl 1…7': 'Ctrl 1…7',
+    'Keyboard shortcuts': '키보드 단축키',
+    'On macOS, Ctrl maps to ⌘.': 'macOS에서는 Ctrl이 ⌘에 해당합니다.',
+    'New line': '줄바꿈',
+    'Send message': '메시지 전송',
+    'Jump to a page': '페이지로 이동',
+    'Focus composer': '입력창으로 이동',
+    'Close overlay': '오버레이 닫기',
+    'Search sessions, files, models and actions': '세션, 파일, 모델 및 작업 검색',
+    'Search sessions, files, models and actions…': '세션, 파일, 모델 및 작업 검색…',
+    'Filter sessions': '세션 필터',
+    'Open navigation': '탐색 열기',
+    'Switch model': '모델 전환',
+    'Default model · sandbox/blank-1': '기본 모델 · sandbox/blank-1',
+    'Local-first': '로컬 우선',
+    'Local first': '로컬 우선',
+    'No setup': '설정 불필요',
+    'Citations': '출처 표시',
+    'Approval gated': '승인 필요',
+    'Cursor overlay': '커서 오버레이',
+    'Token auth': '토큰 인증',
+    'Off by default': '기본 꺼짐',
+    'Markdown': '마크다운',
+    'Generic': '일반',
+    'Personal': '개인',
+    'Preview': '미리보기',
+    'Loading': '불러오는 중',
+    'Error': '오류',
+    'Retry': '다시 시도',
+
+    /* ------------------------------------------------------ language, team, ssh */
+    'Interface language': '인터페이스 언어',
+    'English or Korean. Switching reloads this window.': '영어 또는 한국어. 전환하면 이 창이 다시 열립니다.',
+    'Agent team': '에이전트 팀',
+    'Multi-agent mode. Specialists investigate the same brief in parallel, then the main agent synthesizes their reports. Team members are always read-only.': '멀티 에이전트 모드입니다. 전문가들이 같은 브리프를 병렬로 조사하고, 메인 에이전트가 보고서를 종합합니다. 팀 멤버는 항상 읽기 전용입니다.',
+    'Enable the agent team': '에이전트 팀 사용',
+    'Adds the team_delegate tool and team guidance to the system prompt.': 'team_delegate 도구와 팀 지침을 시스템 프롬프트에 추가합니다.',
+    'Team members are always read-only.': '팀 멤버는 항상 읽기 전용입니다.',
+    'Add member': '멤버 추가',
+    'Save team': '팀 저장',
+    'Up to six members. Each may use a different model id.': '최대 6명. 멤버마다 다른 모델 ID를 쓸 수 있습니다.',
+    "Team runs share this session's workspace and consume tokens in parallel. Reports return to the main agent, not directly to you.": '팀 실행은 이 세션의 작업 공간을 공유하고 병렬로 토큰을 사용합니다. 보고서는 사용자가 아니라 메인 에이전트에게 반환됩니다.',
+    'No members yet. Add one below.': '아직 멤버가 없습니다. 아래에서 추가하세요.',
+    'Agent name': '에이전트 이름',
+    'What this specialist should investigate and report': '이 전문가가 조사하고 보고할 내용',
+    'Model id (leave blank for the default)': '모델 ID (기본 모델을 쓰려면 비워 두세요)',
+    'Remove member': '멤버 삭제',
+    'Enabled': '사용',
+    'Agent team enabled.': '에이전트 팀을 켰습니다.',
+    'Agent team disabled.': '에이전트 팀을 껐습니다.',
+    'Agent team saved.': '에이전트 팀을 저장했습니다.',
+    'Run the agent team': '에이전트 팀 실행',
+    'Fan a task out to specialist sub-agents in parallel': '작업을 전문 서브 에이전트들에게 병렬로 분배합니다',
+    'SSH': 'SSH',
+    'Save remote machines, then let the agent run approval-gated commands with ssh_run. Secrets stay on this device.': '원격 머신을 저장하고, 에이전트가 승인 기반 명령을 ssh_run으로 실행하도록 허용하세요. 비밀 정보는 이 기기에만 저장됩니다.',
+    'ssh_run asks for approval by default. It runs in a non-interactive shell; interactive prompts will fail.': 'ssh_run은 기본적으로 승인을 요청합니다. 비대화형 셸에서 실행되므로 대화형 프롬프트는 실패합니다.',
+    'No saved hosts. Add one below.': '저장된 호스트가 없습니다. 아래에서 추가하세요.',
+    'New host': '새 호스트',
+    'Passwords and passphrases are sealed with the OS keychain when available.': '비밀번호와 패스프레이즈는 가능한 경우 OS 키체인으로 암호화됩니다.',
+    'Name': '이름',
+    'Host': '호스트',
+    'Port': '포트',
+    'User': '사용자',
+    'Auth': '인증',
+    'Private key': '개인 키',
+    'Private key path': '개인 키 경로',
+    'Key passphrase': '키 패스프레이즈',
+    'optional': '선택',
+    'Password': '비밀번호',
+    'Save host': '호스트 저장',
+    'The first successful test pins the host key fingerprint.': '첫 연결 테스트가 성공하면 호스트 키 지문이 고정됩니다.',
+    'The first successful test pins the host key fingerprint': '첫 연결 테스트가 성공하면 호스트 키 지문이 고정됩니다.',
+    'SSH host saved. Run a test to verify it.': 'SSH 호스트를 저장했습니다. 연결 테스트로 확인하세요.',
+    'SSH host removed.': 'SSH 호스트를 삭제했습니다.',
+    'SSH connection verified': 'SSH 연결 확인됨',
+    'SSH command returned an error.': 'SSH 명령이 오류를 반환했습니다.',
+    'SSH connection failed.': 'SSH 연결에 실패했습니다.',
+    'Connecting…': '연결 중…',
+    'host key pinned': '호스트 키 고정됨',
+    'Run on SSH hosts': 'SSH 호스트에서 실행',
+    'Execute commands on saved remote machines': '저장된 원격 머신에서 명령 실행',
+    'Remove host': '호스트 삭제',
+    'Remove this SSH host?': '이 SSH 호스트를 삭제할까요?',
+    'Saved credentials and the pinned host key will be deleted from this device.': '저장된 자격 증명과 고정된 호스트 키가 이 기기에서 삭제됩니다.',
+    'Test': '테스트',
+
+    /* ------------------------------------------------------------- empty/chat */
+    'What should we build?': '무엇을 만들어 볼까요?',
+    'Blank reads your workspace, runs real tools, and stops for approval before anything risky. Type a request, or start with a thread.':
+      'Blank가 작업 공간을 읽고 실제 도구를 실행하며, 위험한 작업 전에는 승인을 요청합니다. 요청을 입력하거나 아래에서 시작해 보세요.',
+    'Tour the harness': '하네스 둘러보기',
+    'Watch real tools run, end to end.': '실제 도구가 작동하는 모습을 처음부터 끝까지 확인하세요.',
+    'Inspect this workspace': '작업 공간 살펴보기',
+    'Map the project and its conventions.': '프로젝트 구조와 규칙을 파악하세요.',
+    'Plan before code': '코드 전에 계획',
+    'Think in read-only Plan mode.': '읽기 전용 계획 모드로 생각하세요.',
+    'Review a change': '변경 사항 리뷰',
+    'Find correctness and security gaps.': '정확성과 보안 문제를 찾으세요.',
+    'Message Blank': 'Blank에게 메시지 보내기',
+    'Ask Blank to build, debug, or explain…': 'Blank에게 빌드, 디버그 또는 설명을 요청하세요…',
+    'Ask Blank to plan a multi-step task; the checklist appears here while it works.':
+      'Blank에게 여러 단계 작업을 계획해 달라고 요청하세요. 작업하는 동안 체크리스트가 여기에 표시됩니다.',
+    'No plan yet': '아직 계획이 없습니다',
+    'No files yet': '아직 파일이 없습니다',
+    'Files will appear here as the agent reads and writes.':
+      '에이전트가 파일을 읽고 쓰면 여기에 표시됩니다.',
+    'Durable context the agent carries into future sessions.':
+      '에이전트가 이후 세션으로 이어가는 지속 컨텍스트입니다.',
+    'Agent mode': '에이전트 모드',
+    'Plan mode': '계획 모드',
+    'Read-only planning': '읽기 전용 계획',
+    'Read-only': '읽기 전용',
+    'Runs tools with approval': '승인 후 도구 실행',
+    'Planning only, no writes': '계획만 수행하며 쓰기 없음',
+    'Message copied.': '메시지를 복사했습니다.',
+    'Copy message': '메시지 복사',
+    'Copy': '복사',
+    'Copied': '복사됨',
+    'Regenerate': '다시 생성',
+    'Stop': '중지',
+    'Thinking': '생각 중',
+    'Thought for a moment': '잠시 생각했습니다',
+    'Tool call': '도구 호출',
+    'Tool result': '도구 결과',
+    'Show more': '더 보기',
+    'Show less': '접기',
+    'You': '나',
+    'Attached': '첨부됨',
+    'Download transcript': '대화 내보내기',
+    'Copy transcript': '대화 복사',
+    'Rename': '이름 변경',
+    'Rename session': '세션 이름 변경',
+    'Pin to top': '상단 고정',
+    'Unpin': '고정 해제',
+    'Delete': '삭제',
+    'Delete session': '세션 삭제',
+    'Compact context': '컨텍스트 압축',
+    'Queue message': '메시지 대기열에 추가',
+    'Sending…': '전송 중…',
+    'Queued': '대기 중',
+    'Queue': '대기열',
+    'Stop run': '실행 중지',
+    'Stopping the run…': '실행을 중지하는 중…',
+    'Summarizing earlier context…': '이전 컨텍스트를 요약하는 중…',
+    'Context compacted.': '컨텍스트를 압축했습니다.',
+    'This run is still going. Send this when it finishes?': '아직 실행 중입니다. 완료된 후 전송할까요?',
+
+    /* --------------------------------------------------------------- onboarding */
+    'Welcome to Blank': 'Blank에 오신 것을 환영합니다',
+    'Two quick choices. Everything stays on this machine.': '두 가지만 선택하면 됩니다. 모든 데이터는 이 기기에 남습니다.',
+    'Meet Blank': 'Blank 소개',
+    'A local-first agent harness for code, research and media.': '코드, 리서치, 미디어를 위한 로컬 우선 에이전트 하네스.',
+    'Choose a starting model': '시작 모델 선택',
+    'Offline preview': '오프라인 미리보기',
+    'No key. A guided model for trying every surface.': '키가 필요 없습니다. 모든 기능을 둘러보는 안내 모델.',
+    'Long-horizon agent work': '장기 에이전트 작업',
+    'Strong tool use and code reasoning.': '도구 사용과 코드 추론에 강합니다.',
+    'Frontier reasoning': '프런티어 추론',
+    'Broad capability across coding and analysis.': '코딩과 분석 전반에 걸친 폭넓은 역량.',
+    'Huge context window': '거대한 컨텍스트 창',
+    'Useful for large repositories and documents.': '대형 저장소와 문서에 유용합니다.',
+    'Runs on this machine': '이 기기에서 실행',
+    'Point at a local model when Ollama is installed.': 'Ollama가 설치되어 있으면 로컬 모델을 연결하세요.',
+    'No key required.': '키가 필요 없습니다.',
+    'Keys are stored only on this machine. The Sandbox model works fully offline; add provider keys later in Models.':
+      '키는 이 기기에만 저장됩니다. Sandbox 모델은 완전히 오프라인으로 작동하며, 제공자 키는 나중에 모델 화면에서 추가할 수 있습니다.',
+    'Set up later': '나중에 설정',
+    'Continue': '계속',
+    'Pick a workspace': '작업 공간 선택',
+    'Blank reads and writes inside this folder — and nowhere else.': 'Blank는 이 폴더 안에서만 읽고 쓸 수 있습니다.',
+    'Blank Workspace will be created automatically': 'Blank 작업 공간이 자동으로 생성됩니다',
+    'Change': '변경',
+    'Writes and shell commands ask for approval by default. Sessions, memory and media live in': '쓰기와 셸 명령은 기본적으로 승인을 요청합니다. 세션, 메모리, 미디어는 다음 위치에 저장됩니다:',
+    ', never in your repository.': ' — 저장소에는 저장되지 않습니다.',
+    'Back': '뒤로',
+    'Setting up…': '설정하는 중…',
+    'Start using Blank': 'Blank 사용 시작',
+    'You can finish setup from Settings.': '설정 화면에서 언제든 마무리할 수 있습니다.',
+    'Blank is ready.': 'Blank가 준비되었습니다.',
+
+    /* ------------------------------------------------------------------ studio */
+    'A local-first media workspace. Generate, edit and keep images, video, music and 3D beside your conversations.':
+      '로컬 우선 미디어 작업 공간입니다. 대화 옆에서 이미지, 동영상, 음악, 3D를 생성하고 편집하고 보관하세요.',
+    'A local-first media workspace with deterministic local engines and optional cloud models.':
+      '결정적인 로컬 엔진과 선택적 클라우드 모델을 갖춘 로컬 우선 미디어 작업 공간입니다.',
+    'Engines & keys': '엔진 및 키',
+    'Import': '가져오기',
+    'Create': '만들기',
+    'Image': '이미지',
+    'Video': '동영상',
+    'Music': '음악',
+    '3D': '3D',
+    'Aspect': '비율',
+    'Square 1:1': '정사각형 1:1',
+    'Landscape 4:3': '가로 4:3',
+    'Portrait 3:4': '세로 3:4',
+    'Wide 16:9': '와이드 16:9',
+    'Tall 9:16': '세로형 9:16',
+    'Classic 4:3': '클래식 4:3',
+    'Count': '개수',
+    '1 image': '이미지 1개',
+    '2 images': '이미지 2개',
+    '3 images': '이미지 3개',
+    '4 images': '이미지 4개',
+    'Direction': '방향',
+    'Auto': '자동',
+    'Aurora': '오로라',
+    'Cosmic': '코스믹',
+    'Landscape': '풍경',
+    'Portrait': '인물',
+    'Botanical': '보태니컬',
+    'Still life': '정물',
+    'Architecture': '건축',
+    'Identity': '아이덴티티',
+    'Poster': '포스터',
+    'Waves': '웨이브',
+    'Palette': '팔레트',
+    'Cobalt': '코발트',
+    'Ice': '아이스',
+    'Sunset': '선셋',
+    'Dawn': '새벽',
+    'Violet': '바이올렛',
+    'Mint': '민트',
+    'Forest': '포레스트',
+    'Sand': '샌드',
+    'Mono': '모노',
+    'Noir': '누아르',
+    'Engine': '엔진',
+    'Blank Engine': 'Blank 엔진',
+    'Blank Visual': 'Blank 비주얼',
+    'Add a cloud engine…': '클라우드 엔진 추가…',
+    'Runs offline on this machine. Assets stay in your library.': '이 기기에서 오프라인으로 실행됩니다. 자산은 라이브러리에 보관됩니다.',
+    'Generate image': '이미지 생성',
+    'Generate video': '동영상 생성',
+    'Generate music': '음악 생성',
+    'Generate 3D object': '3D 오브젝트 생성',
+    'Remember image settings': '이미지 설정 기억',
+    'Keys': '키',
+    'Library': '라이브러리',
+    'Cloud': '클라우드',
+    'All': '전체',
+    'Favorites': '즐겨찾기',
+    'Your library is a blank canvas': '라이브러리가 비어 있습니다',
+    'Write a prompt on the left and generate an image, a short video, a track or a 3D object. Everything runs locally by default.':
+      '왼쪽에 프롬프트를 작성하고 이미지, 짧은 동영상, 음악 또는 3D 오브젝트를 생성하세요. 기본적으로 모든 것이 로컬에서 실행됩니다.',
+    'Generate the first one': '첫 자산 생성하기',
+    'Search library': '라이브러리 검색',
+    'Browse the local media library': '로컬 미디어 라이브러리 둘러보기',
+    'Describe the scene, subject and mood…': '장면, 대상, 분위기를 설명하세요…',
+    'Brutalist poster for a solo exhibition': '개인전을 위한 브루탈리즘 포스터',
+    'Cobalt gradient study, soft film grain': '코발트 그라데이션 스터디, 부드러운 필름 그레인',
+    'Isometric city at dusk': '해 질 녘의 아이소메트릭 도시',
+    'Botanical plate in muted ink': '차분한 잉크 톤의 보태니컬 플레이트',
+    'Slow orbital shot over a glass city': '유리 도시 위를 천천히 도는 궤도 샷',
+    'Tidal lines in a deep blue sea': '짙은 푸른 바다의 조수선',
+    'Neon rain on an empty street': '텅 빈 거리에 내리는 네온 비',
+    'Paper shapes drifting in light': '빛 속을 떠도는 종이 조형',
+    'Warm lo-fi loop for late-night coding': '늦은 밤 코딩을 위한 따뜻한 로파이 루프',
+    'Cinematic ambient beneath rain': '비 아래의 시네마틱 앰비언트',
+    'Bright synthwave drive at 110 bpm': '110 bpm의 밝은 신스웨이브 드라이브',
+    'Airy jazz chords for a studio': '스튜디오를 위한 가벼운 재즈 코드',
+    'Faceted crystal artifact': '면이 살아 있는 크리스털 아티팩트',
+    'Modular brutalist desk lamp': '모듈형 브루탈리즘 데스크 램프',
+    'Low-poly mountain diorama': '로우폴리 산 디오라마',
+    'Twisted ceramic vase': '꼬인 세라믹 화병',
+    'Edited': '편집됨',
+    'Favorite': '즐겨찾기',
+    'Unfavorite': '즐겨찾기 해제',
+    'Favorited': '즐겨찾기됨',
+    'Queue': '대기열',
+    'Queuing…': '대기열에 추가하는 중…',
+    'Starting…': '시작하는 중…',
+    'Done': '완료',
+    'Failed': '실패',
+    'Cancelled': '취소됨',
+    'Cancel': '취소',
+    'Save': '저장',
+    'Save changes': '변경 사항 저장',
+    'Delete asset': '자산 삭제',
+    'Download': '다운로드',
+    'Open file': '파일 열기',
+    'Reveal in folder': '폴더에서 보기',
+    'Edit': '편집',
+    'Edit image': '이미지 편집',
+    'Edit video': '동영상 편집',
+    'Edit audio': '오디오 편집',
+    'Edit 3D': '3D 편집',
+    'Apply edit': '편집 적용',
+    'Describe the edit…': '편집 내용을 설명하세요…',
+    'Prompt': '프롬프트',
+    'Title': '제목',
+    'Name': '이름',
+    'Model': '모델',
+    'Seed': '시드',
+    'Duration': '길이',
+    'Format': '형식',
+    'Size': '크기',
+    'Created': '생성일',
+    'Preview image': '미리보기 이미지',
+    'No preview available': '미리보기를 사용할 수 없습니다',
+    'Media storage': '미디어 저장소',
+    'Generated and imported assets, plus thumbnails and waveforms.': '생성 및 가져온 자산과 썸네일, 파형입니다.',
+    'Images, video, music and 3D': '이미지, 동영상, 음악, 3D',
+    'Create images, video, music and 3D locally or in the cloud': '이미지, 동영상, 음악, 3D를 로컬 또는 클라우드에서 생성',
+    'Engine settings': '엔진 설정',
+    'Cloud engines': '클라우드 엔진',
+    'Add engine': '엔진 추가',
+    'Keys stay in the main process and are only sent to their provider.': '키는 메인 프로세스에 보관되며 해당 제공자에게만 전송됩니다.',
+    'No assets yet': '아직 자산이 없습니다',
+    'No media matches this filter.': '이 필터에 맞는 미디어가 없습니다.',
+    'All assets are stored locally in your Blank data folder.': '모든 자산은 Blank 데이터 폴더에 로컬로 저장됩니다.',
+
+    /* ------------------------------------------------------------------ models */
+    'Connect frontier, open and local providers. Blank routes each session to the model you pick.':
+      '프런티어, 오픈, 로컬 제공자를 연결하세요. Blank가 세션마다 선택한 모델로 라우팅합니다.',
+    'Refresh': '새로고침',
+    'Add provider': '제공자 추가',
+    'Connected': '연결됨',
+    'Custom': '사용자 지정',
+    'Ready': '준비됨',
+    'No key': '키 없음',
+    'Add a key': '키 추가',
+    'Manage models': '모델 관리',
+    'An offline preview model. No network, no key, no data leaves your machine.':
+      '오프라인 미리보기 모델입니다. 네트워크, 키, 데이터 전송이 전혀 없습니다.',
+    'Claude models — strong long-horizon reasoning and tool use.': 'Claude 모델 — 장기 추론과 도구 사용에 강합니다.',
+    'GPT and o-series models via the Responses-compatible chat API.': 'Responses 호환 채팅 API를 통한 GPT 및 o-시리즈 모델.',
+    'Gemini models with long context and native function calling.': '긴 컨텍스트와 기본 함수 호출을 갖춘 Gemini 모델.',
+    'One key for hundreds of hosted models and automatic routing.': '수백 개의 호스팅 모델과 자동 라우팅을 위한 하나의 키.',
+    'Grok models with real-time flavored reasoning.': '실시간 추론에 특화된 Grok 모델.',
+    'Open-weight models with strong coding and reasoning value.': '코딩과 추론 성능이 뛰어난 오픈 웨이트 모델.',
+    'European frontier and code models.': '유럽의 프런티어 및 코드 모델.',
+    'Very fast inference on open models.': '오픈 모델을 위한 매우 빠른 추론.',
+    'Open models, dedicated endpoints and fine-tunes.': '오픈 모델, 전용 엔드포인트 및 파인튜닝.',
+    'Wafer-scale inference for open models.': '오픈 모델을 위한 웨이퍼 스케일 추론.',
+    'Your local Ollama runtime. Private by default.': '로컬 Ollama 런타임. 기본적으로 비공개입니다.',
+    'Any model loaded in LM Studio’s local server.': 'LM Studio 로컬 서버에 로드된 모든 모델.',
+    'Keys are stored only on this machine in': '키는 이 기기의',
+    'and are never rendered back in full. Local providers need no key.': '에만 저장되며 전체 값은 다시 표시되지 않습니다. 로컬 제공자는 키가 필요 없습니다.',
+    'Search providers or models': '제공자 또는 모델 검색',
+    'No matching providers': '일치하는 제공자가 없습니다',
+    'Try a different search or filter.': '다른 검색어나 필터를 사용해 보세요.',
+    'No models match that search.': '검색과 일치하는 모델이 없습니다.',
+    'Test connection': '연결 테스트',
+    'Testing…': '테스트 중…',
+    'Discover models': '모델 검색',
+    'Discovering…': '검색 중…',
+    'Add provider': '제공자 추가',
+    'Add a provider': '제공자 추가',
+    'Connect a built-in provider in one click or point Blank at any compatible endpoint.':
+      '내장 제공자를 원클릭으로 연결하거나, 호환되는 엔드포인트를 직접 지정하세요.',
+    'Quick connect': '빠른 연결',
+    'Display name': '표시 이름',
+    'Purpose': '용도',
+    'Description': '설명',
+    'one line, shown to the agent': '에이전트에게 표시되는 한 줄 설명',
+    'Protocol': '프로토콜',
+    'Base URL': '기본 URL',
+    'Endpoint URL': '엔드포인트 URL',
+    'API key': 'API 키',
+    'Optional': '선택 사항',
+    'optional': '선택 사항',
+    'optional, add later': '선택 사항, 나중에 추가',
+    'Key label': '키 이름',
+    'one per line or comma separated': '한 줄에 하나 또는 쉼표로 구분',
+    'comma separated': '쉼표로 구분',
+    'Headers': '헤더',
+    'KEY=value per line': '한 줄에 KEY=value',
+    'Environment': '환경 변수',
+    'or add a custom endpoint': '또는 사용자 지정 엔드포인트 추가',
+    'Add': '추가',
+    'Adding…': '추가하는 중…',
+    'Removing…': '제거하는 중…',
+    'Save key': '키 저장',
+    'Remove key': '키 제거',
+    'Remove provider': '제공자 제거',
+    'Set as default': '기본값으로 설정',
+    'Use this key': '이 키 사용',
+    'Key rotation': '키 순환',
+    'Rotate keys on rate limits': '속도 제한 시 키 순환',
+    'Rotation enabled.': '순환을 켰습니다.',
+    'Rotation disabled.': '순환을 껐습니다.',
+    'Test': '테스트',
+    'Models available': '사용 가능한 모델',
+    'No models discovered yet.': '아직 발견된 모델이 없습니다.',
+    'Fetch models': '모델 가져오기',
+    'Loaded model': '로드된 모델',
+    'Use': '사용',
+    'Active': '활성',
+    'Connected ·': '연결됨 ·',
+    'models reachable': '개 모델에 연결할 수 있습니다',
+    'The provider did not respond.': '제공자가 응답하지 않았습니다.',
+    'Model used by new sessions': '새 세션에 사용되는 모델',
+    'New sessions start with this model. Existing sessions keep their own.':
+      '새 세션은 이 모델로 시작합니다. 기존 세션은 각자의 모델을 유지합니다.',
+    'No fallback': '폴백 없음',
+    'Do not retry with another model': '다른 모델로 재시도하지 않음',
+    'None': '없음',
+    'Auto router': '자동 라우터',
+    'Search': '검색',
+    'Search models or providers': '모델 또는 제공자 검색',
+    'Switch default model': '기본 모델 전환',
+    'Choose a default model': '기본 모델 선택',
+    'This provider needs a key before it can be used.': '이 제공자를 사용하려면 키가 필요합니다.',
+    'Paste a key to connect.': '연결하려면 키를 붙여넣으세요.',
+    'The model catalog refreshes from local providers.': '모델 목록은 로컬 제공자에서 새로 고쳐집니다.',
+
+    /* ------------------------------------------------------------------ skills */
+    'Teach Blank repeatable workflows. Skills are plain SKILL.md files stored on this machine or in your project.':
+      'Blank에게 반복 가능한 워크플로를 가르치세요. 스킬은 이 기기나 프로젝트에 저장된 SKILL.md 파일입니다.',
+    'Open folder': '폴더 열기',
+    'New skill': '새 스킬',
+    'Bundled': '내장',
+    'Global': '전역',
+    'Project': '프로젝트',
+    'Disabled': '비활성',
+    'Code review': '코드 리뷰',
+    'Debug': '디버깅',
+    'Research': '리서치',
+    'Ship': '출시',
+    'Review a diff or module for correctness, security, regressions, and missing tests. Use when the user asks for a review or before shipping a change.':
+      '정확성, 보안, 회귀, 누락된 테스트를 기준으로 diff나 모듈을 리뷰합니다. 리뷰를 요청하거나 변경 사항을 출시하기 전에 사용하세요.',
+    'Track a bug to its root cause with a reproducible loop instead of guessing. Use for failing tests, crashes, broken UI, or flaky behavior.':
+      '추측 대신 재현 가능한 루프로 버그의 근본 원인을 추적합니다. 실패하는 테스트, 크래시, 깨진 UI, 불안정한 동작에 사용하세요.',
+    'Investigate documentation, APIs, or prior art and return a cited, decision-ready brief. Use when the answer depends on external facts or an unfamiliar codebase.':
+      '문서, API, 선행 사례를 조사하고 출처가 포함된 의사결정용 브리프를 반환합니다. 외부 사실이나 낯선 코드베이스에 의존하는 답변이 필요할 때 사용하세요.',
+    'Prepare a change for a clean commit, PR, and release. Use when implementation is done and the user wants to ship.':
+      '변경 사항을 깔끔한 커밋, PR, 릴리스로 준비합니다. 구현이 끝났고 출시하려 할 때 사용하세요.',
+    'Search skills': '스킬 검색',
+    'No skills here yet': '아직 스킬이 없습니다',
+    'Create a skill to capture a workflow you repeat.': '반복하는 워크플로를 스킬로 만들어 보세요.',
+    'A skill is a Markdown runbook the agent can load when it applies.': '스킬은 에이전트가 필요할 때 불러오는 마크다운 런북입니다.',
+    'Create skill': '스킬 만들기',
+    'Create a skill': '스킬 만들기',
+    'Skill name': '스킬 이름',
+    'Instructions': '지침',
+    'When to use this skill': '이 스킬을 사용할 시점',
+    'Enabled': '사용',
+    'Disable': '비활성화',
+    'Enable': '활성화',
+    'Edit skill': '스킬 편집',
+    'Delete skill': '스킬 삭제',
+    'Delete this skill?': '이 스킬을 삭제할까요?',
+    'The SKILL.md file will be removed from this machine.': '이 기기에서 SKILL.md 파일이 삭제됩니다.',
+    'Skill enabled.': '스킬을 활성화했습니다.',
+    'Skill disabled.': '스킬을 비활성화했습니다.',
+    'Slug': '슬러그',
+    'Source': '소스',
+    'Path': '경로',
+    'Tags': '태그',
+    'Used': '사용됨',
+    'File': '파일',
+    'Name and description are shown to the agent.': '이름과 설명은 에이전트에게 표시됩니다.',
+
+    /* ------------------------------------------------------------------ memory */
+    'Facts Blank keeps across sessions. The agent saves durable preferences automatically; you can pin the ones that matter most.':
+      '세션을 넘어 유지되는 사실입니다. 에이전트가 지속적인 선호를 자동으로 저장하며, 중요한 항목은 직접 고정할 수 있습니다.',
+    'Add memory': '메모리 추가',
+    'Pinned': '고정됨',
+    'Nothing remembered yet': '아직 기억하는 내용이 없습니다',
+    'Add a fact manually, or let the agent remember preferences as you work together.':
+      '직접 사실을 추가하거나, 함께 작업하면서 에이전트가 선호를 기억하도록 하세요.',
+    'Search memory': '메모리 검색',
+    'Forget this?': '이 메모리를 삭제할까요?',
+    'The agent will no longer recall this fact.': '에이전트가 더 이상 이 사실을 기억하지 않습니다.',
+    'Delete memory': '메모리 삭제',
+    'Remember this': '기억하기',
+    'Edit memory': '메모리 편집',
+    'Fact': '사실',
+    'a standalone fact': '독립적인 사실',
+    'preference, workflow': '선호, 워크플로',
+    'Pinned memories are always considered first.': '고정된 메모리는 항상 먼저 고려됩니다.',
+    'Pin': '고정',
+    'Unpin': '고정 해제',
+    'I prefer concise answers with short code examples.': '간결한 답변과 짧은 코드 예시를 선호합니다.',
+    'Always use TypeScript strict mode in new projects.': '새 프로젝트에서는 항상 TypeScript strict 모드를 사용합니다.',
+    'Ship Windows builds with the NSIS installer target.': 'Windows 빌드는 NSIS 설치 프로그램으로 출시합니다.',
+    'My design system uses a 4px spacing scale.': '내 디자인 시스템은 4px 간격 체계를 사용합니다.',
+    'Memory saved.': '메모리를 저장했습니다.',
+    'Memory updated.': '메모리를 수정했습니다.',
+    'Memory deleted.': '메모리를 삭제했습니다.',
+
+    /* --------------------------------------------------------------------- MCP */
+    'Connect stdio or HTTP Model Context Protocol servers. Their tools appear to the agent namespaced as mcp__server__tool.':
+      'stdio 또는 HTTP Model Context Protocol 서버를 연결하세요. 서버 도구는 mcp__server__tool 형식으로 에이전트에게 노출됩니다.',
+    'Add example': '예제 추가',
+    'Add server': '서버 추가',
+    'MCP servers run code on your machine. Blank asks before calling an MCP tool for the first time in a session unless you change':
+      'MCP 서버는 이 기기에서 코드를 실행합니다. 설정을 변경하지 않는 한, 세션에서 MCP 도구를 처음 호출할 때 Blank가 확인합니다:',
+    'No servers connected': '연결된 서버가 없습니다',
+    'Add a stdio command or an HTTP endpoint, or start with the bundled echo example.':
+      'stdio 명령이나 HTTP 엔드포인트를 추가하거나, 내장 에코 예제로 시작하세요.',
+    'Add MCP server': 'MCP 서버 추가',
+    'MCP server': 'MCP 서버',
+    'MCP servers': 'MCP 서버',
+    'MCP Servers': 'MCP 서버',
+    'Server name': '서버 이름',
+    'Transport': '전송 방식',
+    'Command': '명령',
+    'Arguments': '인수',
+    'URL': 'URL',
+    'Secrets are stored locally with the server definition and never shown in the agent transcript.':
+      '비밀 값은 서버 정의와 함께 로컬에 저장되며 에이전트 대화 기록에는 표시되지 않습니다.',
+    'Remove server': '서버 제거',
+    'Remove this MCP server?': '이 MCP 서버를 제거할까요?',
+    'Its tools will disappear from the agent immediately.': '이 서버의 도구가 즉시 에이전트에서 사라집니다.',
+    'Connect server': '서버 연결',
+    'Connecting…': '연결하는 중…',
+    'Echo (example)': '에코 (예제)',
+    'Echo example added and connected.': '에코 예제를 추가하고 연결했습니다.',
+    'Echo text back. Useful for verifying that an MCP connection works.': '텍스트를 그대로 돌려줍니다. MCP 연결을 확인할 때 유용합니다.',
+    'Available tools': '사용 가능한 도구',
+    'AVAILABLE TOOLS': '사용 가능한 도구',
+    'Tools from connected servers will appear here.': '연결된 서버의 도구가 여기에 표시됩니다.',
+    'Add two numbers and return the result.': '두 수를 더해 결과를 반환합니다.',
+    'Return the current date and time in ISO 8601 format.': '현재 날짜와 시간을 ISO 8601 형식으로 반환합니다.',
+    'Commands': '명령',
+    'Environment variables': '환경 변수',
+    'Working directory': '작업 디렉터리',
+    'Tools': '도구',
+    'Status': '상태',
+    'Restart': '재시작',
+    'Disconnect': '연결 해제',
+    'Connect': '연결',
+    'Running': '실행 중',
+    'Stopped': '중지됨',
+    'Error': '오류',
+
+    /* ------------------------------------------------------------------ plugins */
+    'One-click capabilities. MCP servers add tools, skills add focused workflows, and built-ins are always available.':
+      '원클릭 기능입니다. MCP 서버는 도구를, 스킬은 집중된 워크플로를 추가하며, 내장 기능은 항상 사용할 수 있습니다.',
+    'Built in': '내장',
+    'MCP': 'MCP',
+    'Web search': '웹 검색',
+    'Search the live web, then read and cite the best pages.': '실시간 웹을 검색하고 최적의 페이지를 읽고 인용합니다.',
+    'Blank ships web_search and web_fetch. DuckDuckGo works with no key; Brave, Tavily, Exa, Serper and SearXNG can be connected in Settings.':
+      'Blank에는 web_search와 web_fetch가 포함되어 있습니다. DuckDuckGo는 키 없이 작동하며, Brave, Tavily, Exa, Serper, SearXNG는 설정에서 연결할 수 있습니다.',
+    'Computer use': '컴퓨터 유즈',
+    'See the screen and control the desktop with approval.': '승인 후 화면을 보고 데스크톱을 제어합니다.',
+    'computer_screenshot and computer_use work on Windows, macOS and Linux. A blue cursor marker shows every action, and each action asks first by default.':
+      'computer_screenshot과 computer_use는 Windows, macOS, Linux에서 작동합니다. 파란 커서 표시가 모든 동작을 보여주며, 기본적으로 각 동작 전에 확인을 요청합니다.',
+    'Create and edit images, video, music and 3D.': '이미지, 동영상, 음악, 3D를 생성하고 편집합니다.',
+    'Remote control': '원격 제어',
+    'Pair a phone over your network with a one-time token.': '일회용 토큰으로 네트워크를 통해 휴대폰을 연결합니다.',
+    'An authenticated web client for sending messages, watching runs and answering approvals. Off by default and loopback-only until you allow LAN access.':
+      '메시지 전송, 실행 확인, 승인 응답을 위한 인증된 웹 클라이언트입니다. 기본적으로 꺼져 있으며 LAN 접근을 허용하기 전까지 루프백 전용입니다.',
+    'Filesystem': '파일 시스템',
+    'Give the agent a scoped view of your workspace files.': '에이전트에게 작업 공간 파일의 범위 제한된 뷰를 제공합니다.',
+    'Starts the official Filesystem MCP server rooted at your current workspace. Useful for structured directory operations; the built-in read/write tools remain available.':
+      '현재 작업 공간을 루트로 하는 공식 Filesystem MCP 서버를 시작합니다. 구조화된 디렉터리 작업에 유용하며, 내장 읽기/쓰기 도구도 계속 사용할 수 있습니다.',
+    'Playwright Browser': 'Playwright 브라우저',
+    'Drive a real browser, inspect pages and take screenshots.': '실제 브라우저를 제어하고 페이지를 검사하고 스크린샷을 찍습니다.',
+    'Microsoft’s Playwright MCP server gives the agent a browser with accessibility snapshots, navigation and form interaction.':
+      'Microsoft의 Playwright MCP 서버는 접근성 스냅샷, 탐색, 양식 상호작용이 가능한 브라우저를 에이전트에게 제공합니다.',
+    'Context7 Docs': 'Context7 문서',
+    'Pull current, version-specific documentation into context.': '현재 버전에 맞는 최신 문서를 컨텍스트로 가져옵니다.',
+    'Upstash Context7 resolves library names and returns up-to-date docs and code examples.':
+      'Upstash Context7이 라이브러리 이름을 확인하고 최신 문서와 코드 예제를 반환합니다.',
+    'Sequential Thinking': '순차적 사고',
+    'Structure hard problems into explicit, revisable steps.': '어려운 문제를 명시적이고 수정 가능한 단계로 구조화합니다.',
+    'The official Sequential Thinking server exposes a scratchpad for multi-step reasoning and branching.':
+      '공식 Sequential Thinking 서버는 다단계 추론과 분기를 위한 스크래치패드를 제공합니다.',
+    'GitHub': 'GitHub',
+    'Read repositories, issues and pull requests.': '저장소, 이슈, 풀 리퀘스트를 읽습니다.',
+    'Connects to GitHub’s hosted MCP endpoint with a personal access token. Start read-only by creating a fine-grained token.':
+      '개인 액세스 토큰으로 GitHub의 호스팅 MCP 엔드포인트에 연결합니다. 세분화된 토큰을 만들어 읽기 전용으로 시작하세요.',
+    'Accessibility audit': '접근성 감사',
+    'A rigorous WCAG-minded review pass for any UI.': '모든 UI를 위한 엄격한 WCAG 기반 리뷰입니다.',
+    'Installs a skill that walks keyboard, focus, contrast, semantics and motion checks, then reports concrete fixes.':
+      '키보드, 포커스, 대비, 시맨틱, 모션 검사를 수행하고 구체적인 수정안을 보고하는 스킬을 설치합니다.',
+    'Performance budget': '성능 예산',
+    'Find the slow path and prove the win.': '느린 경로를 찾아 개선 효과를 입증합니다.',
+    'Installs a skill for measuring, locating and fixing performance bottlenecks instead of guessing.':
+      '추측 대신 성능 병목을 측정하고 찾아 수정하는 스킬을 설치합니다.',
+    'WCAG': 'WCAG',
+    'Benchmarks': '벤치마크',
+    'Browser': '브라우저',
+    'Docs': '문서',
+    'Reasoning': '추론',
+    'Local': '로컬',
+    'Remote': '원격',
+    'Token': '토큰',
+    'Skill': '스킬',
+    'Search plugins': '플러그인 검색',
+    'Install': '설치',
+    'Installed': '설치됨',
+    'Installing…': '설치하는 중…',
+    'Open settings': '설정 열기',
+    'Open search settings': '검색 설정 열기',
+    'Open computer settings': '컴퓨터 설정 열기',
+    'Open remote settings': '원격 설정 열기',
+    'Open Studio': '스튜디오 열기',
+    'Installing runs only after you confirm. MCP tools still pass through Approvals on every call, and nothing is installed silently.':
+      '설치는 확인한 후에만 진행됩니다. MCP 도구는 호출할 때마다 승인 절차를 거치며, 아무것도 조용히 설치되지 않습니다.',
+
+    /* ---------------------------------------------------------------- learning */
+    'A reflection pass reads recent sessions and proposes memories, standing instructions or skills. Nothing is applied without your review.':
+      '회고 패스가 최근 세션을 읽고 메모리, 상시 지침, 스킬을 제안합니다. 검토 없이는 아무것도 적용되지 않습니다.',
+    'Reflect now': '지금 회고',
+    'Proposed improvements': '제안된 개선',
+    'When a reflection pass finds something durable, it lands here for review.':
+      '회고 패스가 지속할 만한 내용을 찾으면 검토를 위해 여기에 표시됩니다.',
+    'No proposals waiting. Run a reflection pass after a few substantial sessions.':
+      '대기 중인 제안이 없습니다. 의미 있는 세션을 몇 번 진행한 뒤 회고를 실행해 보세요.',
+    'Recently applied': '최근 적용됨',
+    'Applied insights will be listed here.': '적용된 인사이트가 여기에 표시됩니다.',
+    'Sessions': '세션',
+    'Tool calls': '도구 호출',
+    'Memories': '메모리',
+    'Active skills': '활성 스킬',
+    'Activity · 14 days': '활동 · 14일',
+    'Most used tools': '가장 많이 사용한 도구',
+    'Tool usage appears after a few sessions.': '도구 사용 통계는 세션이 쌓이면 표시됩니다.',
+    'Reflection': '회고',
+    'Reflection is conservative. It often returns no changes, which is healthy.':
+      '회고는 보수적으로 동작합니다. 변경 사항이 없는 경우가 많으며 이는 정상입니다.',
+    'Model': '모델',
+    'Runs': '실행',
+    'Last': '마지막',
+    'never': '없음',
+    'Applying…': '적용하는 중…',
+    'Apply': '적용',
+    'Dismiss': '무시',
+    'No changes suggested.': '제안된 변경 사항이 없습니다.',
+    'Reflecting…': '회고하는 중…',
+    'No sessions yet.': '아직 세션이 없습니다.',
+    'Standing instruction': '상시 지침',
+    'Memory candidate': '메모리 후보',
+    'Skill idea': '스킬 아이디어',
+    'Pending': '대기 중',
+    'Applied': '적용됨',
+
+    /* ---------------------------------------------------------------- settings */
+    'Tune how Blank thinks, what it may touch, and where your data lives.': 'Blank의 사고 방식, 접근 범위, 데이터 저장 위치를 조정합니다.',
+    'The canvas, the default model, and how much of the agent\'s thinking you see.':
+      '캔버스, 기본 모델, 에이전트 사고 과정의 표시 수준을 설정합니다.',
+    'General': '일반',
+    'Theme': '테마',
+    'White is the default. System follows your OS.': '흰색이 기본입니다. 시스템은 OS 설정을 따릅니다.',
+    'Light': '라이트',
+    'Dark': '다크',
+    'System': '시스템',
+    'Used by new sessions and as the fallback for delegations.': '새 세션과 위임 시 폴백 모델로 사용됩니다.',
+    'Fallback model': '폴백 모델',
+    'Tried when the primary model errors or is rate-limited.': '기본 모델이 오류를 내거나 속도 제한에 걸릴 때 시도합니다.',
+    'Show model reasoning': '모델 사고 과정 표시',
+    'Render thinking blocks when a provider returns them.': '제공자가 사고 블록을 반환하면 표시합니다.',
+    'The only folder the agent may read or write without asking.': '에이전트가 묻지 않고 읽거나 쓸 수 있는 유일한 폴더입니다.',
+    'Standing instructions': '상시 지침',
+    'Appended to every system prompt. Keep it short and durable.': '모든 시스템 프롬프트에 추가됩니다. 짧고 지속적으로 유지하세요.',
+    'Save instructions': '지침 저장',
+    'Up to 20,000 characters.': '최대 20,000자.',
+    'Agent': '에이전트',
+    'Limits for the tool loop, context compaction and automatic learning.': '도구 루프, 컨텍스트 압축, 자동 학습의 한도를 설정합니다.',
+    'Maximum steps': '최대 단계',
+    'Upper bound on model turns per request. Higher means deeper work.': '요청당 모델 턴의 상한입니다. 높을수록 더 깊게 작업합니다.',
+    'Auto-compact context': '컨텍스트 자동 압축',
+    'Summarize older turns when the window fills.': '창이 가득 차면 오래된 턴을 요약합니다.',
+    'Compact threshold': '압축 임계값',
+    'Automatic memory': '자동 메모리',
+    'Let the agent save durable facts while it works.': '작업하는 동안 에이전트가 지속적인 사실을 저장하도록 합니다.',
+    'Background reflection': '백그라운드 회고',
+    'Periodically propose insights after longer sessions.': '긴 세션 후 주기적으로 인사이트를 제안합니다.',
+    'Save agent settings': '에이전트 설정 저장',
+    'Approvals': '승인',
+    'Choose what the agent may do on its own. Writes, shell commands and media generation ask by default.':
+      '에이전트가 스스로 할 수 있는 작업을 선택하세요. 쓰기, 셸 명령, 미디어 생성은 기본적으로 확인을 요청합니다.',
+    'Allow': '허용',
+    'Ask': '확인',
+    'Block': '차단',
+    'Denied tools are removed from the model\'s tool list entirely. Approvals are per session and expire when the run ends.':
+      '차단된 도구는 모델의 도구 목록에서 완전히 제거됩니다. 승인은 세션 단위이며 실행이 끝나면 만료됩니다.',
+    'Bundled with every agent. The': '모든 에이전트에 포함되어 있습니다.',
+    'tool works without an account; add a provider key for faster, cleaner results.':
+      '도구는 계정 없이 작동합니다. 더 빠르고 깔끔한 결과를 원하면 제공자 키를 추가하세요.',
+    'Provider': '제공자',
+    'Search backend': '검색 백엔드',
+    'Missing keys fall back to DuckDuckGo automatically.': '키가 없으면 자동으로 DuckDuckGo로 대체됩니다.',
+    '. Missing keys fall back to DuckDuckGo automatically.': ' 키가 없으면 자동으로 DuckDuckGo로 대체됩니다.',
+    'Results per search': '검색당 결과 수',
+    'How many snippets the agent receives for each query.': '에이전트가 쿼리마다 받는 스니펫 수입니다.',
+    'Connection test': '연결 테스트',
+    'Runs one real query and reports the backend that answered.': '실제 쿼리를 한 번 실행하고 응답한 백엔드를 보고합니다.',
+    'Test search': '검색 테스트',
+    'Computer': '컴퓨터',
+    'Let the agent see your screen, click, type and scroll when a task needs a desktop app. Every action is still gated by Approvals.':
+      '데스크톱 앱이 필요한 작업에서 에이전트가 화면을 보고 클릭, 입력, 스크롤할 수 있게 합니다. 모든 동작은 여전히 승인 절차를 거칩니다.',
+    'Draws a blue marker wherever the agent works. It is click-through, never takes focus, and hides itself after each action.':
+      '에이전트가 작업하는 위치에 파란 표시를 그립니다. 클릭을 통과하며 포커스를 가져가지 않고, 각 동작 후 스스로 숨습니다.',
+    'Screen test': '화면 테스트',
+    'Capture a single screenshot and open it to confirm screen access works.': '스크린샷을 한 장 캡처해 화면 접근이 작동하는지 확인합니다.',
+    'Screenshots stay in your local data folder.': '스크린샷은 로컬 데이터 폴더에 보관됩니다.',
+    'Test screenshot': '스크린샷 테스트',
+    'Platform support': '플랫폼 지원',
+    'Windows uses native input and DPI-aware coordinates. macOS needs Screen Recording and Accessibility permission. Linux uses xdotool plus a screenshot tool.':
+      'Windows는 네이티브 입력과 DPI 인식 좌표를 사용합니다. macOS는 화면 기록 및 손쉬운 사용 권한이 필요합니다. Linux는 xdotool과 스크린샷 도구를 사용합니다.',
+    'Per-tool permissions for computer_use and computer_screenshot live in Approvals. The stop button ends a run and releases the screen.':
+      'computer_use와 computer_screenshot의 도구별 권한은 승인 화면에서 설정합니다. 중지 버튼은 실행을 끝내고 화면을 해제합니다.',
+    'A small authenticated web app for your phone or another browser. Off by default; each start issues a fresh pairing token.':
+      '휴대폰이나 다른 브라우저에서 사용하는 작은 인증 웹 앱입니다. 기본적으로 꺼져 있으며, 시작할 때마다 새 페어링 토큰을 발급합니다.',
+    'Listening on port': '포트에서 대기 중:',
+    'Not accepting remote connections.': '원격 연결을 받지 않고 있습니다.',
+    'Running': '실행 중',
+    'Stopped': '중지됨',
+    'Start': '시작',
+    'Stop': '중지',
+    'Port': '포트',
+    'Changing the port restarts remote control and rotates the token.': '포트를 변경하면 원격 제어가 재시작되고 토큰이 교체됩니다.',
+    'Apply': '적용',
+    'Allow LAN access': 'LAN 접근 허용',
+    'Listen on this network so a phone can connect. Off keeps it loopback-only.': '휴대폰이 연결할 수 있도록 이 네트워크에서 대기합니다. 끄면 루프백 전용입니다.',
+    'Approve from remote': '원격에서 승인',
+    'Let the phone approve tool calls. Off means approvals happen only on this desktop.': '휴대폰에서 도구 호출을 승인할 수 있습니다. 끄면 이 데스크톱에서만 승인합니다.',
+    'Start remote control at launch': '실행 시 원격 제어 시작',
+    'Bring remote control up automatically using the saved port and options.':
+      '저장된 포트와 옵션으로 원격 제어를 자동 시작합니다.',
+    'Pairing': '페어링',
+    'Pairing links and the token appear here after you start remote control.':
+      '원격 제어를 시작하면 페어링 링크와 토큰이 여기에 표시됩니다.',
+    'Copy link': '링크 복사',
+    'Copy token': '토큰 복사',
+    'Open remote': '원격 열기',
+    'Anyone with the token and network access can talk to this app. Keep LAN off on untrusted Wi-Fi, leave remote approvals off by default, and stop remote control when you are done.':
+      '토큰과 네트워크 접근 권한이 있는 사람은 누구나 이 앱과 통신할 수 있습니다. 신뢰할 수 없는 Wi-Fi에서는 LAN을 끄고, 원격 승인은 기본적으로 꺼 두며, 사용이 끝나면 원격 제어를 중지하세요.',
+    'Data & CLI': '데이터 및 CLI',
+    'Everything Blank remembers is plain files you can inspect, back up or delete.':
+      'Blank가 기억하는 모든 것은 직접 확인, 백업, 삭제할 수 있는 일반 파일입니다.',
+    'Sessions, config, memory, skills, checkpoints and media live here.':
+      '세션, 설정, 메모리, 스킬, 체크포인트, 미디어가 여기에 저장됩니다.',
+    'Data folder': '데이터 폴더',
+    'Workspace folder': '작업 공간 폴더',
+    'Open the folder Blank is allowed to work in.': 'Blank가 작업할 수 있는 폴더를 엽니다.',
+    'Install CLI': 'CLI 설치',
+    'The launcher points at this installation.': '런처가 이 설치를 가리킵니다.',
+    'Install a': '설치:',
+    'launcher for terminals and editor tasks.': '터미널과 에디터 작업을 위한 런처.',
+    'Install a blank launcher for terminals and editor tasks.': '터미널과 에디터 작업을 위한 blank 런처를 설치합니다.',
+    'Start with Blank': 'Blank와 함께 시작',
+    'Settings → Approvals': '설정 → 승인',
+    'A quiet, local-first agent harness. Chat, code, plan and create media from one white canvas — with keys, sessions and memory kept on your machine.':
+      '조용한 로컬 우선 에이전트 하네스입니다. 하나의 흰 캔버스에서 채팅, 코딩, 계획, 미디어 제작을 하며 키, 세션, 메모리는 이 기기에 보관됩니다.',
+    'Install command line tool': '명령줄 도구 설치',
+    'Keyboard shortcuts': '키보드 단축키',
+    'About': '정보',
+    'Version': '버전',
+    'Runtime': '런타임',
+    'Electron': 'Electron',
+    'Node': 'Node',
+    'Platform': '플랫폼',
+    'License': '라이선스',
+    'Data folder': '데이터 폴더',
+    'Open data folder': '데이터 폴더 열기',
+    'A quiet, local-first agent harness for your workspace.': '작업 공간을 위한 조용한 로컬 우선 에이전트 하네스입니다.',
+    'Local-first agent runtime': '로컬 우선 에이전트 런타임',
+    'Settings saved.': '설정을 저장했습니다.',
+    'Theme updated.': '테마를 변경했습니다.',
+    'Instructions saved.': '지침을 저장했습니다.',
+    'Search provider updated.': '검색 제공자를 변경했습니다.',
+    'Search key saved.': '검색 키를 저장했습니다.',
+    'Search key removed.': '검색 키를 삭제했습니다.',
+    'Remote settings updated.': '원격 설정을 변경했습니다.',
+    'Remote control started.': '원격 제어를 시작했습니다.',
+    'Remote control stopped.': '원격 제어를 중지했습니다.',
+    'Pairing link copied.': '페어링 링크를 복사했습니다.',
+    'Token copied.': '토큰을 복사했습니다.',
+    'CLI launcher installed.': 'CLI 런처를 설치했습니다.',
+    'Could not access the clipboard.': '클립보드에 접근할 수 없습니다.',
+    'Clipboard unavailable.': '클립보드를 사용할 수 없습니다.',
+    'Approval required': '승인 필요',
+    'Approve': '승인',
+    'Deny': '거부',
+    'Allow once': '한 번 허용',
+    'Allow for session': '세션 동안 허용',
+    'Approval requested': '승인 요청',
+    'Waiting for approval…': '승인을 기다리는 중…',
+    'This approval has expired.': '이 승인 요청은 만료되었습니다.',
+
+    /* ------------------------------------------------------------------- misc */
+    'This can\'t be undone.': '이 작업은 되돌릴 수 없습니다.',
+    'Are you sure?': '계속할까요?',
+    'Confirm': '확인',
+    'Value': '값',
+    'Something went wrong.': '문제가 발생했습니다.',
+    'Could not complete the request.': '요청을 완료하지 못했습니다.',
+    'Copied to clipboard.': '클립보드에 복사했습니다.',
+    'Downloaded.': '다운로드했습니다.',
+    'Saved.': '저장했습니다.',
+    'Deleted.': '삭제했습니다.',
+    'Updated.': '수정했습니다.',
+    'Created.': '생성했습니다.',
+    'Upload': '업로드',
+    'Drop files here': '여기에 파일을 놓으세요',
+    'or': '또는',
+    'browse': '찾아보기',
+    'Today': '오늘',
+    'Yesterday': '어제',
+    'Just now': '방금',
+    'now': '방금',
+    'Jan': '1월',
+    'Feb': '2월',
+    'Mar': '3월',
+    'Apr': '4월',
+    'May': '5월',
+    'Jun': '6월',
+    'Jul': '7월',
+    'Aug': '8월',
+    'Sep': '9월',
+    'Oct': '10월',
+    'Nov': '11월',
+    'Dec': '12월',
+    'monospace': '고정폭',
+    'Start': '시작',
+  };
+
+  const PATTERNS = [
+    [/^(\d+) providers$/, '$1개 제공자'],
+    [/^(\d+) models$/, '$1개 모델'],
+    [/^(\d+) model$/, '$1개 모델'],
+    [/^(\d+) connected$/, '$1개 연결됨'],
+    [/^(\d+) memories$/, '$1개 메모리'],
+    [/^(\d+) pinned$/, '$1개 고정됨'],
+    [/^(\d+) active$/, '$1개 활성'],
+    [/^(\d+) assets$/, '$1개 자산'],
+    [/^(\d+) pending$/, '$1개 대기 중'],
+    [/^(\d+) ready$/, '$1개 준비됨'],
+    [/^(\d+) tools$/, '$1개 도구'],
+    [/^(\d+) skills$/, '$1개 스킬'],
+    [/^(\d+) of (\d+) providers ready · (\d+) models available$/, '$2개 제공자 중 $1개 준비됨 · 모델 $3개 사용 가능'],
+    [/^(\d+) models · (\d+) providers$/, '모델 $1개 · 제공자 $2개'],
+    [/^(\d+) messages · Agent$/, '메시지 $1개 · 에이전트'],
+    [/^(\d+) messages$/, '메시지 $1개'],
+    [/^(\d+) MCP servers connected$/, 'MCP 서버 $1개 연결됨'],
+    [/^(\d+) asset · (.+)$/, '자산 $1개 · $2'],
+    [/^(\d+) assets · (.+)$/, '자산 $1개 · $2'],
+    [/^(\d+) image$/, '이미지 $1개'],
+    [/^(\d+) images$/, '이미지 $1개'],
+    [/^(\d+) items$/, '항목 $1개'],
+    [/^(\d+) characters$/, '문자 $1개'],
+    [/^(\d+) tools? available$/, '도구 $1개 사용 가능'],
+    [/^(\d+) runs?$/, '$1회 실행'],
+    [/^(\d+) days$/, '$1일'],
+    [/^Session tokens · (\d+) of (.+) context$/, '세션 토큰 · $2 컨텍스트 중 $1'],
+    [/^Session tokens · (.+) context$/, '세션 토큰 · $1 컨텍스트'],
+    [/^Default model · (.+)$/, '기본 모델 · $1'],
+    [/^Default · (.+)$/, '기본 · $1'],
+    [/^Agent team · (.+) working in parallel\.$/, '에이전트 팀 · $1 병렬 작업 중'],
+    [/^Agent team finished · (\d+) reports?\.$/, '에이전트 팀 완료 · 보고서 $1개'],
+    [/^Agent team saved · (\d+) members?\.$/, '에이전트 팀 저장됨 · 멤버 $1명'],
+    [/^SSH connection verified · (\d+) ms$/, 'SSH 연결 확인됨 · $1ms'],
+    [/^SSH connection failed · (.+)$/, 'SSH 연결 실패 · $1'],
+    [/^(.+) · No key needed$/, '$1 · 키 필요 없음'],
+    [/^(.+) · Your own URL$/, '$1 · 직접 URL 입력'],
+    [/^(.+) · API key$/, '$1 · API 키'],
+    [/^Fraction of the context window before summarizing\. (\d+)%$/, '요약을 시작하는 컨텍스트 창 비율: $1%'],
+    [/^Connected · (\d+) ms$/, '연결됨 · $1ms'],
+    [/^Exit (\d+) · (.+)$/, '종료 코드 $1 · $2'],
+    [/^Blank (\d+\.\d+\.\d+) · local-first agent runtime · Electron (.+) · Node (.+)$/, 'Blank $1 · 로컬 우선 에이전트 런타임 · Electron $2 · Node $3'],
+    [/^Search (\d+) models or providers$/, '모델 또는 제공자 $1개 검색'],
+    [/^Search (.+) models or providers$/, '모델 또는 제공자 $1개 검색'],
+    [/^(.+) ctx$/, '$1 컨텍스트'],
+    [/^(.+) context$/, '$1 컨텍스트'],
+    [/^(\d+)m$/, '$1분 전'],
+    [/^(\d+)h$/, '$1시간 전'],
+    [/^(\d+)d$/, '$1일 전'],
+    [/^(\d+)s$/, '$1초 전'],
+    [/^(\d{4}-\d{2}-\d{2}) · (\d+) messages$/, '$1 · 메시지 $2개'],
+    [/^(\d+) : (\d+)$/, '$1:$2'],
+    [/^(\d+) \/ (\d+)$/, '$1 / $2'],
+    [/^(\d+)\.(\d+)k$/, '$1.$2k'],
+    [/^v(\d+\.\d+\.\d+)$/, 'v$1'],
+    [/^(\d+) keys?$/, '키 $1개'],
+    [/^(\d+) characters remaining$/, '$1자 남음'],
+    [/^(\d+) selected$/, '$1개 선택됨'],
+    [/^(\d+) of (\d+)$/, '$1 / $2'],
+    [/^(\d+)%$/, '$1%'],
+  ];
+
+  const ATTR_DICT = {
+    ...DICT,
+    'Blank 1.0.1 · local-first agent runtime · Electron 45.2.1 · Node 24.22.1': 'Blank 1.0.1 · 로컬 우선 에이전트 런타임 · Electron 45.2.1 · Node 24.22.1',
+    'Default · Blank Sandbox': '기본 · Blank Sandbox',
+    'Default model · sandbox/blank-1': '기본 모델 · sandbox/blank-1',
+    'Message Blank': 'Blank에게 메시지 보내기',
+    'Search providers or models': '제공자 또는 모델 검색',
+    'Search plugins': '플러그인 검색',
+    'Search skills': '스킬 검색',
+    'Search memory': '메모리 검색',
+    'Search library': '라이브러리 검색',
+    'Filter sessions': '세션 필터',
+    'Browse the local media library': '로컬 미디어 라이브러리 둘러보기',
+    'Create images, video, music and 3D locally or in the cloud': '이미지, 동영상, 음악, 3D를 로컬 또는 클라우드에서 생성',
+    'Read text files inside the workspace': '작업 공간의 텍스트 파일 읽기',
+    'Create new files inside the workspace': '작업 공간에 새 파일 만들기',
+    'Modify existing files with exact replacements': '정확한 교체로 기존 파일 수정',
+    'Explore the workspace tree': '작업 공간 트리 탐색',
+    'Match file names with glob patterns': 'glob 패턴으로 파일 이름 찾기',
+    'Search text across the workspace': '작업 공간 전체에서 텍스트 검색',
+    'Execute shell commands in the workspace': '작업 공간에서 셸 명령 실행',
+    'Read public http(s) pages and APIs': '공개 http(s) 페이지와 API 읽기',
+    'Look up current information with the configured search provider': '설정된 검색 제공자로 최신 정보 찾기',
+    'Capture a screenshot for the agent to read': '에이전트가 읽을 스크린샷 캡처',
+    'Move the cursor, click and type on your desktop': '데스크톱에서 커서 이동, 클릭, 입력',
+    'Write the task list shown in the rail': '오른쪽 레일에 표시할 작업 목록 작성',
+    'Store durable facts across sessions': '세션을 넘어 지속되는 사실 저장',
+    'Recall saved facts and preferences': '저장된 사실과 선호 검색',
+    'Load a skill instruction file': '스킬 지침 파일 불러오기',
+    'Send independent subtasks to agent workers': '에이전트 워커에게 독립적인 하위 작업 전달',
+    'Browse local media assets': '로컬 미디어 자산 둘러보기',
+    'Create images, video, music and 3D': '이미지, 동영상, 음악, 3D 생성',
+    'Edit existing media assets': '기존 미디어 자산 편집',
+    'Call tools exposed by connected MCP servers': '연결된 MCP 서버가 제공하는 도구 호출',
+    'Open navigation': '탐색 열기',
+    'Toggle context panel': '컨텍스트 패널 전환',
+    'Session options': '세션 옵션',
+    'Attach text files': '텍스트 파일 첨부',
+    'Switch model': '모델 전환',
+    'Hide panel': '패널 숨기기',
+    'Change the default model': '기본 모델 변경',
+    'Window controls': '창 컨트롤',
+    'Minimize': '최소화',
+    'Maximize': '최대화',
+    'Close': '닫기',
+    'Clear': '지우기',
+    'Workspace': '작업 공간',
+    'Chat': '채팅',
+    'Page': '페이지',
+    'Sidebar': '사이드바',
+    'Session context': '세션 컨텍스트',
+    'Send': '전송',
+    'Stop run': '실행 중지',
+    'Remove server': '서버 제거',
+  };
+
+  const ATTR_PATTERNS = [
+    [/^Session tokens · (\d+) of (.+) context$/, '세션 토큰 · $2 컨텍스트 중 $1'],
+    [/^(\d+) messages · Agent$/, '메시지 $1개 · 에이전트'],
+    [/^(\d{4}-\d{2}-\d{2}) · (\d+) messages$/, '$1 · 메시지 $2개'],
+    [/^(\d+) skills$/, '스킬 $1개'],
+    [/^(\d+) MCP servers connected$/, 'MCP 서버 $1개 연결됨'],
+    [/^Default model · (.+)$/, '기본 모델 · $1'],
+    [/^Default · (.+)$/, '기본 · $1'],
+    [/^Search (\d+) models or providers$/, '모델 또는 제공자 $1개 검색'],
+    [/^(.+) ctx$/, '$1 컨텍스트'],
+    [/^(\d+)m$/, '$1분 전'],
+    [/^(\d+)h$/, '$1시간 전'],
+    [/^(\d+)d$/, '$1일 전'],
+  ];
+
+  const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'CODE', 'PRE', 'KBD', 'SVG', 'CANVAS']);
+  const SKIP_SELECTOR = [
+    '.message',
+    '.session-title',
+    '.session-sub',
+    '.media-card-title',
+    '.media-detail-title',
+    '.media-prompt',
+    '.media-history-thumb',
+    '.boot-splash',
+    '[data-no-i18n]',
+  ].join(', ');
+
+  const ATTRS = ['placeholder', 'title', 'aria-label', 'alt'];
+
+  function normalize(text) {
+    return String(text || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function lookup(text, map, patterns) {
+    const key = normalize(text);
+    if (!key) return null;
+    if (Object.prototype.hasOwnProperty.call(map, key)) {
+      const value = map[key];
+      if (value !== key) return value;
+    }
+    for (const [re, replacement] of patterns) {
+      if (re.test(key)) return key.replace(re, replacement);
+    }
+    return null;
+  }
+
+  function shouldSkip(node) {
+    let el = node.nodeType === 3 ? node.parentElement : node;
+    while (el && el !== document.body) {
+      if (SKIP_TAGS.has(el.tagName)) return true;
+      if (el.matches && el.matches(SKIP_SELECTOR)) return true;
+      if (el.isContentEditable) return true;
+      el = el.parentElement;
+    }
+    return false;
+  }
+
+  function translateTextNode(node) {
+    if (!node || node.nodeType !== 3) return;
+    const raw = node.nodeValue;
+    if (!raw || !raw.trim() || !/[A-Za-z]/.test(raw)) return;
+    if (shouldSkip(node)) return;
+    const translated = lookup(raw, DICT, PATTERNS);
+    if (translated == null) return;
+    const lead = raw.match(/^\s*/)[0];
+    const trail = raw.match(/\s*$/)[0];
+    const next = lead + translated + trail;
+    if (next !== raw) {
+      node.nodeValue = next;
+      stats.text += 1;
+    }
+  }
+
+  function translateAttributes(el) {
+    if (!el || el.nodeType !== 1) return;
+    for (const name of ATTRS) {
+      if (!el.hasAttribute(name)) continue;
+      const raw = el.getAttribute(name);
+      if (!raw || !/[A-Za-z]/.test(raw)) continue;
+      const translated = lookup(raw, ATTR_DICT, ATTR_PATTERNS);
+      if (translated != null && translated !== raw) {
+        el.setAttribute(name, translated);
+        stats.attrs += 1;
+      }
+    }
+  }
+
+  function translateSubtree(root) {
+    if (!root) return;
+    if (root.nodeType === 3) { translateTextNode(root); return; }
+    if (root.nodeType !== 1) return;
+    translateAttributes(root);
+    if (SKIP_TAGS.has(root.tagName)) return;
+    if (shouldSkip(root)) return;
+    if (root.matches && root.matches('title')) {
+      const page = (document.title || '').replace(/ · Blank$/, '');
+      const mapped = DICT[page];
+      if (mapped) document.title = `${mapped} · Blank`;
+      return;
+    }
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+      acceptNode(node) {
+        if (node.nodeType === 3) {
+          return node.nodeValue && node.nodeValue.trim() && /[A-Za-z]/.test(node.nodeValue)
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_REJECT;
+        }
+        if (node.nodeType === 1) {
+          if (SKIP_TAGS.has(node.tagName)) return NodeFilter.FILTER_ACCEPT;
+          if (shouldSkip(node)) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+        return NodeFilter.FILTER_REJECT;
+      },
+    });
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeType === 3) translateTextNode(node);
+      else translateAttributes(node);
+    }
+  }
+
+  const stats = { text: 0, attrs: 0, flushes: 0, scheduled: 0 };
+  let paused = false;
+  let dirty = false;
+  let timer = null;
+
+  function flush() {
+    timer = null;
+    if (paused || !dirty) return;
+    dirty = false;
+    stats.flushes += 1;
+    translateSubtree(document.body);
+    translateTitle();
+  }
+
+  function markDirty() {
+    if (paused) return;
+    dirty = true;
+    stats.scheduled += 1;
+    if (timer) return;
+    timer = setTimeout(flush, 90);
+  }
+
+  function translateTitle() {
+    const raw = document.title || '';
+    const match = raw.match(/^(.*) · Blank$/);
+    if (!match) return;
+    const mapped = DICT[match[1]] || DICT[normalize(match[1])];
+    if (mapped) document.title = `${mapped} · Blank`;
+  }
+
+  function start() {
+    document.documentElement.lang = 'ko';
+    translateSubtree(document.body);
+    translateTitle();
+    const observer = new MutationObserver(markDirty);
+    const options = { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS };
+    observer.observe(document.body, options);
+    const headObserver = new MutationObserver(() => markDirty());
+    const titleEl = document.querySelector('title');
+    if (titleEl) headObserver.observe(titleEl, { childList: true, characterData: true, subtree: true });
+    window.__blankI18n = {
+      enabled: true,
+      language: 'ko',
+      stats,
+      pause() { paused = true; observer.disconnect(); headObserver.disconnect(); if (timer) clearTimeout(timer); timer = null; },
+      resume() {
+        if (!paused) return;
+        paused = false;
+        observer.observe(document.body, options);
+        translateSubtree(document.body);
+      },
+      run() { translateSubtree(document.body); translateTitle(); },
+    };
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
+  } else {
+    start();
+  }
+})();

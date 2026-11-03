@@ -11,7 +11,7 @@
     mcp: { servers: [], catalog: [], loading: false },
     learn: { data: null, reflecting: false },
     plugins: { items: [], query: '', filter: 'all', loading: false },
-    settings: { remote: null },
+    settings: { remote: null, ssh: null },
     media: {
       loaded: false,
       loading: false,
@@ -67,6 +67,8 @@
     memory_search: ['Search memory', 'Recall saved facts and preferences'],
     read_skill: ['Read skills', 'Load a skill instruction file'],
     delegate: ['Delegate work', 'Send independent subtasks to agent workers'],
+    team_delegate: ['Run the agent team', 'Fan a task out to specialist sub-agents in parallel'],
+    ssh_run: ['Run on SSH hosts', 'Execute commands on saved remote machines'],
     list_media: ['List media', 'Browse the local media library'],
     generate_media: ['Generate media', 'Create images, video, music and 3D locally or in the cloud'],
     edit_media: ['Edit media', 'Transform media assets with deterministic operations'],
@@ -1416,6 +1418,19 @@
 
   /* ----------------------------------------------------------------- settings */
 
+  function teamMemberRow(member = {}) {
+    return `<div class="team-member" data-team-member data-member-id="${U.attr(member.id || '')}">
+      <div class="team-member-head">
+        <span class="team-member-index">${icon('bot', 13)}</span>
+        <input class="field-input team-name" data-team-field="name" value="${U.attr(member.name || '')}" placeholder="Agent name" maxlength="40" spellcheck="false" />
+        <label class="team-enabled" title="Enabled">${UI.switchHtml(member.enabled !== false, 'data-team-field="enabled"')}</label>
+        <button class="mini-icon" type="button" data-team-remove title="Remove member">${icon('trash', 13)}</button>
+      </div>
+      <textarea class="settings-textarea team-role" data-team-field="role" rows="2" placeholder="What this specialist should investigate and report">${esc(member.role || '')}</textarea>
+      <input class="field-input team-model" data-team-field="model" value="${U.attr(member.model || '')}" placeholder="Model id (leave blank for the default)" spellcheck="false" />
+    </div>`;
+  }
+
   function paintSettings(host) {
     const config = currentConfig();
     const info = appState().info || {};
@@ -1438,6 +1453,10 @@
     const remotePort = Number(remoteState.port) || Number(remoteCfg.port) || 8787;
     const remoteToken = remoteRunning ? String(remoteState.token || '') : '';
     const remoteUrls = remoteRunning && Array.isArray(remoteState.urls) ? remoteState.urls : [];
+    const teamCfg = config.team || { enabled: false, members: [] };
+    const teamMembers = Array.isArray(teamCfg.members) ? teamCfg.members : [];
+    const language = config.language === 'en' ? 'en' : 'ko';
+    const sshHosts = vstate.settings.ssh?.hosts || config.ssh?.hosts || [];
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
         title: 'Settings',
@@ -1449,7 +1468,9 @@
         <nav class="settings-nav">
           <button class="settings-nav-item active" type="button" data-settings-go="general">${icon('settings', 13)} General</button>
           <button class="settings-nav-item" type="button" data-settings-go="agent">${icon('bot', 13)} Agent</button>
+          <button class="settings-nav-item" type="button" data-settings-go="team">${icon('bot', 13)} Agent team</button>
           <button class="settings-nav-item" type="button" data-settings-go="approvals">${icon('shield', 13)} Approvals</button>
+          <button class="settings-nav-item" type="button" data-settings-go="ssh">${icon('terminal', 13)} SSH</button>
           <button class="settings-nav-item" type="button" data-settings-go="search">${icon('globe', 13)} Web search</button>
           <button class="settings-nav-item" type="button" data-settings-go="computer">${icon('monitor', 13)} Computer</button>
           <button class="settings-nav-item" type="button" data-settings-go="remote">${icon('link', 13)} Remote</button>
@@ -1465,6 +1486,13 @@
                 <div class="setting-copy"><div class="setting-label">Theme</div><div class="setting-desc">White is the default. System follows your OS.</div></div>
                 <div class="setting-control theme-options">
                   ${['light', 'dark', 'system'].map((theme) => `<button class="theme-option ${config.theme === theme ? 'active' : ''}" type="button" data-theme="${theme}"><span class="theme-preview ${theme === 'light' ? '' : theme}"></span>${theme === 'light' ? 'Light' : theme === 'dark' ? 'Dark' : 'System'}</button>`).join('')}
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Interface language</div><div class="setting-desc">English or Korean. Switching reloads this window.</div></div>
+                <div class="setting-control language-options" data-no-i18n>
+                  <button class="theme-option ${language === 'ko' ? 'active' : ''}" type="button" data-language="ko">한국어</button>
+                  <button class="theme-option ${language === 'en' ? 'active' : ''}" type="button" data-language="en">English</button>
                 </div>
               </div>
               <div class="setting-row">
@@ -1519,6 +1547,69 @@
             <div class="provider-actions"><button class="btn btn-primary btn-sm" type="button" data-save-agent>Save agent settings</button></div>
           </section>
 
+          <section class="settings-section" id="settings-team">
+            <h2>Agent team</h2>
+            <p>Multi-agent mode. Specialists investigate the same brief in parallel, then the main agent synthesizes their reports. Team members are always read-only.</p>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Enable the agent team</div><div class="setting-desc">Adds the team_delegate tool and team guidance to the system prompt.</div></div>
+                <div class="setting-control">${UI.switchHtml(Boolean(teamCfg.enabled), 'data-team-toggle')}</div>
+              </div>
+            </div>
+            <div class="team-members" data-team-members>
+              ${teamMembers.map((member) => teamMemberRow(member)).join('') || '<div class="setting-note">No members yet. Add one below.</div>'}
+            </div>
+            <div class="provider-actions">
+              <button class="btn btn-secondary btn-sm" type="button" data-team-add>${icon('plus', 12)} Add member</button>
+              <button class="btn btn-primary btn-sm" type="button" data-save-team>Save team</button>
+              <span class="setting-note">Up to six members. Each may use a different model id.</span>
+            </div>
+            <div class="settings-permission-note">${icon('bot', 12)} Team runs share this session's workspace and consume tokens in parallel. Reports return to the main agent, not directly to you.</div>
+          </section>
+
+          <section class="settings-section" id="settings-ssh">
+            <h2>SSH</h2>
+            <p>Save remote machines, then let the agent run approval-gated commands with ssh_run. Secrets stay on this device.</p>
+            <div class="settings-group" data-ssh-list>
+              ${sshHosts.length ? sshHosts.map((entry) => `<div class="ssh-host" data-ssh-host="${U.attr(entry.id)}">
+                <div class="ssh-host-copy">
+                  <div class="ssh-host-name">${icon('terminal', 12)} ${esc(entry.name)}</div>
+                  <div class="ssh-host-meta">${esc(entry.user)}@${esc(entry.host)}:${Number(entry.port) || 22} · ${entry.authType === 'password' ? 'password' : 'private key'}${entry.fingerprint ? ' · host key pinned' : ''}</div>
+                  <div class="setting-note" data-ssh-note></div>
+                </div>
+                <div class="ssh-host-actions">
+                  <button class="btn btn-secondary btn-sm" type="button" data-ssh-test="${U.attr(entry.id)}">Test</button>
+                  <button class="mini-icon" type="button" data-ssh-remove="${U.attr(entry.id)}" title="Remove host">${icon('trash', 13)}</button>
+                </div>
+              </div>`).join('') : `<div class="setting-note">${icon('lock', 11)} No saved hosts. Add one below.</div>`}
+            </div>
+            <div class="settings-group ssh-form">
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">New host</div><div class="setting-desc">Passwords and passphrases are sealed with the OS keychain when available.</div></div>
+              </div>
+              <div class="ssh-grid">
+                <label class="setting-label">Name<input class="field-input" id="ssh-name" placeholder="Production" maxlength="60" spellcheck="false" /></label>
+                <label class="setting-label">Host<input class="field-input" id="ssh-host" placeholder="server.example.com" spellcheck="false" /></label>
+                <label class="setting-label">Port<input class="field-input" id="ssh-port" type="number" min="1" max="65535" value="22" /></label>
+                <label class="setting-label">User<input class="field-input" id="ssh-user" placeholder="deploy" spellcheck="false" /></label>
+                <label class="setting-label">Auth
+                  <select class="settings-select" id="ssh-auth">
+                    <option value="key">Private key</option>
+                    <option value="password">Password</option>
+                  </select>
+                </label>
+                <label class="setting-label" data-ssh-key-block>Private key path<input class="field-input" id="ssh-key" placeholder="~/.ssh/id_ed25519" spellcheck="false" /></label>
+                <label class="setting-label" data-ssh-key-block>Key passphrase <span class="setting-note">optional</span><input class="field-input" id="ssh-passphrase" type="password" autocomplete="off" /></label>
+                <label class="setting-label" data-ssh-password-block hidden>Password<input class="field-input" id="ssh-password" type="password" autocomplete="off" /></label>
+              </div>
+              <div class="provider-actions">
+                <button class="btn btn-primary btn-sm" type="button" data-ssh-add>${icon('plus', 12)} Save host</button>
+                <span class="setting-note">The first successful test pins the host key fingerprint.</span>
+              </div>
+            </div>
+            <div class="settings-permission-note">${icon('shield', 12)} ssh_run asks for approval by default. It runs in a non-interactive shell; interactive prompts will fail.</div>
+          </section>
+
           <section class="settings-section" id="settings-approvals">
             <h2>Approvals</h2>
             <p>Choose what the agent may do on its own. Writes, shell commands and media generation ask by default.</p>
@@ -1542,7 +1633,7 @@
             <p>Bundled with every agent. The <code>web_search</code> tool works without an account; add a provider key for faster, cleaner results.</p>
             <div class="settings-group">
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">Provider</div><div class="setting-desc">${esc(searchMeta ? `${searchMeta.label} · ${searchMeta.note}` : 'Search backend')}. Missing keys fall back to DuckDuckGo automatically.</div></div>
+                <div class="setting-copy"><div class="setting-label">Provider</div><div class="setting-desc">Missing keys fall back to DuckDuckGo automatically.</div><div class="setting-note">${esc(searchMeta ? `${searchMeta.label} · ${searchMeta.note}` : 'Search backend')}</div></div>
                 <div class="setting-control"><select class="settings-select" id="search-provider">${SEARCH_BACKENDS.map((backend) => `<option value="${backend.id}" ${backend.id === searchId ? 'selected' : ''}>${esc(backend.label)} · ${esc(backend.note)}</option>`).join('')}</select></div>
               </div>
               ${searchMeta?.needsKey ? `<div class="setting-row">
@@ -1646,7 +1737,7 @@
                 <div class="setting-control"><button class="btn btn-secondary btn-sm" type="button" data-open-data>${icon('folder-open', 12)} Open</button></div>
               </div>
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">Command line</div><div class="setting-desc">Install a <code>blank</code> launcher for terminals and editor tasks.</div><div class="setting-note" id="cli-note">The launcher points at this installation.</div></div>
+                <div class="setting-copy"><div class="setting-label">Command line</div><div class="setting-desc">Install a blank launcher for terminals and editor tasks.</div><div class="setting-note" id="cli-note">The launcher points at this installation.</div></div>
                 <div class="setting-control"><button class="btn btn-secondary btn-sm" type="button" data-install-cli>${icon('terminal', 12)} Install CLI</button></div>
               </div>
               <div class="setting-row">
@@ -1693,7 +1784,7 @@
         host.querySelector(`#settings-${go.dataset.settingsGo}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
       }
-      const theme = event.target.closest('[data-theme]');
+      const theme = event.target.closest('button[data-theme]');
       if (theme) {
         const value = theme.dataset.theme;
         host.querySelectorAll('[data-theme]').forEach((item) => item.classList.toggle('active', item === theme));
@@ -1702,6 +1793,125 @@
           applyConfig(updated);
           if (window.App?.applyTheme) App.applyTheme(value);
           UI.toast('Theme updated.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      const language = event.target.closest('[data-language]');
+      if (language) {
+        const value = language.dataset.language === 'en' ? 'en' : 'ko';
+        host.querySelectorAll('[data-language]').forEach((item) => item.classList.toggle('active', item === language));
+        try {
+          await API.config.update({ language: value });
+          localStorage.setItem('blank.lang', value);
+          UI.toast(value === 'en' ? 'Switching to English…' : '한국어로 전환합니다…', 'success');
+          setTimeout(() => location.reload(), 120);
+        } catch (error) {
+          UI.toast(error.message, 'error');
+        }
+        return;
+      }
+      const teamToggle = event.target.closest('[data-team-toggle]');
+      if (teamToggle) {
+        const next = !teamToggle.classList.contains('on');
+        teamToggle.classList.toggle('on', next);
+        teamToggle.setAttribute('aria-checked', String(next));
+        try {
+          const updated = await API.config.update({ team: { enabled: next } });
+          applyConfig(updated);
+          UI.toast(next ? 'Agent team enabled.' : 'Agent team disabled.', 'success');
+        } catch (error) {
+          teamToggle.classList.toggle('on', !next);
+          UI.toast(error.message, 'error');
+        }
+        return;
+      }
+      const teamEnabled = event.target.closest('[data-team-field="enabled"]');
+      if (teamEnabled) {
+        const next = !teamEnabled.classList.contains('on');
+        teamEnabled.classList.toggle('on', next);
+        teamEnabled.setAttribute('aria-checked', String(next));
+        return;
+      }
+      if (event.target.closest('[data-team-add]')) {
+        const list = host.querySelector('[data-team-members]');
+        if (!list) return;
+        if (!list.querySelector('[data-team-member]')) list.innerHTML = '';
+        list.insertAdjacentHTML('beforeend', teamMemberRow({ name: '', role: '', model: '', enabled: true }));
+        list.lastElementChild?.querySelector('[data-team-field="name"]')?.focus();
+        return;
+      }
+      if (event.target.closest('[data-team-remove]')) {
+        event.target.closest('[data-team-member]')?.remove();
+        return;
+      }
+      if (event.target.closest('[data-save-team]')) {
+        const members = [...host.querySelectorAll('[data-team-member]')].map((node, index) => {
+          const field = (name) => node.querySelector(`[data-team-field="${name}"]`);
+          return {
+            id: node.dataset.memberId || `member_${Date.now().toString(36)}_${index}`,
+            name: field('name')?.value.trim() || '',
+            role: field('role')?.value.trim() || '',
+            model: field('model')?.value.trim() || '',
+            enabled: field('enabled') ? field('enabled').classList.contains('on') : true,
+          };
+        }).filter((member) => member.name);
+        try {
+          const updated = await API.config.update({ team: { enabled: Boolean(teamCfg.enabled), members } });
+          applyConfig(updated);
+          paintSettings(host);
+          UI.toast(`Agent team saved · ${members.length} member${members.length === 1 ? '' : 's'}.`, 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      if (event.target.closest('[data-ssh-add]')) {
+        const button = event.target.closest('[data-ssh-add]');
+        const authType = host.querySelector('#ssh-auth')?.value === 'password' ? 'password' : 'key';
+        const input = {
+          name: host.querySelector('#ssh-name')?.value.trim() || '',
+          host: host.querySelector('#ssh-host')?.value.trim() || '',
+          port: host.querySelector('#ssh-port')?.value || 22,
+          user: host.querySelector('#ssh-user')?.value.trim() || '',
+          authType,
+          keyPath: host.querySelector('#ssh-key')?.value.trim() || '',
+          password: authType === 'password' ? (host.querySelector('#ssh-password')?.value || '') : '',
+          passphrase: authType === 'key' ? (host.querySelector('#ssh-passphrase')?.value || '') : '',
+        };
+        button.disabled = true;
+        try {
+          vstate.settings.ssh = await API.ssh.add(input);
+          paintSettings(host);
+          UI.toast('SSH host saved. Run a test to verify it.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        finally { button.disabled = false; }
+        return;
+      }
+      const sshTest = event.target.closest('[data-ssh-test]');
+      if (sshTest) {
+        const button = sshTest;
+        const row = button.closest('[data-ssh-host]');
+        const note = row?.querySelector('[data-ssh-note]');
+        button.disabled = true;
+        if (note) note.textContent = 'Connecting…';
+        try {
+          const result = await API.ssh.test({ id: button.dataset.sshTest });
+          vstate.settings.ssh = { hosts: result.hosts || [] };
+          if (note) note.textContent = result.ok ? `Connected · ${result.latencyMs} ms` : (result.message || `Exit ${result.code} · ${String(result.output || '').slice(0, 160)}`);
+          UI.toast(result.ok ? `SSH connection verified · ${result.latencyMs} ms` : `SSH connection failed · ${result.message || 'unknown error'}`, result.ok ? 'success' : 'error');
+        } catch (error) {
+          if (note) note.textContent = error.message;
+          UI.toast(error.message, 'error');
+        } finally { button.disabled = false; }
+        return;
+      }
+      const sshRemove = event.target.closest('[data-ssh-remove]');
+      if (sshRemove) {
+        const entry = sshHosts.find((item) => item.id === sshRemove.dataset.sshRemove);
+        const ok = await UI.confirm({ title: 'Remove this SSH host?', message: 'Saved credentials and the pinned host key will be deleted from this device.', confirmLabel: 'Remove host', danger: true, detail: entry ? `${entry.name} · ${entry.user}@${entry.host}` : '' });
+        if (!ok) return;
+        try {
+          vstate.settings.ssh = await API.ssh.remove(sshRemove.dataset.sshRemove);
+          paintSettings(host);
+          UI.toast('SSH host removed.', 'success');
         } catch (error) { UI.toast(error.message, 'error'); }
         return;
       }
@@ -1943,6 +2153,11 @@
           UI.toast('Search provider updated.', 'success');
         } catch (error) { UI.toast(error.message, 'error'); }
       }
+      if (event.target && event.target.id === 'ssh-auth') {
+        const password = event.target.value === 'password';
+        host.querySelectorAll('[data-ssh-key-block]').forEach((node) => { node.hidden = password; });
+        host.querySelectorAll('[data-ssh-password-block]').forEach((node) => { node.hidden = !password; });
+      }
     };
     API.media.storage().then((storage) => {
       vstate.media.storage = storage;
@@ -1964,6 +2179,7 @@
       if (!alive(host, 'settings')) return;
       vstate.media.storage = storage || vstate.media.storage;
       vstate.settings.remote = remote;
+      vstate.settings.ssh = config?.ssh || null;
       applyConfig(config);
       paintSettings(host);
       if (vstate.settings.pending) {

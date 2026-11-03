@@ -45,7 +45,7 @@
     modalRoot().appendChild(layer);
     Icons.hydrate(layer);
     lockScroll();
-    requestAnimationFrame(() => modalNode.classList.add('in'));
+    requestAnimationFrame(() => layer.classList.add('in'));
 
     const entry = { layer, modalNode, close, dismissible };
     stack.push(entry);

@@ -15,6 +15,7 @@ const { summarizeArgs } = require('../src/core/tools');
 const mediaLibrary = require('../src/core/media');
 const search = require('../src/core/search');
 const computer = require('../src/core/computer');
+const ssh = require('../src/core/ssh');
 const { createRemoteService } = require('../src/core/remote');
 const { createComputerOverlay } = require('./computer-overlay');
 const plugins = require('../src/core/plugins');
@@ -247,7 +248,7 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('config:get', async () => configWithRuntime(configModule.loadConfig()));
 
   require('electron').ipcMain.handle('config:update', async (_event, patch = {}) => {
-    const allowed = ['defaultModel', 'fallbackModel', 'theme', 'onboarded', 'agent', 'ui', 'customInstructions', 'disabledSkills', 'media', 'permissions', 'search', 'computer'];
+    const allowed = ['defaultModel', 'fallbackModel', 'theme', 'language', 'onboarded', 'agent', 'ui', 'customInstructions', 'disabledSkills', 'media', 'permissions', 'search', 'computer', 'team'];
     const clean = {};
     for (const key of allowed) {
       if (patch[key] === undefined) continue;
@@ -274,6 +275,27 @@ function registerIpc({ mcp, getWindow }) {
       if (!catalog.findModel(clean.fallbackModel, configModule.loadConfig())) throw new Error('Unknown fallback model.');
     }
     if (clean.theme && !['light', 'dark', 'system'].includes(clean.theme)) delete clean.theme;
+    if (clean.language && !['ko', 'en'].includes(clean.language)) delete clean.language;
+    if (clean.team) {
+      const team = clean.team && typeof clean.team === 'object' ? clean.team : {};
+      const next = { enabled: Boolean(team.enabled) };
+      if (Array.isArray(team.members)) {
+        const seen = new Set();
+        next.members = team.members.slice(0, 6).map((member, index) => {
+          const id = String(member?.id || `member_${index + 1}`).replace(/[^a-z0-9_-]/gi, '').slice(0, 40) || `member_${index + 1}`;
+          const unique = seen.has(id) ? `${id}_${index + 1}` : id;
+          seen.add(unique);
+          return {
+            id: unique,
+            name: String(member?.name || '').trim().slice(0, 40) || `Agent ${index + 1}`,
+            role: String(member?.role || '').trim().slice(0, 600),
+            model: String(member?.model || '').trim().slice(0, 160),
+            enabled: member?.enabled !== false,
+          };
+        }).filter((member) => member.name);
+      }
+      clean.team = next;
+    }
     if (clean.customInstructions) clean.customInstructions = String(clean.customInstructions).slice(0, 20000);
     if (clean.agent) {
       clean.agent = {
@@ -583,6 +605,63 @@ function registerIpc({ mcp, getWindow }) {
       return { ok: true, ...shot };
     } finally {
       computerShotInFlight = false;
+    }
+  });
+
+  /* -------------------------------------------------------------------- ssh */
+
+  const sshPublic = () => ({ hosts: ssh.listHosts(configModule.loadConfig()) });
+
+  require('electron').ipcMain.handle('ssh:list', async () => sshPublic());
+
+  require('electron').ipcMain.handle('ssh:add', async (_event, input = {}) => {
+    const config = configModule.loadConfig();
+    const hosts = config.ssh?.hosts || [];
+    if (hosts.length >= 24) throw new Error('You can save up to 24 SSH hosts.');
+    let host;
+    try {
+      host = ssh.normalizeHost(input);
+    } catch (err) {
+      throw new Error(err.message);
+    }
+    const password = String(input.password || '');
+    const passphrase = String(input.passphrase || '');
+    if (host.authType === 'password' && !password) throw new Error('Enter the SSH password.');
+    if (host.authType === 'key' && !host.keyPath) throw new Error('Enter the private key path.');
+    host.password = password ? ssh.seal(password) : '';
+    host.passphrase = passphrase ? ssh.seal(passphrase) : '';
+    const next = { ...config, ssh: { ...(config.ssh || {}), hosts: [...hosts, host] } };
+    configModule.saveConfig(next);
+    broadcast({ type: 'config:updated' });
+    return sshPublic();
+  });
+
+  require('electron').ipcMain.handle('ssh:remove', async (_event, id) => {
+    const config = configModule.loadConfig();
+    const hosts = (config.ssh?.hosts || []).filter((host) => host.id !== id);
+    configModule.saveConfig({ ...config, ssh: { ...(config.ssh || {}), hosts } });
+    broadcast({ type: 'config:updated' });
+    return sshPublic();
+  });
+
+  require('electron').ipcMain.handle('ssh:test', async (_event, input = {}) => {
+    const config = configModule.loadConfig();
+    const host = ssh.findHost(config, input.id || input.host);
+    try {
+      const result = await ssh.testHost(host);
+      if (result.fingerprint && result.fingerprint !== host.fingerprint) {
+        const hosts = (config.ssh?.hosts || []).map((item) => item.id === host.id ? { ...item, fingerprint: result.fingerprint } : item);
+        configModule.saveConfig({ ...config, ssh: { ...(config.ssh || {}), hosts } });
+        broadcast({ type: 'config:updated' });
+      }
+      return { ...result, hosts: ssh.listHosts(configModule.loadConfig()) };
+    } catch (error) {
+      return {
+        ok: false,
+        code: -1,
+        message: String(error?.message || error || 'SSH connection failed').replace(/^Error:\s*/, ''),
+        hosts: ssh.listHosts(configModule.loadConfig()),
+      };
     }
   });
 

@@ -25,6 +25,15 @@ Streaming responses, tool calls with per-tool approvals, a live plan rail, check
 **Tools**
 Workspace-scoped read/write/edit, glob, grep, shell commands, web fetch, configurable web search (DuckDuckGo, Brave, Tavily, Exa, Serper, SearXNG), todo plans, memory, media, MCP, and computer use.
 
+**SSH**
+Save remote hosts with sealed passwords or private keys, pin the host key fingerprint on first connect, and let the agent run approval-gated commands through `ssh_run`. Secrets stay on this device.
+
+**Agent team (MAS)**
+Enable a small team of read-only specialists — Scout, Architect and Critic by default — with per-member models and roles. `team_delegate` fans a brief out in parallel and returns the reports to the main agent. Configure it in **Settings → Agent team**.
+
+**Language**
+The interface ships in Korean and English. Switch in **Settings → General → Interface language**; the choice persists and reloads the window.
+
 **MCP and plugins**
 stdio and HTTP MCP servers with namespaced tools (`mcp__server__tool`). The Plugins page installs curated servers and skills in one click — filesystem, GitHub, Playwright, Context7, accessibility and performance audits — and MCP servers can start with the app.
 
@@ -63,8 +72,8 @@ Publishing is automated:
 2. Create a release to attach installers. The **Build installers** workflow builds Windows, macOS and Linux packages and uploads them to the GitHub Release:
 
    ```sh
-   git tag v1.0.1
-   git push origin v1.0.1
+   git tag v1.1.0
+   git push origin v1.1.0
    ```
 
 The site reads `https://api.github.com/repos/<owner>/<repo>/releases/latest`, so it updates as soon as a release is published. For local checks, serve `docs/` over HTTP with any static file server, or run `npx electron scripts/qa-site.js` to capture desktop and mobile screenshots in `qa/`.

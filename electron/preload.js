@@ -78,6 +78,13 @@ const api = {
     testScreenshot: () => invoke('computer:testScreenshot'),
   },
 
+  ssh: {
+    list: () => invoke('ssh:list'),
+    add: (input) => invoke('ssh:add', input),
+    remove: (id) => invoke('ssh:remove', id),
+    test: (input) => invoke('ssh:test', input),
+  },
+
   workspace: {
     choose: () => invoke('workspace:choose'),
     tree: () => invoke('workspace:tree'),

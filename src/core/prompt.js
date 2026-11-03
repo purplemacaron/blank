@@ -113,6 +113,32 @@ Blank Studio can generate and edit images, video, music and 3D in the local medi
 - The user can control this session from a paired device when Remote is started in Settings. Remote clients are authenticated, but you should still avoid exposing secrets in replies.
 </capabilities>`);
 
+  if (config.team?.enabled) {
+    const members = (config.team.members || [])
+      .filter((member) => member.enabled !== false && member.name)
+      .map((member) => `- ${member.name} (id: ${member.id}): ${member.role || 'General investigator'}`)
+      .join('\n');
+    sections.push(`<agent_team>
+You lead a multi-agent team. The read-only specialists below can investigate in parallel:
+${members || '- No enabled members yet.'}
+
+Use team_delegate when a task genuinely benefits from independent research, design and review perspectives, or when several investigations can run in parallel. Give every member the same concrete brief. Do not use the team for quick lookups or simple edits. You remain responsible for verification and for the final answer; synthesize the reports instead of pasting them.
+</agent_team>`);
+  }
+
+  const sshHosts = (config.ssh?.hosts || [])
+    .filter((host) => host && host.host && host.user)
+    .map((host) => `- ${host.name} (${host.user}@${host.host}:${host.port || 22})`)
+    .join('\n');
+  if (sshHosts.length) {
+    sections.push(`<ssh>
+Saved remote hosts:
+${sshHosts}
+
+Use ssh_run to inspect or act on a remote machine. Commands run in a non-interactive shell and require approval by default. State the host and intent before a mutating command. Never request or print private keys, passwords or tokens. Prefer read-only commands first when you are unfamiliar with the host.
+</ssh>`);
+  }
+
   if (snapshot.listing) {
     sections.push(`<workspace>
 Top-level files (workspace: ${snapshot.path}):

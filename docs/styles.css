@@ -319,9 +319,12 @@ code { font-family: var(--mono); font-size: 0.9em; background: var(--bg-inset); 
 .download-card:hover { border-color: var(--border-strong); }
 .download-card.is-recommended { border-color: var(--accent-border); background: linear-gradient(180deg, #fbfcff, #fff); }
 .download-card.flash { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(47, 107, 255, 0.1); }
-.download-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.os-name { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
-.os-meta { font-size: 9.5px; color: var(--text-4); letter-spacing: 0.02em; }
+.download-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.os-title { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.os-icon { display: inline-grid; place-items: center; width: 18px; height: 18px; color: var(--accent); flex: 0 0 auto; }
+.os-icon svg { width: 17px; height: 17px; display: block; }
+.os-name { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; }
+.os-meta { font-size: 9.5px; color: var(--text-4); letter-spacing: 0.02em; white-space: nowrap; }
 .os-note { margin-top: 7px; min-height: 38px; font-size: 11.5px; line-height: 1.6; color: var(--text-3); }
 .download-card .btn { margin-top: 16px; }
 .download-card.is-recommended .btn { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 1px 2px rgba(47, 107, 255, 0.24); }
@@ -330,13 +333,12 @@ code { font-family: var(--mono); font-size: 0.9em; background: var(--bg-inset); 
 .intel-link { display: inline-block; margin-top: 5px; font-size: 9.5px; color: var(--text-3); text-decoration: underline; text-underline-offset: 2px; }
 .intel-link[hidden] { display: none; }
 .recommended {
-  align-self: flex-start;
-  margin-top: 10px;
-  padding: 3px 8px;
+  flex-shrink: 0;
+  padding: 2px 7px;
   border-radius: 999px;
   background: var(--accent-soft);
   border: 1px solid var(--accent-border);
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 650;
   letter-spacing: 0.01em;
   text-transform: uppercase;
@@ -419,6 +421,7 @@ code { font-family: var(--mono); font-size: 0.9em; background: var(--bg-inset); 
 .closing > .closing-inner > p:not(.kicker) { max-width: 430px; margin: 13px auto 0; font-size: 13px; line-height: 1.75; color: var(--text-3); }
 .closing .hero-actions { justify-content: center; margin-top: 26px; }
 .closing .btn-ghost { align-items: center; }
+.closing #closing-download { align-items: center; text-align: center; }
 
 /* ------------------------------------------------------------------- foot */
 

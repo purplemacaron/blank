@@ -73,10 +73,11 @@ async function compactSession({ session, config, signal, modelId }) {
   }
 }
 
-async function runSubagent({ task, parentSession, config, modelId, workspace, signal, usageOut }) {
-  const system = `You are a read-only research sub-agent inside Blank. You have file and web tools, but cannot write or run commands. Investigate the task efficiently, using at most a few targeted tool calls. Return a compact report with concrete findings and file:line references. Do not restate the task. Do not ask questions.`;
+async function runSubagent({ task, parentSession, config, modelId, workspace, signal, usageOut, system, name }) {
+  const readonly = `You are ${name || 'a read-only research sub-agent'} inside Blank. You have file and web tools, but cannot write or run commands. Investigate the task efficiently, using at most a few targeted tool calls. Return a compact report with concrete findings and file:line references. Do not restate the task. Do not ask questions.`;
+  const prompt = system ? `${system}\n\n${readonly}` : readonly;
   const messages = [{ role: 'user', content: task }];
-  const tools = getToolDefinitions({ mode: 'plan' }).filter((tool) => ['read_file', 'list_dir', 'glob', 'grep', 'web_search', 'web_fetch'].includes(tool.name));
+  const tools = getToolDefinitions({ mode: 'plan', config }).filter((tool) => ['read_file', 'list_dir', 'glob', 'grep', 'web_search', 'web_fetch'].includes(tool.name));
   let final = '';
   for (let step = 0; step < 8; step += 1) {
     if (signal?.aborted) break;
@@ -87,7 +88,7 @@ async function runSubagent({ task, parentSession, config, modelId, workspace, si
       for await (const event of streamChat({
         modelId,
         config,
-        system,
+        system: prompt,
         messages,
         tools,
         signal,
@@ -191,6 +192,45 @@ async function runAgent({
       emit({ type: 'usage', usage: { ...session.usage } });
       return report;
     },
+    teamDelegate: async (task, wanted = []) => {
+      const team = config.team || {};
+      if (!team.enabled) return 'The agent team is disabled. Enable it in Settings → Team.';
+      const text = String(task || '').trim();
+      if (!text) return 'A task is required for the agent team.';
+      const all = (team.members || []).filter((member) => member && member.enabled !== false && member.name);
+      const picks = (Array.isArray(wanted) ? wanted : []).map(String);
+      const members = picks.length
+        ? all.filter((member) => picks.includes(member.id) || picks.includes(member.name))
+        : all;
+      if (!members.length) return 'No enabled team members matched. Check Settings → Team.';
+      if (members.length > 6) return 'Run at most six specialists at once.';
+      emit({ type: 'notice', level: 'info', text: `Agent team · ${members.map((member) => member.name).join(', ')} working in parallel.` });
+      const reports = await Promise.all(members.map(async (member) => {
+        const usageOut = { input: 0, output: 0 };
+        let report;
+        try {
+          report = await runSubagent({
+            task: text,
+            parentSession: session,
+            config,
+            modelId: member.model || activeModel,
+            workspace,
+            signal,
+            usageOut,
+            name: member.name,
+            system: `You are ${member.name}, a specialist on Blank's agent team. Work independently and do not ask the user questions.\n\nRole: ${member.role || 'Investigate the task and report concrete findings.'}`,
+          });
+        } catch (err) {
+          report = `Member failed: ${err.message}`;
+        }
+        session.usage.input += usageOut.input;
+        session.usage.output += usageOut.output;
+        return { member, report };
+      }));
+      emit({ type: 'usage', usage: { ...session.usage } });
+      emit({ type: 'notice', level: 'info', text: `Agent team finished · ${reports.length} report${reports.length === 1 ? '' : 's'}.` });
+      return reports.map(({ member, report }) => `## ${member.name}\n${String(report || '').trim() || 'No findings.'}`).join('\n\n').slice(0, 40000);
+    },
   };
 
   let didAutoCompact = false;
@@ -231,7 +271,7 @@ async function runAgent({
         }
       }
 
-      const tools = getToolDefinitions({ mode: session.mode, mcpTools });
+      const tools = getToolDefinitions({ mode: session.mode, mcpTools, config });
       const providerMsgs = providerMessages(session);
       const messageId = uid('msg_');
       let text = '';

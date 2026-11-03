@@ -9,6 +9,7 @@ const DEFAULTS = {
   fallbackModel: '',
   workspace: '',
   theme: 'light',
+  language: 'ko',
   onboarded: false,
   providers: {},
   customProviders: [],
@@ -33,6 +34,8 @@ const DEFAULTS = {
     write_file: 'ask',
     edit_file: 'ask',
     run_command: 'ask',
+    ssh_run: 'ask',
+    team_delegate: 'allow',
     mcp: 'ask',
   },
   agent: {
@@ -75,6 +78,17 @@ const DEFAULTS = {
     allowLan: false,
     allowApprovals: false,
     autoStart: false,
+  },
+  ssh: {
+    hosts: [],
+  },
+  team: {
+    enabled: false,
+    members: [
+      { id: 'scout', name: 'Scout', role: 'Map the codebase, gather evidence and return concrete file:line references, constraints and unknowns.', model: '', enabled: true },
+      { id: 'architect', name: 'Architect', role: 'Propose the smallest robust design. Name interfaces, tradeoffs, migration steps and risks.', model: '', enabled: true },
+      { id: 'critic', name: 'Critic', role: 'Find correctness, security, regression and missing-test risks. Be specific and skeptical.', model: '', enabled: true },
+    ],
   },
 };
 
@@ -336,12 +350,28 @@ function publicConfig(config, catalog) {
     hasKey: Object.fromEntries(searchKeys.map((id) => [id, true])),
     keyIds: searchKeys,
   };
+  const sshHosts = (config.ssh?.hosts || []).map(({ password, passphrase, ...rest }) => ({
+    ...rest,
+    passwordSet: Boolean(password),
+    passphraseSet: Boolean(passphrase),
+  }));
+  const team = {
+    enabled: Boolean(config.team?.enabled),
+    members: (config.team?.members || []).map((member) => ({
+      id: String(member.id || ''),
+      name: String(member.name || ''),
+      role: String(member.role || ''),
+      model: String(member.model || ''),
+      enabled: member.enabled !== false,
+    })),
+  };
   return {
     version: config.version,
     defaultModel: config.defaultModel,
     fallbackModel: config.fallbackModel,
     workspace: config.workspace,
     theme: config.theme,
+    language: config.language === 'en' ? 'en' : 'ko',
     onboarded: config.onboarded,
     providers,
     customProviders: config.customProviders,
@@ -367,6 +397,10 @@ function publicConfig(config, catalog) {
       allowApprovals: Boolean(config.remote?.allowApprovals),
       autoStart: Boolean(config.remote?.autoStart),
     },
+    ssh: {
+      hosts: sshHosts,
+    },
+    team,
   };
 }
 

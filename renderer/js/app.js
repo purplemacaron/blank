@@ -123,6 +123,16 @@
     document.documentElement.dataset.theme = resolvedTheme();
   }
 
+  function syncLanguage(config) {
+    if (!config || !Object.prototype.hasOwnProperty.call(config, 'language')) return;
+    const lang = config.language === 'en' ? 'en' : 'ko';
+    let stored = null;
+    try { stored = localStorage.getItem('blank.lang'); } catch {}
+    if (stored === lang) return;
+    try { localStorage.setItem('blank.lang', lang); } catch {}
+    if (stored !== null || lang === 'en') location.reload();
+  }
+
   function refreshSidebarModel() {
     const fullId = state.config?.defaultModel || 'sandbox/blank-1';
     const provider = providerOf(fullId);
@@ -166,6 +176,7 @@
     if (!config || typeof config !== 'object') return;
     state.config = { ...(state.config || {}), ...config };
     if (config.runtime) state.info = { ...(state.info || {}), ...config.runtime };
+    syncLanguage(config);
     applyTheme(state.config.theme);
     refreshSidebarModel();
     updateRuntimePill();

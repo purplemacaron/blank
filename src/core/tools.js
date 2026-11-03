@@ -10,6 +10,7 @@ const {
 const mediaLibrary = require('./media');
 const search = require('./search');
 const computer = require('./computer');
+const ssh = require('./ssh');
 
 const MAX_RESULT = 40000;
 const BINARY_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.zip', '.gz', '.tar', '.7z', '.exe', '.dll', '.so', '.dylib', '.mp3', '.mp4', '.mov', '.woff', '.woff2', '.ttf', '.otf', '.class', '.jar', '.wasm', '.bin']);
@@ -253,6 +254,37 @@ const TOOL_SPECS = [
       required: ['task'],
     },
     planSafe: true,
+  },
+  {
+    name: 'team_delegate',
+    label: 'Run agent team',
+    description: 'Fan one investigation out to the enabled specialist agents in parallel, then return each report. Use for complex work that benefits from independent research, design and review perspectives. All members are read-only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        task: { type: 'string', description: 'The shared task, with context and expected output for every specialist.' },
+        members: { type: 'array', items: { type: 'string' }, description: 'Optional member ids or names. Omit to run the whole enabled team.' },
+      },
+      required: ['task'],
+    },
+    planSafe: true,
+    requiresTeam: true,
+  },
+  {
+    name: 'ssh_run',
+    label: 'Run on SSH host',
+    description: 'Run a shell command on a saved SSH host and return stdout, stderr and the exit code. Use for remote builds, servers and deployments. The user must save the host in Settings → SSH first. Requires approval by default.',
+    parameters: {
+      type: 'object',
+      properties: {
+        host: { type: 'string', description: 'Saved host id, name, or user@host.' },
+        command: { type: 'string', description: 'Remote shell command to run.' },
+        cwd: { type: 'string', description: 'Optional remote working directory.' },
+        timeout_ms: { type: 'integer', description: 'Timeout in ms (default 120000, max 600000).' },
+      },
+      required: ['host', 'command'],
+    },
+    mutating: true,
   },
   {
     name: 'list_media',
@@ -860,6 +892,37 @@ async function toolEditMedia(args, ctx) {
   return collectMediaResults(finished, args, ctx);
 }
 
+async function toolSshRun(args, ctx) {
+  let host;
+  try {
+    host = ssh.findHost(ctx.config, args.host);
+  } catch (err) {
+    return { content: err.message, isError: true };
+  }
+  const command = String(args.command || '');
+  if (!command.trim()) return { content: 'command is required.', isError: true };
+  try {
+    const result = await ssh.runCommand(host, command, {
+      timeoutMs: Math.max(5000, Math.min(600000, Number(args.timeout_ms) || 120000)),
+      cwd: String(args.cwd || '').trim(),
+    });
+    const parts = [
+      `Host: ${result.host} (${host.user}@${host.host}:${host.port || 22})`,
+      `Exit code: ${result.code}`,
+      result.stdout.trim() ? `stdout:\n${result.stdout.trim()}` : '',
+      result.stderr.trim() ? `stderr:\n${result.stderr.trim()}` : '',
+      result.truncated ? '(output was truncated)' : '',
+    ].filter(Boolean);
+    return {
+      content: parts.join('\n\n'),
+      isError: result.code !== 0,
+      meta: { host: host.id, code: result.code },
+    };
+  } catch (err) {
+    return { content: `SSH error: ${err.message}`, isError: true };
+  }
+}
+
 const HANDLERS = {
   read_file: toolReadFile,
   write_file: toolWriteFile,
@@ -876,6 +939,7 @@ const HANDLERS = {
   remember: toolRemember,
   memory_search: toolMemorySearch,
   read_skill: toolReadSkill,
+  ssh_run: toolSshRun,
   list_media: toolListMedia,
   generate_media: toolGenerateMedia,
   edit_media: toolEditMedia,
@@ -885,10 +949,11 @@ function getToolDefinition(name) {
   return TOOL_SPECS.find((tool) => tool.name === name) || null;
 }
 
-function getToolDefinitions({ mode = 'agent', mcpTools = [] } = {}) {
+function getToolDefinitions({ mode = 'agent', mcpTools = [], config = null } = {}) {
   if (mode === 'ask') return [];
   const local = TOOL_SPECS
     .filter((tool) => (mode === 'plan' ? tool.planSafe : true))
+    .filter((tool) => !tool.requiresTeam || Boolean(config?.team?.enabled))
     .map(({ name, description, parameters, label }) => ({ name, description, parameters, label, source: 'local' }));
   if (mode === 'plan') return local;
   const remote = mcpTools.map((tool) => ({
@@ -936,6 +1001,11 @@ async function executeTool(call, ctx) {
   }
 
   try {
+    if (name === 'team_delegate') {
+      if (!ctx.teamDelegate) return { content: 'The agent team is not available in this runner.', isError: true };
+      const output = await ctx.teamDelegate(String(args.task || ''), Array.isArray(args.members) ? args.members : []);
+      return { content: output, meta: { delegated: true, team: true } };
+    }
     if (name === 'delegate') {
       if (!ctx.delegate) return { content: 'Sub-agents are unavailable in this runner.', isError: true };
       const output = await ctx.delegate(String(args.task || ''), ctx);
@@ -975,6 +1045,8 @@ function summarizeArgs(name, args = {}) {
   if (name === 'todo_write') return `${(args.todos || []).length} items`;
   if (name === 'remember') return args.text || '';
   if (name === 'delegate') return args.task || '';
+  if (name === 'team_delegate') return `${(args.members || []).length || 'all'} agents · ${args.task || ''}`;
+  if (name === 'ssh_run') return `${args.host || ''} · ${args.command || ''}`;
   if (name === 'generate_media') return `${args.kind || 'image'} · ${args.prompt || ''}`;
   if (name === 'edit_media') return `${args.id || ''}${args.prompt ? ` · ${args.prompt}` : ''}`;
   if (name === 'list_media') return [args.kind, args.query].filter(Boolean).join(' · ');

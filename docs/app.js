@@ -44,11 +44,9 @@
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   }
 
-  function formatDate(iso) {
-    if (!iso) return '';
-    try {
-      return new Date(iso).toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' });
-    } catch (error) { return ''; }
+  function assetCaption(asset) {
+    var kind = /\.dmg$/i.test(asset.name) ? '디스크 이미지' : /\.appimage$/i.test(asset.name) ? 'AppImage' : '설치 파일';
+    return kind + (asset.size ? ' · ' + formatBytes(asset.size) : '');
   }
 
   function versionLabel(release) {
@@ -214,7 +212,7 @@
       var title = primary.querySelector('.btn-label');
       var sub = primary.querySelector('.btn-sub');
       if (title) title.textContent = label + '용 다운로드';
-      if (sub) sub.textContent = asset.name + (asset.size ? ' · ' + formatBytes(asset.size) : '');
+      if (sub) sub.textContent = assetCaption(asset);
       primary.removeAttribute('target');
       primary.removeAttribute('rel');
     }
@@ -289,8 +287,7 @@
     var version = versionLabel(release);
     var versionNode = document.querySelector('[data-version]');
     if (versionNode && release) versionNode.textContent = 'v' + version;
-    var pillDate = release && formatDate(release.published_at);
-    setPill(release ? ('최신 v' + version + (pillDate ? ' · ' + pillDate : '')) : '아직 릴리스가 없습니다', release ? 'live' : 'warn');
+    setPill(release ? ('최신 v' + version) : '아직 릴리스가 없습니다', release ? 'live' : 'warn');
     state.assets = release ? pickAssets(release) : { windows: null, mac: null, macIntel: null, linux: null, all: [] };
     var recommendedAsset = state.assets[state.os] || null;
     if (recommendedAsset) {
