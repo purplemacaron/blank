@@ -124,12 +124,14 @@
     var windows = assets.find(function (asset) { return /\.exe$/i.test(asset.name) && /setup|install/i.test(asset.name); }) ||
       assets.find(function (asset) { return /\.exe$/i.test(asset.name); }) || null;
     var dmgs = assets.filter(function (asset) { return /\.dmg$/i.test(asset.name); });
-    var armDmg = dmgs.find(function (asset) { return isArm(asset.name); }) || null;
-    var intelDmg = dmgs.find(function (asset) { return !isArm(asset.name); }) || null;
-    var mac = state.arch === 'arm64' ? (armDmg || dmgs[0] || null) : (intelDmg || dmgs[0] || null);
+    var macArm = dmgs.find(function (asset) { return isArm(asset.name); }) || null;
+    var macIntel = dmgs.find(function (asset) { return !isArm(asset.name); }) || null;
+    if (!macArm && !macIntel && dmgs.length === 1) macIntel = dmgs[0];
+    var preferArm = state.os !== 'mac' || state.arch === 'arm64';
+    var mac = preferArm ? (macArm || macIntel) : (macIntel || macArm);
     var appImages = assets.filter(function (asset) { return /\.appimage$/i.test(asset.name); });
     var linux = appImages.find(function (asset) { return !/arm|aarch64/i.test(asset.name); }) || appImages[0] || null;
-    return { windows: windows, mac: mac, macIntel: mac && mac !== intelDmg ? intelDmg : null, linux: linux, all: assets };
+    return { windows: windows, mac: mac, macArm: macArm, macIntel: macIntel, linux: linux, all: assets };
   }
 
   function setRepoLinks() {
@@ -268,14 +270,16 @@
       }
     });
 
-    var intel = document.querySelector('[data-download="mac-intel"]');
-    if (intel) {
-      if (assets.macIntel) {
-        intel.hidden = false;
-        intel.href = assets.macIntel.browser_download_url;
+    var alt = document.querySelector('[data-download="mac-alt"]');
+    if (alt) {
+      var other = assets.mac === assets.macArm ? assets.macIntel : assets.macArm;
+      if (assets.mac && other && other !== assets.mac) {
+        alt.hidden = false;
+        alt.href = other.browser_download_url;
+        alt.textContent = other === assets.macArm ? 'Apple silicon build' : 'Intel Mac build';
       } else {
-        intel.hidden = true;
-        intel.removeAttribute('href');
+        alt.hidden = true;
+        alt.removeAttribute('href');
       }
     }
   }

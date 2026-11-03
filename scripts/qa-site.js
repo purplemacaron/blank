@@ -22,9 +22,10 @@ async function makeWindow(width, height) {
   win.webContents.on('console-message', (event, level, message) => {
     if (level >= 2) errors.push(message);
   });
-  const url = `file:///${path.join(ROOT, 'docs', 'index.html').replace(/\\/g, '/')}?demo=1`;
+  const live = process.env.SITE_URL;
+  const url = live || `file:///${path.join(ROOT, 'docs', 'index.html').replace(/\\/g, '/')}?demo=1`;
   await win.loadURL(url);
-  await sleep(1400);
+  await sleep(live ? 3200 : 1400);
   return { win, errors };
 }
 
@@ -54,6 +55,8 @@ app.whenReady().then(async () => {
       tagVisible: !(card.querySelector('.recommended') || {}).hidden,
       button: (card.querySelector('.btn') || {}).className || '',
       href: (card.querySelector('[data-download]') || {}).getAttribute ? card.querySelector('[data-download]').getAttribute('href') : '',
+      altVisible: card.dataset.osCard === 'mac' ? !document.querySelector('[data-download="mac-alt"]').hidden : null,
+      altLabel: card.dataset.osCard === 'mac' ? document.querySelector('[data-download="mac-alt"]').textContent : null,
     })),
     repoLinksHidden: [...document.querySelectorAll('[data-repo-link]')].every((el) => el.hidden),
   }))()`);
