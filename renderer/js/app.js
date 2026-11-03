@@ -1191,7 +1191,7 @@
           <div class="field-label" style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:7px">Choose a starting model</div>
           <div class="onboard-cards">${choices.map((choice) => `<button class="onboard-choice ${choice.fullId === draftModel ? 'selected' : ''}" type="button" data-onboard-model="${U.attr(choice.fullId)}">
             ${UI.providerMono(choice.provider)}
-            <span class="onboard-choice-copy"><span class="onboard-choice-name">${U.esc(choice.model.name)}</span><span class="onboard-choice-desc">${U.esc(choice.provider.name)} · ${U.esc(choice.tagline)} — ${U.esc(choice.description)}</span></span>
+            <span class="onboard-choice-copy"><span class="onboard-choice-name">${U.esc(choice.model.name)}</span><span class="onboard-choice-desc">${U.esc(choice.provider.name)}</span></span>
             <span class="radio-dot"></span>
           </button>`).join('')}</div>
         </div>
