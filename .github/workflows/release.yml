@@ -18,6 +18,8 @@ jobs:
             target: windows
           - os: macos-latest
             target: macos
+          - os: macos-15-intel
+            target: macos-intel
           - os: ubuntu-latest
             target: linux
     runs-on: ${{ matrix.os }}

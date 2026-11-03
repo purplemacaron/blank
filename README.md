@@ -63,8 +63,8 @@ Publishing is automated:
 2. Create a release to attach installers. The **Build installers** workflow builds Windows, macOS and Linux packages and uploads them to the GitHub Release:
 
    ```sh
-   git tag v1.0.0
-   git push origin v1.0.0
+   git tag v1.0.1
+   git push origin v1.0.1
    ```
 
 The site reads `https://api.github.com/repos/<owner>/<repo>/releases/latest`, so it updates as soon as a release is published. For local checks, serve `docs/` over HTTP with any static file server, or run `npx electron scripts/qa-site.js` to capture desktop and mobile screenshots in `qa/`.
