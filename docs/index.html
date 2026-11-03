@@ -1,19 +1,20 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Blank — a quiet desktop agent harness</title>
-  <meta name="description" content="Blank is a local-first desktop agent harness. Every model, MCP tools, computer use, remote control, memory and a full media studio on one quiet canvas. Download for Windows, macOS or Linux." />
+  <title>Blank — 조용한 데스크톱 에이전트 하네스</title>
+  <meta name="description" content="Blank는 로컬 우선 데스크톱 에이전트 하네스입니다. 모든 모델, MCP 도구, 컴퓨터 유즈, 원격 제어, 메모리, 미디어 스튜디오를 하나의 조용한 캔버스에 담았습니다. Windows, macOS, Linux용으로 다운로드하세요." />
   <meta name="theme-color" content="#ffffff" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'; object-src 'none'" />
-  <meta property="og:title" content="Blank — a quiet desktop agent harness" />
-  <meta property="og:description" content="Every model, MCP tools, computer use, remote control, memory and a full media studio. Local-first. One quiet canvas." />
+  <meta property="og:title" content="Blank — 조용한 데스크톱 에이전트 하네스" />
+  <meta property="og:description" content="모든 모델과 MCP 도구, 컴퓨터 유즈, 원격 제어, 메모리, 미디어 스튜디오. 로컬 우선. 하나의 조용한 캔버스." />
   <meta property="og:type" content="website" />
+  <meta property="og:locale" content="ko_KR" />
   <meta property="og:image" content="media/social.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Blank — a quiet desktop agent harness" />
-  <meta name="twitter:description" content="Every model, MCP tools, computer use, remote control, memory and a full media studio. Local-first. One quiet canvas." />
+  <meta name="twitter:title" content="Blank — 조용한 데스크톱 에이전트 하네스" />
+  <meta name="twitter:description" content="모든 모델과 MCP 도구, 컴퓨터 유즈, 원격 제어, 메모리, 미디어 스튜디오. 로컬 우선. 하나의 조용한 캔버스." />
   <meta name="twitter:image" content="media/social.png" />
   <link rel="stylesheet" href="styles.css" />
   <script src="config.js" defer></script>
@@ -22,23 +23,23 @@
 <body>
   <header class="site-head">
     <div class="shell head-inner">
-      <a class="wordmark" href="#top" aria-label="Blank home">blank</a>
-      <nav class="nav" aria-label="Primary">
-        <a href="#features">Features</a>
-        <a href="#tour">Inside</a>
-        <a href="#install">Install</a>
+      <a class="wordmark" href="#top" aria-label="Blank 홈">blank</a>
+      <nav class="nav" aria-label="주요 메뉴">
+        <a href="#features">기능</a>
+        <a href="#tour">미리보기</a>
+        <a href="#install">설치</a>
         <a href="#faq">FAQ</a>
         <a class="nav-repo" data-repo-link href="https://github.com" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
       </nav>
-      <a class="btn btn-primary btn-sm nav-cta" href="#install">Download</a>
-      <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" data-menu>
+      <a class="btn btn-primary btn-sm nav-cta" href="#install">다운로드</a>
+      <button class="menu-btn" type="button" aria-label="메뉴 열기" aria-expanded="false" data-menu>
         <span></span><span></span>
       </button>
     </div>
     <div class="mobile-nav" data-mobile-nav hidden>
-      <a href="#features">Features</a>
-      <a href="#tour">Inside</a>
-      <a href="#install">Install</a>
+      <a href="#features">기능</a>
+      <a href="#tour">미리보기</a>
+      <a href="#install">설치</a>
       <a href="#faq">FAQ</a>
       <a data-repo-link href="https://github.com" target="_blank" rel="noreferrer">GitHub ↗</a>
     </div>
@@ -47,18 +48,18 @@
   <main id="top">
     <section class="hero shell">
       <div class="hero-copy">
-        <p class="eyebrow"><span class="pulse" aria-hidden="true"></span> Desktop agent harness · Local-first</p>
-        <h1>A quieter<br />way to build.</h1>
-        <p class="lead">Blank brings every model, tool, and idea onto one white canvas. Chat, code, MCP, computer use, remote control, memory, and a full media studio — with your keys and sessions kept on your machine.</p>
+        <p class="eyebrow"><span class="pulse" aria-hidden="true"></span> 데스크톱 에이전트 하네스 · 로컬 우선</p>
+        <h1>더 조용한<br />작업 방식.</h1>
+        <p class="lead">모든 모델과 도구, 아이디어를 하나의 하얀 캔버스에. 채팅, 코드, MCP, 컴퓨터 유즈, 원격 제어, 메모리, 미디어 스튜디오까지. 키와 세션은 이 기기에 남습니다.</p>
         <div class="hero-actions">
           <a class="btn btn-primary btn-lg" id="primary-download" href="#install">
-            <span class="btn-label" id="primary-label">Get Blank</span>
+            <span class="btn-label" id="primary-label">Blank 받기</span>
             <span class="btn-sub" id="primary-sub">Windows · macOS · Linux</span>
           </a>
-          <a class="btn btn-ghost btn-lg" id="all-releases" href="#install">All downloads</a>
+          <a class="btn btn-ghost btn-lg" id="all-releases" href="#install">모든 다운로드</a>
         </div>
-        <p class="release-line"><span data-version>Free &amp; open source</span><span class="dot-sep">·</span><span>MIT</span><span class="dot-sep">·</span><span>No account required</span></p>
-        <div class="platform-row" aria-label="Available platforms">
+        <p class="release-line"><span data-version>무료 · 오픈 소스</span><span class="dot-sep">·</span><span>MIT</span><span class="dot-sep">·</span><span>계정 불필요</span></p>
+        <div class="platform-row" aria-label="지원 플랫폼">
           <a data-platform-jump="windows" href="#install">Windows</a>
           <span class="dot-sep">·</span>
           <a data-platform-jump="mac" href="#install">macOS</a>
@@ -68,84 +69,84 @@
       </div>
       <figure class="hero-shot">
         <div class="shot-frame">
-          <img src="media/blank-chat.webp" width="1440" height="900" alt="Blank chat interface with a white canvas, blue accent, new session sidebar and a project rail." fetchpriority="high" />
+          <img src="media/blank-chat.webp" width="1440" height="900" alt="흰 캔버스와 파란 포인트, 세션 사이드바와 플랜 레일이 있는 Blank 채팅 화면." fetchpriority="high" />
         </div>
-        <figcaption><span>Blank 1.0</span><span>Chat · tools · plan rail</span></figcaption>
+        <figcaption><span>Blank 1.0</span><span>채팅 · 도구 · 플랜 레일</span></figcaption>
       </figure>
     </section>
 
-    <section class="shell proof" aria-label="Highlights">
-      <div><strong>13</strong><span>built-in providers</span></div>
-      <div><strong>∞</strong><span>keys per provider</span></div>
-      <div><strong>MCP</strong><span>plugins, skills, memory</span></div>
-      <div><strong>4</strong><span>media types, one studio</span></div>
+    <section class="shell proof" aria-label="주요 특징">
+      <div><strong>13</strong><span>내장 프로바이더</span></div>
+      <div><strong>∞</strong><span>프로바이더당 키</span></div>
+      <div><strong>MCP</strong><span>플러그인, 스킬, 메모리</span></div>
+      <div><strong>4</strong><span>미디어 유형, 하나의 스튜디오</span></div>
     </section>
 
     <section class="section shell" id="features">
       <div class="section-head">
         <div>
-          <p class="kicker">Everything, quietly</p>
-          <h2>One harness for the whole session.</h2>
+          <p class="kicker">모든 것을, 조용히</p>
+          <h2>한 세션을 위한 하나의 하네스.</h2>
         </div>
-        <p class="section-note">Blank stays out of the way while it works. Approvals, plans, and context stay visible, not in a wall of chrome.</p>
+        <p class="section-note">Blank는 작업하는 동안 비켜서 있습니다. 승인과 계획, 컨텍스트는 보이게. 불필요한 UI는 없게.</p>
       </div>
       <div class="feature-grid">
         <article class="feature">
           <span class="feature-index">01</span>
-          <h3>Models without lock-in</h3>
-          <p>Anthropic, OpenAI, Google, OpenRouter, xAI, DeepSeek, Mistral, Groq, Together, Cerebras, Ollama and LM Studio. Add any OpenAI-, Anthropic- or Gemini-compatible endpoint.</p>
+          <h3>모델에 얽매이지 않기</h3>
+          <p>Anthropic, OpenAI, Google, OpenRouter, xAI, DeepSeek, Mistral, Groq, Together, Cerebras, Ollama, LM Studio를 기본 지원합니다. OpenAI, Anthropic, Gemini 호환 엔드포인트도 추가할 수 있습니다.</p>
         </article>
         <article class="feature">
           <span class="feature-index">02</span>
-          <h3>Keys that keep working</h3>
-          <p>Save several keys per provider with labels. Blank rotates automatically on auth errors and rate limits, then falls back to your backup model.</p>
+          <h3>계속 작동하는 키</h3>
+          <p>프로바이더마다 여러 키를 이름과 함께 저장하세요. 인증 오류와 요청 한도에 자동으로 로테이션하고, 백업 모델로 전환합니다.</p>
         </article>
         <article class="feature">
           <span class="feature-index">03</span>
-          <h3>Tools that actually act</h3>
-          <p>Read and edit files, explore the workspace, run shell commands, search the web, and drive the desktop with a visible cursor. The approval matrix is yours.</p>
+          <h3>실제로 움직이는 도구</h3>
+          <p>파일 읽기와 편집, 워크스페이스 탐색, 셸 명령, 웹 검색, 커서가 보이는 데스크톱 제어까지. 승인 규칙은 직접 정합니다.</p>
         </article>
         <article class="feature">
           <span class="feature-index">04</span>
-          <h3>MCP, plugins, memory</h3>
-          <p>stdio and HTTP MCP servers, one-click plugins, reusable skills, durable memory, checkpoints, compaction and opt-in self-improvement notes.</p>
+          <h3>MCP, 플러그인, 메모리</h3>
+          <p>stdio와 HTTP MCP 서버, 원클릭 플러그인, 재사용 가능한 스킬, 영구 메모리, 체크포인트, 컨텍스트 압축, 선택형 자기개선 노트.</p>
         </article>
         <article class="feature">
           <span class="feature-index">05</span>
-          <h3>Your phone, optionally</h3>
-          <p>Start an authenticated remote session from Settings. Per-start pairing tokens, loopback by default, LAN and remote approvals only when you ask for them.</p>
+          <h3>원하면, 폰으로</h3>
+          <p>설정에서 인증된 원격 세션을 시작하세요. 시작마다 새 페어링 토큰을 발급하고 기본은 루프백입니다. LAN과 원격 승인은 직접 허용할 때만 열립니다.</p>
         </article>
         <article class="feature">
           <span class="feature-index">06</span>
-          <h3>A studio in the same app</h3>
-          <p>Images, video, audio and 3D meshes with offline Blank engines and optional cloud providers. Everything lands in a local library you can export.</p>
+          <h3>앱 안의 스튜디오</h3>
+          <p>오프라인 Blank 엔진과 선택형 클라우드 프로바이더로 이미지, 영상, 오디오, 3D 메시를 만듭니다. 모든 결과는 내보낼 수 있는 로컬 라이브러리에 저장됩니다.</p>
         </article>
       </div>
       <div class="detail-row">
-        <span>Send while responding — messages queue in the composer</span>
-        <span>Checkpoints and compaction</span>
-        <span>CLI included</span>
-        <span>White by default</span>
+        <span>응답 중에도 전송 — 입력창에서 대기</span>
+        <span>체크포인트와 컨텍스트 압축</span>
+        <span>CLI 포함</span>
+        <span>기본은 화이트</span>
       </div>
     </section>
 
     <section class="section shell" id="tour">
       <div class="section-head">
         <div>
-          <p class="kicker">Inside the app</p>
-          <h2>Deep where it counts. Calm everywhere else.</h2>
+          <p class="kicker">앱 내부</p>
+          <h2>중요한 곳은 깊게. 나머지는 조용하게.</h2>
         </div>
-        <p class="section-note">A 800px reading column, a quiet plan rail, and keyboards that work like an IDE. The interface is classic scripts on purpose — no build step, no hidden client bundle.</p>
+        <p class="section-note">800px 읽기 폭, 조용한 플랜 레일, IDE처럼 움직이는 키보드. 빌드 단계도 숨은 번들도 없는 클래식 스크립트 인터페이스.</p>
       </div>
       <div class="gallery">
-        <div class="gallery-bar" role="tablist" aria-label="Screenshots">
-          <button class="gallery-tab active" type="button" role="tab" aria-selected="true" data-shot="media/blank-studio.webp" data-shot-alt="Blank media studio with an image, video, audio and 3D asset library.">Studio</button>
-          <button class="gallery-tab" type="button" role="tab" aria-selected="false" data-shot="media/blank-providers.webp" data-shot-alt="Blank provider detail with multiple API keys, rotation and model selection.">Providers</button>
-          <button class="gallery-tab" type="button" role="tab" aria-selected="false" data-shot="media/blank-chat.webp" data-shot-alt="Blank chat with a workspace plan rail and tool approvals.">Chat</button>
-          <span class="gallery-caption" id="gallery-caption">Media library · local assets · engine status</span>
+        <div class="gallery-bar" role="tablist" aria-label="스크린샷">
+          <button class="gallery-tab active" type="button" role="tab" aria-selected="true" data-shot="media/blank-studio.webp" data-shot-alt="이미지, 영상, 오디오, 3D 자산 라이브러리가 있는 Blank 미디어 스튜디오.">스튜디오</button>
+          <button class="gallery-tab" type="button" role="tab" aria-selected="false" data-shot="media/blank-providers.webp" data-shot-alt="여러 API 키와 로테이션, 모델 선택이 보이는 Blank 프로바이더 화면.">프로바이더</button>
+          <button class="gallery-tab" type="button" role="tab" aria-selected="false" data-shot="media/blank-chat.webp" data-shot-alt="플랜 레일과 도구 승인이 보이는 Blank 채팅 화면.">채팅</button>
+          <span class="gallery-caption" id="gallery-caption">미디어 라이브러리 · 로컬 자산 · 엔진 상태</span>
         </div>
         <div class="gallery-frame">
-          <img id="gallery-image" src="media/blank-studio.webp" width="1440" height="900" alt="Blank media studio with an image, video, audio and 3D asset library." loading="lazy" />
+          <img id="gallery-image" src="media/blank-studio.webp" width="1440" height="900" alt="이미지, 영상, 오디오, 3D 자산 라이브러리가 있는 Blank 미디어 스튜디오." loading="lazy" />
         </div>
       </div>
     </section>
@@ -153,12 +154,12 @@
     <section class="section shell install" id="install">
       <div class="section-head">
         <div>
-          <p class="kicker">Install</p>
-          <h2>One click. Then a quieter workspace.</h2>
+          <p class="kicker">설치</p>
+          <h2>한 번의 클릭. 그다음은 조용한 공간.</h2>
         </div>
         <div class="release-pill" id="release-pill" aria-live="polite">
           <span class="pulse" aria-hidden="true"></span>
-          <span id="release-pill-text">Checking the latest release…</span>
+          <span id="release-pill-text">최신 릴리스 확인 중…</span>
         </div>
       </div>
 
@@ -168,47 +169,47 @@
             <span class="os-name">Windows</span>
             <span class="os-meta">10 / 11 · x64</span>
           </div>
-          <p class="os-note">Installer (.exe). No build tools, no package manager.</p>
-          <a class="btn btn-ghost btn-block" data-download="windows" href="https://github.com" target="_blank" rel="noreferrer">Get the installer</a>
-          <span class="asset" data-asset="windows">Latest release</span>
-          <span class="recommended" hidden>Recommended for this device</span>
+          <p class="os-note">설치 파일(.exe). 빌드 도구도 패키지 관리자도 필요 없습니다.</p>
+          <a class="btn btn-ghost btn-block" data-download="windows" href="https://github.com" target="_blank" rel="noreferrer">설치 파일 받기</a>
+          <span class="asset" data-asset="windows">최신 릴리스</span>
+          <span class="recommended" hidden>이 기기에 권장</span>
         </article>
         <article class="download-card" data-os-card="mac">
           <div class="download-top">
             <span class="os-name">macOS</span>
             <span class="os-meta">Apple silicon &amp; Intel</span>
           </div>
-          <p class="os-note">Disk image (.dmg). Drag Blank into Applications.</p>
-          <a class="btn btn-ghost btn-block" data-download="mac" href="https://github.com" target="_blank" rel="noreferrer">Get the disk image</a>
-          <span class="asset" data-asset="mac">Latest release</span>
-          <a class="intel-link" data-download="mac-alt" target="_blank" rel="noreferrer" hidden>Intel Mac build</a>
-          <span class="recommended" hidden>Recommended for this device</span>
+          <p class="os-note">디스크 이미지(.dmg). Applications로 끌어다 놓으세요.</p>
+          <a class="btn btn-ghost btn-block" data-download="mac" href="https://github.com" target="_blank" rel="noreferrer">디스크 이미지 받기</a>
+          <span class="asset" data-asset="mac">최신 릴리스</span>
+          <a class="intel-link" data-download="mac-alt" target="_blank" rel="noreferrer" hidden>Intel Mac 빌드</a>
+          <span class="recommended" hidden>이 기기에 권장</span>
         </article>
         <article class="download-card" data-os-card="linux">
           <div class="download-top">
             <span class="os-name">Linux</span>
             <span class="os-meta">x64 · AppImage</span>
           </div>
-          <p class="os-note">Portable AppImage. Make it executable and run.</p>
-          <a class="btn btn-ghost btn-block" data-download="linux" href="https://github.com" target="_blank" rel="noreferrer">Get the AppImage</a>
-          <span class="asset" data-asset="linux">Latest release</span>
-          <span class="recommended" hidden>Recommended for this device</span>
+          <p class="os-note">포터블 AppImage. 실행 권한만 주면 됩니다.</p>
+          <a class="btn btn-ghost btn-block" data-download="linux" href="https://github.com" target="_blank" rel="noreferrer">AppImage 받기</a>
+          <span class="asset" data-asset="linux">최신 릴리스</span>
+          <span class="recommended" hidden>이 기기에 권장</span>
         </article>
       </div>
 
       <div class="install-notes">
         <div class="steps">
-          <div class="step"><span>1</span><div><strong>Download</strong><p>The button picks the matching build for this device.</p></div></div>
-          <div class="step"><span>2</span><div><strong>Open</strong><p>Run the installer. First launch works without a key on the sandbox model.</p></div></div>
-          <div class="step"><span>3</span><div><strong>Connect</strong><p>Add a provider key when you are ready. Keys stay in <code>~/.blank</code>.</p></div></div>
+          <div class="step"><span>1</span><div><strong>다운로드</strong><p>버튼이 이 기기에 맞는 빌드를 골라줍니다.</p></div></div>
+          <div class="step"><span>2</span><div><strong>실행</strong><p>설치 파일을 실행하세요. 첫 실행은 샌드박스 모델로 키 없이도 열립니다.</p></div></div>
+          <div class="step"><span>3</span><div><strong>연결</strong><p>준비되면 프로바이더 키를 추가하세요. 키는 <code>~/.blank</code>에 남습니다.</p></div></div>
         </div>
         <div class="install-side">
-          <p class="side-title">Before you install</p>
-          <p>Builds are unsigned for now. Windows may show SmartScreen — choose <em>More info → Run anyway</em>. macOS may ask you to allow the app in <em>Privacy &amp; Security</em>. On Linux, run <code>chmod +x Blank-*.AppImage</code> first.</p>
+          <p class="side-title">설치 전에</p>
+          <p>아직 빌드에 서명이 없습니다. Windows는 SmartScreen이 뜰 수 있으니 <em>추가 정보 → 실행</em>을 선택하세요. macOS는 <em>개인정보 보호 및 보안</em>에서 앱을 허용해야 할 수 있습니다. Linux는 먼저 <code>chmod +x Blank-*.AppImage</code>를 실행하세요.</p>
           <p class="side-links">
-            <a data-repo-link href="https://github.com" target="_blank" rel="noreferrer">Source</a>
-            <a id="releases-link" href="#install" target="_blank" rel="noreferrer">All releases</a>
-            <a href="#faq">Read the FAQ</a>
+            <a data-repo-link href="https://github.com" target="_blank" rel="noreferrer">소스</a>
+            <a id="releases-link" href="#install" target="_blank" rel="noreferrer">모든 릴리스</a>
+            <a href="#faq">FAQ 보기</a>
           </p>
         </div>
       </div>
@@ -217,50 +218,50 @@
     <section class="section shell" id="faq">
       <div class="section-head">
         <div>
-          <p class="kicker">Questions</p>
-          <h2>Short answers.</h2>
+          <p class="kicker">질문</p>
+          <h2>짧은 답변.</h2>
         </div>
-        <p class="section-note">More detail lives in the repository README.</p>
+        <p class="section-note">더 자세한 내용은 저장소 README에 있습니다.</p>
       </div>
       <div class="faq-grid">
         <details>
-          <summary>Do I need an API key to start?</summary>
-          <p>No. Blank opens on an offline sandbox model, and the UI, studio, plans and settings work without a key. Connect a provider when you want real model calls.</p>
+          <summary>시작하려면 API 키가 필요한가요?</summary>
+          <p>아니요. Blank는 오프라인 샌드박스 모델로 열리고, UI와 스튜디오, 플랜, 설정은 키 없이도 동작합니다. 실제 모델 호출이 필요할 때 프로바이더를 연결하세요.</p>
         </details>
         <details>
-          <summary>Where does my data live?</summary>
-          <p>Everything is plain files under <code>~/.blank</code>: config, sessions, memory, skills, checkpoints and media. Set <code>BLANK_HOME</code> to move it. Requests go directly from your machine to the provider you choose.</p>
+          <summary>데이터는 어디에 저장되나요?</summary>
+          <p>모든 것이 <code>~/.blank</code> 아래의 일반 파일입니다. 설정, 세션, 메모리, 스킬, 체크포인트, 미디어가 여기에 있습니다. <code>BLANK_HOME</code>으로 위치를 옮길 수 있습니다. 요청은 당신의 컴퓨터에서 선택한 프로바이더로 바로 전송됩니다.</p>
         </details>
         <details>
-          <summary>Can the agent use my computer and files?</summary>
-          <p>Only inside the tools you allow. Writes, commands, computer use and media generation ask by default; the approval matrix in Settings is the final say.</p>
+          <summary>에이전트가 제 컴퓨터와 파일을 쓸 수 있나요?</summary>
+          <p>허용한 도구 안에서만 가능합니다. 쓰기, 명령 실행, 컴퓨터 유즈, 미디어 생성은 기본적으로 승인을 요청합니다. 설정의 승인 매트릭스가 최종 기준입니다.</p>
         </details>
         <details>
-          <summary>Is remote control always on?</summary>
-          <p>No. It is opt-in. Starting remote control issues a fresh pairing token and binds to loopback unless you explicitly allow LAN access.</p>
+          <summary>원격 제어는 항상 켜져 있나요?</summary>
+          <p>아니요. 직접 켜야 합니다. 원격 제어를 시작하면 새 페어링 토큰이 발급되고, LAN 접근을 명시적으로 허용하지 않는 한 루프백에만 바인딩됩니다.</p>
         </details>
         <details>
-          <summary>How do updates work?</summary>
-          <p>Install the latest build from this page or GitHub Releases. A new installer replaces the old app; your <code>~/.blank</code> data stays where it is.</p>
+          <summary>업데이트는 어떻게 하나요?</summary>
+          <p>이 페이지나 GitHub Releases에서 최신 빌드를 설치하세요. 새 설치 파일이 기존 앱을 대체하며, <code>~/.blank</code> 데이터는 그대로 남습니다.</p>
         </details>
         <details>
-          <summary>Is it really open source?</summary>
-          <p>Yes. Blank is MIT licensed. The renderer is classic, readable scripts and the core is plain Node.js.</p>
+          <summary>정말 오픈 소스인가요?</summary>
+          <p>네. Blank는 MIT 라이선스입니다. 렌더러는 읽기 쉬운 클래식 스크립트이고, 코어는 순수 Node.js입니다.</p>
         </details>
       </div>
     </section>
 
     <section class="shell closing">
       <div class="closing-inner">
-        <p class="kicker">Start small</p>
-        <h2>Open a quiet canvas.</h2>
-        <p>Download Blank, open one session, and let the harness handle the rest.</p>
+        <p class="kicker">작게 시작</p>
+        <h2>조용한 캔버스를 열어보세요.</h2>
+        <p>Blank를 받고 세션 하나를 여세요. 나머지는 하네스가 처리합니다.</p>
         <div class="hero-actions">
           <a class="btn btn-primary btn-lg" id="closing-download" href="#install">
-            <span class="btn-label">Get Blank</span>
+            <span class="btn-label">Blank 받기</span>
             <span class="btn-sub">Windows · macOS · Linux</span>
           </a>
-          <a class="btn btn-ghost btn-lg" data-repo-link href="https://github.com" target="_blank" rel="noreferrer">View source</a>
+          <a class="btn btn-ghost btn-lg" data-repo-link href="https://github.com" target="_blank" rel="noreferrer">소스 보기</a>
         </div>
       </div>
     </section>
@@ -270,16 +271,16 @@
     <div class="shell foot-inner">
       <div>
         <a class="wordmark" href="#top">blank</a>
-        <p>A quiet, local-first agent harness.<br />MIT licensed. Built to stay yours.</p>
+        <p>조용하고 로컬 우선인 에이전트 하네스.<br />MIT 라이선스. 당신의 것으로 남도록.</p>
       </div>
       <div class="foot-links">
         <a data-repo-link href="https://github.com" target="_blank" rel="noreferrer">GitHub</a>
-        <a id="foot-releases" href="#install" target="_blank" rel="noreferrer">Releases</a>
-        <a href="#features">Features</a>
-        <a href="#install">Install</a>
+        <a id="foot-releases" href="#install" target="_blank" rel="noreferrer">릴리스</a>
+        <a href="#features">기능</a>
+        <a href="#install">설치</a>
         <a href="#faq">FAQ</a>
       </div>
-      <p class="foot-note">Downloads are served from GitHub Releases.<br />© <span id="year">2026</span> Blank</p>
+      <p class="foot-note">다운로드는 GitHub Releases에서 제공합니다.<br />© <span id="year">2026</span> Blank</p>
     </div>
   </footer>
 </body>
