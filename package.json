@@ -15,7 +15,7 @@
     "cli": "node bin/blank.js",
     "test": "node --test test/",
     "preview": "node scripts/preview-server.js",
-    "dist": "electron-builder"
+    "dist": "electron-builder --publish never"
   },
   "devDependencies": {
     "electron": "^45.2.1",
