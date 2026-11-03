@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: blank-media:; media-src 'self' data: blob: blank-media:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'self';" />
+  <title>Blank</title>
+  <link rel="icon" href="../assets/logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="studio.css" />
+</head>
+<body>
+  <div class="app-frame" id="app-frame">
+    <header class="titlebar" id="titlebar">
+      <div class="titlebar-left">
+        <button class="titlebar-menu-btn" id="mobile-menu" type="button" aria-label="Open navigation">
+          <span data-icon="layout"></span>
+        </button>
+        <div class="brand" data-action="home" title="Blank">
+          <span class="brand-word">blank</span>
+        </div>
+        <span class="titlebar-sep" aria-hidden="true"></span>
+        <button class="workspace-chip" id="workspace-chip" type="button" title="Workspace">
+          <span class="ws-icon" data-icon="folder"></span>
+          <span class="ws-name" id="workspace-name">workspace</span>
+          <span class="ws-caret" data-icon="chevron-down"></span>
+        </button>
+      </div>
+      <div class="titlebar-center">
+        <button class="palette-trigger" id="palette-trigger" type="button">
+          <span data-icon="search"></span>
+          <span>Search or jump to…</span>
+          <kbd class="kbd" id="kbd-palette">Ctrl K</kbd>
+        </button>
+      </div>
+      <div class="titlebar-right">
+        <span class="runtime-pill" id="runtime-pill" title="Local runtime">
+          <span class="pulse-dot" id="runtime-dot"></span>
+          <span id="runtime-label">Local</span>
+        </span>
+        <div class="window-controls" id="window-controls" aria-label="Window controls">
+          <button class="window-btn" data-win="minimize" type="button" title="Minimize" aria-label="Minimize">
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6h8" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+          </button>
+          <button class="window-btn" data-win="maximize" type="button" title="Maximize" aria-label="Maximize">
+            <svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2.4" y="2.4" width="7.2" height="7.2" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
+          </button>
+          <button class="window-btn close" data-win="close" type="button" title="Close" aria-label="Close">
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.7 2.7l6.6 6.6M9.3 2.7L2.7 9.3" stroke="currentColor" stroke-width="1.15" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <aside class="sidebar" id="sidebar" aria-label="Sidebar">
+        <div class="sidebar-top">
+          <button class="new-session" id="new-session" type="button">
+            <span data-icon="plus"></span>
+            <span>New session</span>
+            <kbd class="kbd new-kbd" id="kbd-new">Ctrl N</kbd>
+          </button>
+        </div>
+        <div class="sidebar-scroll">
+          <nav class="side-nav" id="side-nav" aria-label="Workspace">
+            <button class="nav-item" data-page="chat" type="button">
+              <span class="nav-icon" data-icon="message"></span><span class="nav-label">Chat</span>
+            </button>
+            <button class="nav-item" data-page="studio" type="button">
+              <span class="nav-icon" data-icon="wand"></span><span class="nav-label">Studio</span>
+              <span class="nav-badge accent" id="badge-studio" hidden></span>
+            </button>
+            <button class="nav-item" data-page="models" type="button">
+              <span class="nav-icon" data-icon="sparkles"></span><span class="nav-label">Models</span>
+              <span class="nav-badge" id="badge-models" hidden></span>
+            </button>
+            <button class="nav-item" data-page="skills" type="button">
+              <span class="nav-icon" data-icon="layers"></span><span class="nav-label">Skills</span>
+              <span class="nav-count" id="badge-skills"></span>
+            </button>
+            <button class="nav-item" data-page="memory" type="button">
+              <span class="nav-icon" data-icon="brain"></span><span class="nav-label">Memory</span>
+              <span class="nav-count" id="badge-memory"></span>
+            </button>
+            <button class="nav-item" data-page="mcp" type="button">
+              <span class="nav-icon" data-icon="plug"></span><span class="nav-label">MCP</span>
+              <span class="nav-count" id="badge-mcp"></span>
+            </button>
+            <button class="nav-item" data-page="plugins" type="button">
+              <span class="nav-icon" data-icon="grid"></span><span class="nav-label">Plugins</span>
+            </button>
+            <button class="nav-item" data-page="learning" type="button">
+              <span class="nav-icon" data-icon="zap"></span><span class="nav-label">Learning</span>
+              <span class="nav-badge accent" id="badge-learning" hidden></span>
+            </button>
+          </nav>
+
+          <div class="sessions-block" id="sessions-block">
+            <div class="side-label-row">
+              <span class="side-label">Sessions</span>
+              <button class="mini-icon" id="session-filter-btn" type="button" title="Filter sessions">
+                <span data-icon="search"></span>
+              </button>
+            </div>
+            <div class="session-search" id="session-search-wrap" hidden>
+              <span data-icon="search"></span>
+              <input type="text" id="session-search" placeholder="Filter sessions" spellcheck="false" />
+              <button class="mini-icon" id="session-search-clear" type="button" title="Clear"><span data-icon="x"></span></button>
+            </div>
+            <div class="session-list" id="session-list"></div>
+          </div>
+        </div>
+        <div class="sidebar-footer">
+          <button class="model-mini" id="sidebar-model" type="button" title="Default model">
+            <span class="provider-mono" id="sidebar-model-mono">B</span>
+            <span class="model-mini-copy">
+              <span class="model-mini-name" id="sidebar-model-name">Blank Sandbox</span>
+              <span class="model-mini-label" id="sidebar-model-label">Default model</span>
+            </span>
+            <span class="ws-caret" data-icon="chevron-updown"></span>
+          </button>
+          <button class="nav-item footer-item" data-page="settings" type="button">
+            <span class="nav-icon" data-icon="settings"></span><span class="nav-label">Settings</span>
+            <span class="nav-count" id="badge-updates" hidden></span>
+          </button>
+          <div class="sidebar-footnote">
+            <span class="preview-tag" id="preview-tag" hidden>Preview data</span>
+            <span id="sidebar-version">Blank 1.0</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main" id="main">
+        <section class="view view-chat" id="chat-view" aria-label="Chat"></section>
+        <section class="view view-page" id="page-view" aria-label="Page" hidden></section>
+      </main>
+
+      <aside class="rail" id="rail" aria-label="Session context">
+        <div class="rail-head">
+          <div class="rail-tabs" id="rail-tabs" role="tablist">
+            <button class="rail-tab active" data-rail="plan" role="tab" type="button">Plan <span class="tab-count" id="rail-plan-count">0</span></button>
+            <button class="rail-tab" data-rail="files" role="tab" type="button">Files <span class="tab-count" id="rail-files-count">0</span></button>
+            <button class="rail-tab" data-rail="context" role="tab" type="button">Context</button>
+          </div>
+          <button class="mini-icon rail-close" id="rail-close" type="button" title="Hide panel">
+            <span data-icon="panel-right"></span>
+          </button>
+        </div>
+        <div class="rail-body" id="rail-body"></div>
+        <div class="rail-foot" id="rail-foot">
+          <button class="rail-action" id="rail-open-editor" type="button"><span data-icon="code"></span> Open in VS Code</button>
+          <button class="rail-action subtle" id="rail-open-folder" type="button"><span data-icon="folder"></span> Reveal</button>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="mobile-scrim" id="mobile-scrim" hidden></div>
+  <div id="overlay-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+  <div id="modal-root"></div>
+  <div class="boot-splash" id="boot-splash">
+    <div class="boot-mark">
+      <svg viewBox="0 0 24 24"><rect x="1.5" y="1.5" width="21" height="21" rx="6.5" fill="currentColor"/><circle cx="12" cy="12" r="4.1" fill="#fff"/></svg>
+    </div>
+    <div class="boot-word">blank</div>
+  </div>
+
+  <script src="js/icons.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/markdown.js"></script>
+  <script src="js/mock.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/logos.js"></script>
+  <script src="js/components.js"></script>
+  <script src="js/viewer3d.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
