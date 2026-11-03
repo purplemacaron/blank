@@ -747,6 +747,7 @@
     'No changes suggested.': '제안된 변경 사항이 없습니다.',
     'Reflecting…': '회고하는 중…',
     'No sessions yet.': '아직 세션이 없습니다.',
+    'No sessions yet. Start a conversation and it will appear here.': '아직 세션이 없습니다. 대화를 시작하면 여기에 표시됩니다.',
     'Standing instruction': '상시 지침',
     'Memory candidate': '메모리 후보',
     'Skill idea': '스킬 아이디어',

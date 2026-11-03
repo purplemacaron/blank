@@ -1855,8 +1855,9 @@
             enabled: field('enabled') ? field('enabled').classList.contains('on') : true,
           };
         }).filter((member) => member.name);
+        const enabled = host.querySelector('[data-team-toggle]')?.classList.contains('on') ?? Boolean(teamCfg.enabled);
         try {
-          const updated = await API.config.update({ team: { enabled: Boolean(teamCfg.enabled), members } });
+          const updated = await API.config.update({ team: { enabled, members } });
           applyConfig(updated);
           paintSettings(host);
           UI.toast(`Agent team saved · ${members.length} member${members.length === 1 ? '' : 's'}.`, 'success');
