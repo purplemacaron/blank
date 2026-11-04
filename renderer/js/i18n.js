@@ -483,6 +483,7 @@
     'No key': '키 없음',
     'Add a key': '키 추가',
     'Manage models': '모델 관리',
+    'Choose a model': '모델 선택',
     'An offline preview model. No network, no key, no data leaves your machine.':
       '오프라인 미리보기 모델입니다. 네트워크, 키, 데이터 전송이 전혀 없습니다.',
     'Claude models — strong long-horizon reasoning and tool use.': 'Claude 모델 — 장기 추론과 도구 사용에 강합니다.',

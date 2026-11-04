@@ -3586,7 +3586,7 @@
       </div>`;
     const modal = UI.modal({
       title: options.title || 'Choose a model',
-      description: options.description || 'The model this conversation will use.',
+      description: options.description || '',
       body,
       className: 'modal-model-picker',
       size: 'large',
