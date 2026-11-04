@@ -80,6 +80,7 @@ const api = {
   },
 
   dictation: {
+    options: () => invoke('dictation:options'),
     transcribe: (input) => invoke('dictation:transcribe', input),
   },
 

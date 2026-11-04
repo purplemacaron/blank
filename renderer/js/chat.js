@@ -498,20 +498,59 @@
       <button class="head-icon-btn" type="button" data-action="session-menu" title="Session options">${icon('more-horizontal', 16)}</button>`;
   }
 
-  function contextRing() {
-    const model = U.modelOf(catalog(), currentModel());
-    const limit = model?.context || 128000;
+  function usageSnapshot() {
+    const modelId = currentModel();
+    const model = modelId ? U.modelOf(catalog(), modelId) : null;
+    const limit = Number(model?.context) || (modelId ? 128000 : 0);
     const usage = Chat.session?.usage || { input: 0, output: 0 };
-    const total = Number(usage.input || 0) + Number(usage.output || 0);
-    const pct = Math.min(1, total / limit);
+    const input = Number(usage.input || 0);
+    const output = Number(usage.output || 0);
+    const total = input + output;
+    const remaining = limit ? Math.max(0, limit - total) : 0;
+    const usedPct = limit ? Math.min(100, Math.round((total / limit) * 100)) : 0;
+    const leftPct = limit ? Math.max(0, 100 - usedPct) : 0;
+    return { modelId, model, limit, input, output, total, remaining, usedPct, leftPct };
+  }
+
+  function contextChip() {
+    const snapshot = usageSnapshot();
     const r = 6.6;
     const c = 2 * Math.PI * r;
-    return `<span class="context-ring" title="Session tokens · ${U.fmtNumber(total)} of ${U.fmtNumber(limit)} context">
-      <svg width="18" height="18" viewBox="0 0 18 18">
+    const filled = snapshot.limit ? snapshot.total / snapshot.limit : 0;
+    const low = snapshot.modelId && snapshot.limit && snapshot.leftPct <= 15;
+    const label = snapshot.modelId ? `${snapshot.leftPct}% left` : '—';
+    return `<span class="context-ring ${low ? 'low' : ''}">
+      <svg width="16" height="16" viewBox="0 0 18 18">
         <circle cx="9" cy="9" r="${r}" fill="none" stroke="var(--border)" stroke-width="1.8"/>
-        <circle cx="9" cy="9" r="${r}" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - Math.max(0.03, pct))}" transform="rotate(-90 9 9)" opacity="${pct > 0 ? 0.9 : 0.35}"/>
+        <circle cx="9" cy="9" r="${r}" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - Math.max(0.03, Math.min(1, filled)))}" transform="rotate(-90 9 9)" opacity="${filled > 0 ? 0.9 : 0.35}"/>
       </svg>
-    </span>`;
+    </span><span class="context-chip-label ${low ? 'low' : ''}">${U.esc(label)}</span>`;
+  }
+
+  function openUsagePanel(anchor) {
+    if (!anchor) return;
+    const snapshot = usageSnapshot();
+    const content = document.createElement('div');
+    content.className = 'usage-panel';
+    if (!snapshot.modelId) {
+      content.innerHTML = `<div class="usage-head"><span class="usage-title">Context usage</span></div>
+        <div class="usage-note">Choose a model to see how much context remains.</div>`;
+    } else {
+      content.innerHTML = `<div class="usage-head">
+          <span class="usage-title">Context usage</span>
+          <span class="usage-model">${U.esc(snapshot.model?.name || modelName(snapshot.modelId))}</span>
+        </div>
+        <div class="usage-hero"><span class="usage-value">${U.fmtNumber(snapshot.remaining)}</span><span class="usage-unit">tokens left</span></div>
+        <div class="usage-meter ${snapshot.leftPct <= 15 ? 'low' : ''}"><span style="width:${Math.max(snapshot.usedPct ? 2 : 0, snapshot.usedPct)}%"></span></div>
+        <div class="usage-rows">
+          <div class="usage-row"><span>Used in session</span><b>${U.fmtNumber(snapshot.total)}</b></div>
+          <div class="usage-row"><span>Input</span><b>${U.fmtNumber(snapshot.input)}</b></div>
+          <div class="usage-row"><span>Output</span><b>${U.fmtNumber(snapshot.output)}</b></div>
+          <div class="usage-row"><span>Context limit</span><b>${U.fmtNumber(snapshot.limit)}</b></div>
+        </div>
+        <div class="usage-foot">${icon('info', 10)}<span>Blank summarizes earlier turns near the limit.</span></div>`;
+    }
+    UI.popover(anchor, content, { width: 252, align: 'end', placement: 'top' });
   }
 
   function updateComposer() {
@@ -553,7 +592,7 @@
           : mode === 'coding'
             ? 'Describe the code change. Blank will read, edit, and run checks…'
             : 'Ask Blank to build, debug, or explain…';
-    if (context) context.innerHTML = contextRing();
+    if (context) context.innerHTML = contextChip();
     if (hint) {
       const perms = App.state.config?.permissions || {};
       const guarded = ['write_file', 'edit_file', 'run_command', 'ssh_run', 'mcp', 'computer_use', 'generate_media', 'edit_media']
@@ -681,6 +720,11 @@
   function dictationButtonLabel(button, label) {
     const text = button?.querySelector('span');
     if (text) text.textContent = label;
+    if (button) {
+      const title = label === 'Dictate' ? 'Dictate with your voice' : label;
+      button.title = title;
+      button.setAttribute('aria-label', title);
+    }
   }
 
   function resetDictationButton(state) {
@@ -839,6 +883,9 @@
         <button class="btn btn-secondary btn-xs" type="button" data-action="open-models">Open Models</button>
       </div>`}
       <div class="hero">
+        <div class="hero-brand" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><rect width="24" height="24" rx="6" fill="#2F6BFF"/><path d="M8.6 4.4h4.6l4 4v9.2c0 .9-.7 1.6-1.6 1.6H8.6c-.9 0-1.6-.7-1.6-1.6V6c0-.9.7-1.6 1.6-1.6Z" fill="#fff"/><path d="M13.2 4.4v4h4Z" fill="#DCE7FF"/></svg>
+        </div>
         <h1>What should we build?</h1>
         <div class="suggestion-grid">
           <button class="suggestion" type="button" data-action="suggest" data-suggest="tour">
@@ -1957,14 +2004,14 @@
               </div>
               <div class="composer-tools">
                 <button class="composer-tool" type="button" data-action="attach-files" title="Attach text files">${icon('paperclip', 13)}<span>Attach</span></button>
-                <button class="composer-tool" id="composer-dictate" type="button" data-action="dictate" title="Dictate with your voice">${icon('mic', 13)}<span>Dictate</span></button>
                 <button class="composer-tool" type="button" data-action="open-media" title="Create media">${icon('wand', 13)}<span>Media</span></button>
                 <span class="composer-divider"></span>
                 <button class="composer-tool composer-model" id="composer-model" type="button" data-action="pick-model" title="Switch model"></button>
                 <button class="composer-tool" id="composer-reasoning" type="button" data-action="pick-reasoning" title="Reasoning effort"></button>
                 <button class="composer-tool" id="composer-mode" type="button" data-action="pick-mode"></button>
                 <span class="spacer"></span>
-                <span id="composer-context"></span>
+                <button class="context-chip" id="composer-context" type="button" data-action="usage" title="Context usage" aria-label="Context usage"></button>
+                <button class="composer-tool composer-dictate" id="composer-dictate" type="button" data-action="dictate" title="Dictate with your voice" aria-label="Dictate with your voice">${icon('mic', 15)}</button>
                 <button class="stop-btn" id="composer-stop" type="button" data-action="stop-run" title="Stop run" hidden>${icon('stop', 12)}</button>
                 <button class="send-btn" id="composer-send" type="button" data-action="send" disabled title="Send">${icon('arrow-up', 15)}</button>
               </div>
@@ -2036,6 +2083,7 @@
       if (action === 'pick-model') { openModelPicker(actionNode); return; }
       if (action === 'pick-mode') { openModePicker(actionNode); return; }
       if (action === 'pick-reasoning') { openReasoningPicker(actionNode); return; }
+      if (action === 'usage') { openUsagePanel(actionNode); return; }
       if (action === 'session-menu' || action === 'open-session-menu') { openSessionMenu(actionNode); return; }
       if (action === 'toggle-rail') { App.toggleRail(); return; }
       if (action === 'suggest') { handleSuggestion(actionNode.dataset.suggest); return; }

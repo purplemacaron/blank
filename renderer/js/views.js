@@ -11,7 +11,7 @@
     mcp: { servers: [], catalog: [], loading: false },
     learn: { data: null, reflecting: false },
     plugins: { items: [], query: '', filter: 'all', loading: false },
-    settings: { remote: null, ssh: null, schedules: [] },
+    settings: { remote: null, ssh: null, schedules: [], dictationOptions: null },
     paper: {
       loaded: false,
       items: [],
@@ -1683,6 +1683,24 @@ Start writing, or ask the agent to draft it.
     </div>`;
   }
 
+  function dictationSuggestionsHtml(models = []) {
+    if (!models.length) return '';
+    return `<span class="dictation-suggest-label">Suggested:</span>${models.map((model, index) => `${index ? '<span class="dictation-suggest-sep">·</span>' : ''}<button class="link-btn" type="button" data-use-dictation-model="${U.attr(model)}">${esc(model)}</button>`).join('')}`;
+  }
+
+  function applyDictationSuggestions(host, models = []) {
+    const fallback = models[0] || 'whisper-1';
+    const input = host.querySelector('#dictation-model');
+    if (input) {
+      input.value = fallback;
+      input.placeholder = fallback;
+    }
+    const list = host.querySelector('#dictation-model-list');
+    if (list) list.innerHTML = models.map((model) => `<option value="${U.attr(model)}"></option>`).join('');
+    const hint = host.querySelector('[data-dictation-suggest]');
+    if (hint) hint.innerHTML = dictationSuggestionsHtml(models);
+  }
+
   function paintSettings(host) {
     const config = currentConfig();
     const info = appState().info || {};
@@ -1713,7 +1731,30 @@ Start writing, or ask the agent to draft it.
     const defaultEffort = U.normalizeReasoning(defaultProfile, agent.reasoningEffort);
     const notificationsCfg = config.notifications || {};
     const dictationCfg = config.dictation || {};
-    const dictationChoices = (providers || []).filter((provider) => provider.protocol === 'openai' && config.providers?.[provider.id]?.hasKey);
+    const dictationOptions = vstate.settings.dictationOptions;
+    const dictationChoices = Array.isArray(dictationOptions?.providers) && dictationOptions.providers.length
+      ? dictationOptions.providers
+      : (providers || [])
+        .filter((provider) => provider.protocol === 'openai' && config.providers?.[provider.id]?.hasKey)
+        .map((provider) => ({ id: provider.id, name: provider.name, models: ['whisper-1'] }));
+    const customDictation = dictationCfg.providerId === '__custom';
+    const dictationSelection = customDictation
+      ? null
+      : dictationChoices.find((provider) => provider.id === dictationCfg.providerId)
+        || dictationChoices.find((provider) => provider.id === 'openai')
+        || dictationChoices[0]
+        || null;
+    const dictationModels = customDictation
+      ? []
+      : dictationSelection?.models?.length ? dictationSelection.models : ['whisper-1'];
+    const savedDictationModel = String(dictationCfg.model || '');
+    const dictationModelValue = customDictation
+      ? savedDictationModel
+      : savedDictationModel && !(savedDictationModel === 'whisper-1' && !dictationModels.includes('whisper-1'))
+        ? savedDictationModel
+        : dictationModels[0];
+    const dictationBaseUrl = String(dictationCfg.baseUrl || '');
+    const dictationHasKey = Boolean(dictationCfg.hasKey);
     const dictationLanguages = [
       ['', 'Auto detect'], ['ko', 'Korean'], ['en', 'English'], ['ja', 'Japanese'], ['zh', 'Chinese'],
       ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['pt', 'Portuguese'], ['ru', 'Russian'],
@@ -1823,17 +1864,43 @@ Start writing, or ask the agent to draft it.
               <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Transcription provider</div><div class="setting-desc">Any OpenAI-compatible provider with a saved key and a /audio/transcriptions endpoint. Audio is sent only when you stop a recording.</div></div>
                 <div class="setting-control">
-                  ${dictationChoices.length
-                    ? `<select class="settings-select" id="dictation-provider">
-                        <option value="" ${dictationCfg.providerId ? '' : 'selected'}>Auto — first connected</option>
-                        ${dictationChoices.map((provider) => `<option value="${U.attr(provider.id)}" ${dictationCfg.providerId === provider.id ? 'selected' : ''}>${esc(provider.name)}</option>`).join('')}
-                      </select>`
-                    : '<span class="setting-value">No compatible key yet</span>'}
+                  <select class="settings-select" id="dictation-provider">
+                    <option value="" ${dictationCfg.providerId ? '' : 'selected'}>Auto — first connected</option>
+                    ${dictationChoices.map((provider) => `<option value="${U.attr(provider.id)}" ${dictationCfg.providerId === provider.id ? 'selected' : ''}>${esc(provider.name)}</option>`).join('')}
+                    <option value="__custom" ${customDictation ? 'selected' : ''}>Custom endpoint</option>
+                  </select>
+                </div>
+              </div>
+              <div class="setting-row" data-dictation-custom ${customDictation ? '' : 'hidden'}>
+                <div class="setting-copy">
+                  <div class="setting-label">Endpoint</div>
+                  <div class="setting-desc">Any OpenAI-compatible speech server. Blank posts the clip to /audio/transcriptions under this URL.</div>
+                  <div class="setting-note">Use a local Whisper server or another provider's transcription API.</div>
+                </div>
+                <div class="setting-control wide">
+                  <input class="setting-inline-input" id="dictation-base-url" type="url" spellcheck="false" autocomplete="off" value="${U.attr(dictationBaseUrl)}" placeholder="http://localhost:8000/v1" />
+                </div>
+              </div>
+              <div class="setting-row" data-dictation-custom ${customDictation ? '' : 'hidden'}>
+                <div class="setting-copy">
+                  <div class="setting-label">API key</div>
+                  <div class="setting-desc">Optional. Kept in the main process and stored only in config.json.</div>
+                </div>
+                <div class="setting-control wide">
+                  <input class="setting-inline-input" id="dictation-key" type="password" spellcheck="false" autocomplete="new-password" value="" placeholder="${dictationHasKey ? 'Saved key — leave blank to keep' : 'Optional'}" />
+                  ${dictationHasKey ? '<button class="link-btn" type="button" data-clear-dictation-key>Remove saved key</button>' : ''}
                 </div>
               </div>
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">Transcription model</div><div class="setting-desc">For example whisper-1, gpt-4o-mini-transcribe or whisper-large-v3.</div></div>
-                <div class="setting-control"><input class="setting-inline-input" id="dictation-model" type="text" spellcheck="false" value="${U.attr(dictationCfg.model || 'whisper-1')}" placeholder="whisper-1" /></div>
+                <div class="setting-copy">
+                  <div class="setting-label">Transcription model</div>
+                  <div class="setting-desc">Pick a suggestion or type any transcription model id your provider offers. Blank uses the provider's recommended model.</div>
+                  <div class="dictation-suggest" data-dictation-suggest>${dictationSuggestionsHtml(dictationModels)}</div>
+                </div>
+                <div class="setting-control">
+                  <input class="setting-inline-input" id="dictation-model" type="text" spellcheck="false" value="${U.attr(dictationModelValue)}" placeholder="${U.attr(dictationModels[0] || 'whisper-1')}" list="dictation-model-list" />
+                  <datalist id="dictation-model-list">${dictationModels.map((model) => `<option value="${U.attr(model)}"></option>`).join('')}</datalist>
+                </div>
               </div>
               <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Spoken language</div><div class="setting-desc">Auto detect works for mixed speech. Naming a language usually improves accuracy.</div></div>
@@ -1846,7 +1913,9 @@ Start writing, or ask the agent to draft it.
             </div>
             <div class="provider-actions">
               <button class="btn btn-primary btn-sm" type="button" data-save-dictation>Save dictation settings</button>
-              <span class="setting-note">${dictationChoices.length ? 'Ready' : 'Add an OpenAI-compatible key in Models first'}</span>
+              <span class="setting-note">${customDictation
+                ? (dictationBaseUrl ? 'Custom endpoint' : 'Add an endpoint URL')
+                : dictationChoices.length ? 'Ready' : 'Add an OpenAI-compatible key or use a custom endpoint'}</span>
             </div>
             <div class="settings-permission-note">${icon('mic', 12)} The microphone is allowed only for this app. Recordings stay in memory, are sent once for transcription, and are never written to disk by Blank.</div>
           </section>
@@ -2269,14 +2338,43 @@ Start writing, or ask the agent to draft it.
         } catch (error) { UI.toast(error.message, 'error'); }
         return;
       }
+      const dictationModel = event.target.closest('[data-use-dictation-model]');
+      if (dictationModel) {
+        const input = host.querySelector('#dictation-model');
+        if (input) { input.value = dictationModel.dataset.useDictationModel || ''; input.focus(); }
+        return;
+      }
+      const clearDictationKey = event.target.closest('[data-clear-dictation-key]');
+      if (clearDictationKey) {
+        const input = host.querySelector('#dictation-key');
+        if (input) {
+          input.value = '';
+          input.dataset.clearKey = '1';
+          input.placeholder = 'Key will be removed on save';
+        }
+        clearDictationKey.remove();
+        return;
+      }
       if (event.target.closest('[data-save-dictation]')) {
         try {
-          const updated = await API.config.update({ dictation: {
-            providerId: host.querySelector('#dictation-provider')?.value || '',
-            model: (host.querySelector('#dictation-model')?.value || '').trim() || 'whisper-1',
+          const providerId = host.querySelector('#dictation-provider')?.value || '';
+          const payload = {
+            providerId,
+            model: (host.querySelector('#dictation-model')?.value || '').trim(),
             language: host.querySelector('#dictation-language')?.value || '',
-          } });
+          };
+          const keyInput = host.querySelector('#dictation-key');
+          if (providerId === '__custom') {
+            const baseUrl = (host.querySelector('#dictation-base-url')?.value || '').trim();
+            if (!/^https?:\/\//i.test(baseUrl)) throw new Error('Enter an http(s) endpoint, for example http://localhost:8000/v1.');
+            payload.baseUrl = baseUrl;
+            const key = (keyInput?.value || '').trim();
+            if (key) payload.key = key;
+          }
+          if (keyInput?.dataset.clearKey === '1') payload.clearKey = true;
+          const updated = await API.config.update({ dictation: payload });
           applyConfig(updated);
+          vstate.settings.dictationOptions = await API.dictation.options().catch(() => vstate.settings.dictationOptions);
           paintSettings(host);
           UI.toast('Dictation settings saved.', 'success');
         } catch (error) { UI.toast(error.message, 'error'); }
@@ -2553,6 +2651,21 @@ Start writing, or ask the agent to draft it.
       }
     };
     host.onchange = async (event) => {
+      if (event.target && event.target.id === 'dictation-provider') {
+        const custom = event.target.value === '__custom';
+        host.querySelectorAll('[data-dictation-custom]').forEach((row) => { row.hidden = !custom; });
+        if (custom) {
+          applyDictationSuggestions(host, []);
+          host.querySelector('#dictation-base-url')?.focus();
+          return;
+        }
+        const chosen = dictationChoices.find((provider) => provider.id === event.target.value)
+          || dictationChoices.find((provider) => provider.id === 'openai')
+          || dictationChoices[0]
+          || null;
+        applyDictationSuggestions(host, chosen?.models?.length ? chosen.models : ['whisper-1']);
+        return;
+      }
       if (event.target && event.target.id === 'approval-mode') {
         try {
           const mode = event.target.value === 'all' ? 'all' : 'important';
@@ -2583,17 +2696,19 @@ Start writing, or ask the agent to draft it.
     vstate.host = host;
     host.innerHTML = pageLoading('Settings', 'Preferences, approvals and local data.');
     try {
-      const [config, storage, remote, schedules] = await Promise.all([
+      const [config, storage, remote, schedules, dictationOptions] = await Promise.all([
         API.config.get(),
         API.media.storage().catch(() => null),
         API.remote?.status ? API.remote.status().catch(() => null) : Promise.resolve(null),
         API.schedules?.list ? API.schedules.list().catch(() => null) : Promise.resolve(null),
+        API.dictation?.options ? API.dictation.options().catch(() => null) : Promise.resolve(null),
       ]);
       if (!alive(host, 'settings')) return;
       vstate.media.storage = storage || vstate.media.storage;
       vstate.settings.remote = remote;
       vstate.settings.schedules = schedules?.schedules || [];
       vstate.settings.ssh = config?.ssh || null;
+      vstate.settings.dictationOptions = Array.isArray(dictationOptions?.providers) ? dictationOptions : null;
       applyConfig(config);
       paintSettings(host);
       if (vstate.settings.pending) {

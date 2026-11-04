@@ -15,8 +15,50 @@ const { keyCandidates, loadConfig } = require('./config');
 const DEFAULT_MODEL = 'whisper-1';
 const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
 
+const MODEL_SUGGESTIONS = {
+  openai: ['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe'],
+  groq: ['whisper-large-v3', 'whisper-large-v3-turbo', 'distil-whisper-large-v3-en'],
+  mistral: ['voxtral-mini-latest'],
+  together: ['openai/whisper-large-v3', 'openai/whisper-large-v3-turbo'],
+  custom_nvidia: ['whisper-large-v3', 'whisper-large-v3-turbo'],
+  nvidia: ['whisper-large-v3', 'whisper-large-v3-turbo'],
+};
+
 function trimBase(value) {
   return String(value || '').trim().replace(/\/+$/, '');
+}
+
+/** Accept either a base URL or the full transcription route. */
+function normalizeEndpoint(value) {
+  return trimBase(value).replace(/\/audio\/transcriptions$/i, '');
+}
+
+function hostOf(value) {
+  try { return new URL(trimBase(value)).hostname.toLowerCase(); } catch { return ''; }
+}
+
+function transcriptionModels(provider = {}) {
+  const id = String(provider.id || '');
+  if (MODEL_SUGGESTIONS[id]) return MODEL_SUGGESTIONS[id];
+  const host = hostOf(provider.baseUrl);
+  if (/nvidia\.com$/i.test(host)) return MODEL_SUGGESTIONS.nvidia;
+  if (/groq\.com$/i.test(host)) return MODEL_SUGGESTIONS.groq;
+  if (/mistral\.ai$/i.test(host)) return MODEL_SUGGESTIONS.mistral;
+  if (/together\.xyz$/i.test(host)) return MODEL_SUGGESTIONS.together;
+  if (/openai\.com$/i.test(host)) return MODEL_SUGGESTIONS.openai;
+  return [DEFAULT_MODEL];
+}
+
+/**
+ * Blank stored whisper-1 as the old global default. On providers that do not
+ * offer that id, treat it as "not set" and use their recommended model.
+ */
+function effectiveModel(configured, provider) {
+  const models = transcriptionModels(provider);
+  const value = String(configured || '').trim();
+  if (!value) return models[0];
+  if (value === DEFAULT_MODEL && !models.includes(DEFAULT_MODEL)) return models[0];
+  return value;
 }
 
 function dictationProviders(config = loadConfig()) {
@@ -26,19 +68,33 @@ function dictationProviders(config = loadConfig()) {
       const stored = config.providers?.[provider.id] || {};
       const baseUrl = trimBase(stored.baseUrl || provider.baseUrl || '');
       const keys = keyCandidates(config, provider.id, provider);
-      return { id: provider.id, name: provider.name, baseUrl, hasKey: keys.length > 0 };
+      return { id: provider.id, name: provider.name, baseUrl, hasKey: keys.length > 0, models: transcriptionModels(provider) };
     })
     .filter((provider) => /^https?:\/\//i.test(provider.baseUrl));
 }
 
 function resolveDictation(config = loadConfig()) {
+  const language = String(config.dictation?.language || '').trim().slice(0, 20);
+  if (config.dictation?.providerId === '__custom') {
+    const baseUrl = normalizeEndpoint(config.dictation.baseUrl);
+    if (!/^https?:\/\//i.test(baseUrl)) {
+      throw new Error('Set the custom transcription endpoint in Settings → Dictation.');
+    }
+    return {
+      provider: 'Custom endpoint',
+      baseUrl,
+      key: String(config.dictation.key || '').trim(),
+      model: String(config.dictation.model || '').trim().slice(0, 120) || DEFAULT_MODEL,
+      language,
+    };
+  }
   const wanted = String(config.dictation?.providerId || '').trim();
   const ready = dictationProviders(config).filter((provider) => provider.hasKey);
   const provider = ready.find((entry) => entry.id === wanted)
     || ready.find((entry) => entry.id === 'openai')
     || ready[0];
   if (!provider) {
-    throw new Error('Add an OpenAI-compatible API key in Models, then choose it in Settings → Dictation.');
+    throw new Error('Add an OpenAI-compatible API key in Models, or set a custom transcription endpoint in Settings → Dictation.');
   }
   const definition = catalog.getProvider(provider.id, config);
   const keys = keyCandidates(config, provider.id, definition);
@@ -48,8 +104,8 @@ function resolveDictation(config = loadConfig()) {
     provider: provider.name,
     baseUrl: provider.baseUrl,
     key: key.key,
-    model: String(config.dictation?.model || DEFAULT_MODEL).trim().slice(0, 120) || DEFAULT_MODEL,
-    language: String(config.dictation?.language || '').trim().slice(0, 20),
+    model: effectiveModel(config.dictation?.model, provider),
+    language,
   };
 }
 
@@ -76,7 +132,7 @@ async function transcribeAudio(input = {}) {
   try {
     response = await fetch(`${target.baseUrl}/audio/transcriptions`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${target.key}` },
+      headers: target.key ? { Authorization: `Bearer ${target.key}` } : {},
       body: form,
       signal: controller.signal,
     });
@@ -89,7 +145,7 @@ async function transcribeAudio(input = {}) {
 
   if (!response.ok) {
     if (response.status === 404) {
-      throw new Error('This provider does not expose /audio/transcriptions. Choose a transcription provider in Settings → Dictation.');
+      throw new Error('This endpoint has no /audio/transcriptions route. Choose another provider or set a custom transcription endpoint in Settings → Dictation.');
     }
     let detail = '';
     try { detail = (await response.text()).replace(/\s+/g, ' ').trim().slice(0, 240); } catch {}
@@ -101,4 +157,4 @@ async function transcribeAudio(input = {}) {
   return { text, provider: target.provider, model: target.model };
 }
 
-module.exports = { dictationProviders, resolveDictation, transcribeAudio, DEFAULT_MODEL };
+module.exports = { dictationProviders, resolveDictation, transcribeAudio, transcriptionModels, effectiveModel, DEFAULT_MODEL };

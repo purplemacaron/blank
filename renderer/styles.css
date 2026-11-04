@@ -778,6 +778,8 @@ body.platform-linux .window-btn.close:hover { background: var(--red); }
   text-align: center;
   animation: hero-in 0.45s var(--ease) both;
 }
+.hero-brand { display: flex; justify-content: center; margin-bottom: 16px; }
+.hero-brand svg { display: block; width: 34px; height: 34px; border-radius: 9px; }
 .hero h1 {
   font-size: 27px;
   font-weight: 620;
@@ -1472,6 +1474,22 @@ body.platform-linux .window-btn.close:hover { background: var(--red); }
 .composer-tool .pmono { width: 15px; height: 15px; border-radius: 4px; font-size: 8px; border: none; }
 .composer-tool .ws-caret { color: var(--text-faint); }
 .composer-tool.recording { color: var(--red); background: var(--red-soft); }
+.composer-dictate {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.composer-dictate.recording::after {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 4px;
+  height: 4px;
+}
 .composer-tool.recording::after {
   content: '';
   width: 5px;
@@ -1509,14 +1527,59 @@ body.platform-linux .window-btn.close:hover { background: var(--red); }
 .send-btn.stop { background: var(--text); color: var(--bg); }
 .send-btn.stop:hover { background: color-mix(in srgb, var(--text) 85%, var(--accent)); }
 
+.context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 7px 0 4px;
+  margin-right: 2px;
+  border-radius: 8px;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.13s, color 0.13s;
+}
+.context-chip:hover { background: var(--bg-hover); color: var(--text-secondary); }
 .context-ring {
-  width: 22px; height: 22px;
+  width: 20px; height: 20px;
   display: grid;
   place-items: center;
   color: var(--text-faint);
-  margin-right: 2px;
 }
 .context-ring svg { overflow: visible; }
+.context-ring.low circle:last-child { stroke: var(--amber); }
+.context-chip-label.low { color: var(--amber); }
+
+.usage-panel { padding: 5px 5px 3px; }
+.usage-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.usage-title { font-size: 9.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
+.usage-model { font-size: 10px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 132px; }
+.usage-hero { display: flex; align-items: baseline; gap: 5px; margin-top: 7px; }
+.usage-value { font-size: 21px; font-weight: 620; letter-spacing: -0.03em; line-height: 1.1; color: var(--text); font-variant-numeric: tabular-nums; }
+.usage-unit { font-size: 10.5px; color: var(--text-tertiary); }
+.usage-meter { height: 5px; border-radius: 99px; background: var(--bg-subtle-2); overflow: hidden; margin: 9px 0 8px; }
+.usage-meter span { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
+.usage-meter.low span { background: var(--amber); }
+.usage-rows { display: flex; flex-direction: column; gap: 4px; }
+.usage-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 10.5px; color: var(--text-tertiary); }
+.usage-row b { font-weight: 550; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.usage-foot {
+  display: flex;
+  gap: 5px;
+  align-items: flex-start;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 9.5px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+.usage-foot svg { flex-shrink: 0; margin-top: 1px; }
+.usage-note { margin-top: 8px; font-size: 10.5px; line-height: 1.5; color: var(--text-tertiary); }
 
 .composer-hints {
   display: flex;
@@ -2619,6 +2682,13 @@ html[data-theme="dark"] .pmono { background: var(--bg-subtle); color: var(--text
 .setting-control { flex-shrink: 0; display: flex; align-items: center; gap: 6px; min-width: 0; }
 .setting-control.wide { flex: 0 0 56%; }
 .setting-note { font-size: 9.5px; color: var(--text-faint); margin-top: 4px; }
+.setting-row[hidden] { display: none; }
+.setting-row #dictation-model { width: 190px; }
+.setting-row #dictation-base-url { width: 100%; }
+.setting-row #dictation-key { flex: 1; min-width: 0; }
+.dictation-suggest { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 5px; margin-top: 4px; }
+.dictation-suggest-label, .dictation-suggest-sep { font-size: 9.5px; color: var(--text-faint); }
+.dictation-suggest .link-btn { font-size: 9.5px; }
 .setting-value { font-size: 10.5px; color: var(--text-tertiary); }
 .setting-inline-input {
   height: 28px;

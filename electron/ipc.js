@@ -321,10 +321,22 @@ function registerIpc({ mcp, getWindow }) {
     if (clean.dictation) {
       const incoming = clean.dictation && typeof clean.dictation === 'object' ? clean.dictation : {};
       const current = configModule.loadConfig().dictation || {};
+      const baseUrl = String(incoming.baseUrl ?? current.baseUrl ?? '').trim()
+        .replace(/\/+$/, '')
+        .replace(/\/audio\/transcriptions$/i, '')
+        .slice(0, 300);
+      if (baseUrl && !/^https?:\/\//i.test(baseUrl)) {
+        throw new Error('The transcription endpoint must start with http:// or https://.');
+      }
+      let key = String(current.key || '');
+      if (incoming.clearKey) key = '';
+      else if (typeof incoming.key === 'string' && incoming.key.trim()) key = incoming.key.trim().slice(0, 400);
       clean.dictation = {
         providerId: String(incoming.providerId ?? current.providerId ?? '').trim().slice(0, 80),
-        model: String(incoming.model ?? current.model ?? 'whisper-1').trim().slice(0, 120) || 'whisper-1',
+        model: String(incoming.model ?? current.model ?? '').trim().slice(0, 120),
         language: String(incoming.language ?? current.language ?? '').trim().slice(0, 20),
+        baseUrl,
+        key,
       };
     }
     if (clean.agent) {
@@ -638,6 +650,16 @@ function registerIpc({ mcp, getWindow }) {
   });
 
   /* ------------------------------------------------------- search & computer */
+
+  ipcMainHandle('dictation:options', async () => {
+    const config = configModule.loadConfig();
+    return {
+      providers: dictation.dictationProviders(config)
+        .filter((provider) => provider.hasKey)
+        .map(({ id, name, baseUrl, models }) => ({ id, name, baseUrl, models })),
+      model: String(config.dictation?.model || ''),
+    };
+  });
 
   ipcMainHandle('dictation:transcribe', async (_event, input = {}) => dictation.transcribeAudio(input));
 

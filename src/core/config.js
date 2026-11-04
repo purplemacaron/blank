@@ -48,8 +48,10 @@ const DEFAULTS = {
   },
   dictation: {
     providerId: '',
-    model: 'whisper-1',
+    model: '',
     language: '',
+    baseUrl: '',
+    key: '',
   },
   agent: {
     maxSteps: 32,
@@ -463,8 +465,10 @@ function publicConfig(config, catalog) {
     agent: config.agent,
     dictation: {
       providerId: config.dictation?.providerId || '',
-      model: config.dictation?.model || 'whisper-1',
+      model: config.dictation?.model || '',
       language: config.dictation?.language || '',
+      baseUrl: config.dictation?.baseUrl || '',
+      hasKey: Boolean(config.dictation?.key),
     },
     customInstructions: config.customInstructions,
     mcpServers: config.mcpServers.map(({ env, headers, ...rest }) => ({
