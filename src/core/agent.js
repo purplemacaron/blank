@@ -277,6 +277,7 @@ async function runAgent({
       let text = '';
       let reasoning = '';
       let calls = [];
+      let providerItems = [];
       let stepUsage = { input: 0, output: 0 };
       let providerFailed = false;
       let fallbackTried = false;
@@ -295,6 +296,7 @@ async function runAgent({
             options: {
               temperature: config.agent?.temperature,
               maxTokens: config.agent?.maxTokens,
+              reasoningEffort: session.reasoningEffort || config.agent?.reasoningEffort || 'auto',
             },
           })) {
             if (event.type === 'text') {
@@ -305,6 +307,8 @@ async function runAgent({
               emit({ type: 'reasoning', messageId, delta: event.text });
             } else if (event.type === 'tool_calls') {
               calls = event.calls;
+            } else if (event.type === 'provider_items') {
+              providerItems = event.items;
             } else if (event.type === 'usage') {
               stepUsage.input = Math.max(stepUsage.input, event.usage.input || 0);
               stepUsage.output = Math.max(stepUsage.output, event.usage.output || 0);
@@ -359,6 +363,7 @@ async function runAgent({
         usage: { ...stepUsage },
         at: new Date().toISOString(),
       };
+      if (providerItems.length) assistantMessage.providerItems = providerItems;
       session.messages.push(assistantMessage);
       saveSession(session);
       emit({ type: 'assistant:end', messageId, message: cleanAssistantMessage(assistantMessage) });

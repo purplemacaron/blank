@@ -301,8 +301,8 @@ async function* sandboxStream({ messages, tools = [], signal, options = {} }) {
 
   if (/(skill|스킬)/i.test(userText)) {
     yield* streamText(ko
-      ? `스킬은 재사용 가능한 작업 절차입니다. \`SKILL.md\` 하나가 곧 하나의 스킬이에요.\n\n- 내장 스킬 4개가 기본 제공됩니다: **Code review**, **Debug**, **Research**, **Ship**.\n- \`~/.blank/skills/<name>/SKILL.md\`에 직접 추가하거나, **Skills → New skill**에서 만들 수 있습니다.\n- 모든 스킬의 이름과 설명은 시스템 프롬프트에 포함되지만, 본문은 필요할 때 \`read_skill\`로 불러옵니다. 컨텍스트를 낭비하지 않는 방식입니다.\n\nSkills 화면에서 지금 바로 만들어 볼 수 있습니다.`
-      : `Skills are reusable procedures. One folder with a \`SKILL.md\` is a skill.\n\n- Four are bundled: **Code review**, **Debug**, **Research**, **Ship**.\n- Add your own at \`~/.blank/skills/<name>/SKILL.md\`, or use **Skills → New skill**.\n- Names and descriptions sit in the system prompt; the body is loaded on demand with \`read_skill\`, so it never wastes context.\n\nYou can draft one from the Skills screen right now.`, signal);
+      ? `스킬은 재사용 가능한 작업 절차입니다. \`SKILL.md\` 하나가 곧 하나의 스킬이에요.\n\n- 내장 스킬 5개가 기본 제공됩니다: **Code review**, **Debug**, **Research**, **Ship**, **Design**.\n- \`~/.blank/skills/<name>/SKILL.md\`에 직접 추가하거나, **Skills → New skill**에서 만들 수 있습니다.\n- 모든 스킬의 이름과 설명은 시스템 프롬프트에 포함되지만, 본문은 필요할 때 \`read_skill\`로 불러옵니다. 컨텍스트를 낭비하지 않는 방식입니다.\n\nSkills 화면에서 지금 바로 만들어 볼 수 있습니다.`
+      : `Skills are reusable procedures. One folder with a \`SKILL.md\` is a skill.\n\n- Five are bundled: **Code review**, **Debug**, **Research**, **Ship**, **Design**.\n- Add your own at \`~/.blank/skills/<name>/SKILL.md\`, or use **Skills → New skill**.\n- Names and descriptions sit in the system prompt; the body is loaded on demand with \`read_skill\`, so it never wastes context.\n\nYou can draft one from the Skills screen right now.`, signal);
     yield { type: 'done', finished: true };
     return;
   }

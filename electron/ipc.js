@@ -12,13 +12,16 @@ const providers = require('../src/core/providers');
 const { runAgent, compactSession } = require('../src/core/agent');
 const learn = require('../src/core/learn');
 const { summarizeArgs } = require('../src/core/tools');
-const mediaLibrary = require('../src/core/media');
 const search = require('../src/core/search');
 const computer = require('../src/core/computer');
-const ssh = require('../src/core/ssh');
 const { createRemoteService } = require('../src/core/remote');
 const { createComputerOverlay } = require('./computer-overlay');
 const plugins = require('../src/core/plugins');
+const schedulesModule = require('../src/core/schedules');
+const oauthModule = require('../src/core/oauth');
+const subscriptionModule = require('../src/core/subscription');
+const paperStore = require('../src/core/paper');
+const notifications = require('./notifications');
 
 const APP_ROOT = path.join(__dirname, '..');
 const isWin = process.platform === 'win32';
@@ -30,6 +33,8 @@ function createState() {
     sessionRuns: new Map(),
     approvals: new Map(),
     queues: new Map(),
+    scheduleRuns: new Map(),
+    scheduleTimer: null,
     reflectionInFlight: false,
     disposed: false,
   };
@@ -49,6 +54,7 @@ function attachWindowEvents(win, state) {
 function registerIpc({ mcp, getWindow }) {
   const state = createState();
   ensureHome();
+  notifications.configure({ getWindow });
 
   const sendEvent = (win, payload) => {
     if (!win || win.isDestroyed()) return;
@@ -59,16 +65,27 @@ function registerIpc({ mcp, getWindow }) {
     for (const win of BrowserWindow.getAllWindows()) sendEvent(win, payload);
   };
 
-  mediaLibrary.configureMedia({
-    getConfig: () => configModule.loadConfig(),
-    emit: (event, payload) => broadcast({ type: event, ...payload }),
-    patchConfig: (patch) => configModule.patchConfig(patch),
-  });
+  let mediaModule = null;
+  const getMedia = () => {
+    if (!mediaModule) {
+      mediaModule = require('../src/core/media');
+      mediaModule.configureMedia({
+        getConfig: () => configModule.loadConfig(),
+        emit: (event, payload) => broadcast({ type: event, ...payload }),
+        patchConfig: (patch) => configModule.patchConfig(patch),
+      });
+    }
+    return mediaModule;
+  };
+
+  let sshModule = null;
+  const getSsh = () => (sshModule || (sshModule = require('../src/core/ssh')));
 
   const configWithRuntime = (config) => {
     const publicConfig = configModule.publicConfig(config, catalog);
     return {
       ...publicConfig,
+      subscriptions: subscriptionModule.statusAll(),
       runtime: {
         version: app.getVersion(),
         platform: process.platform,
@@ -248,7 +265,7 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('config:get', async () => configWithRuntime(configModule.loadConfig()));
 
   require('electron').ipcMain.handle('config:update', async (_event, patch = {}) => {
-    const allowed = ['defaultModel', 'fallbackModel', 'theme', 'language', 'onboarded', 'agent', 'ui', 'customInstructions', 'disabledSkills', 'media', 'permissions', 'search', 'computer', 'team'];
+    const allowed = ['defaultModel', 'fallbackModel', 'theme', 'language', 'onboarded', 'agent', 'ui', 'customInstructions', 'disabledSkills', 'media', 'permissions', 'search', 'computer', 'team', 'notifications'];
     const clean = {};
     for (const key of allowed) {
       if (patch[key] === undefined) continue;
@@ -302,11 +319,25 @@ function registerIpc({ mcp, getWindow }) {
         ...clean.agent,
         maxSteps: Math.max(1, Math.min(64, Number(clean.agent.maxSteps) || 32)),
         compactAt: Math.max(0.5, Math.min(0.95, Number(clean.agent.compactAt) || 0.82)),
+        reasoningEffort: ['auto', 'low', 'medium', 'high'].includes(clean.agent.reasoningEffort)
+          ? clean.agent.reasoningEffort
+          : undefined,
       };
+      if (!clean.agent.reasoningEffort) delete clean.agent.reasoningEffort;
     }
     if (clean.media) {
       // Never accept raw keys through the general config channel.
       clean.media = { defaults: clean.media.defaults || {} };
+    }
+    if (clean.notifications) {
+      const incoming = clean.notifications && typeof clean.notifications === 'object' ? clean.notifications : {};
+      const current = configModule.loadConfig().notifications || {};
+      clean.notifications = {
+        enabled: incoming.enabled === undefined ? current.enabled !== false : Boolean(incoming.enabled),
+        onFinish: incoming.onFinish === undefined ? current.onFinish !== false : Boolean(incoming.onFinish),
+        onApproval: incoming.onApproval === undefined ? current.onApproval !== false : Boolean(incoming.onApproval),
+        schedules: incoming.schedules === undefined ? current.schedules !== false : Boolean(incoming.schedules),
+      };
     }
     if (clean.permissions) {
       const levels = ['allow', 'ask', 'deny'];
@@ -378,10 +409,84 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('models:list', async () => {
     const config = configModule.loadConfig();
     return {
-      providers: catalog.allProviders(config).map(catalog.publicProvider),
+      providers: catalog.allProviders(config).map((provider) => catalog.publicProvider(provider, config)),
       models: catalog.allModels(config),
       config: configModule.publicConfig(config, catalog),
     };
+  });
+
+  async function discoverProviderModels(config, providerId) {
+    const provider = catalog.getProvider(providerId, config);
+    if (!provider) throw new Error('Unknown provider.');
+    if (provider.protocol === 'sandbox') return provider.models || [];
+    const models = await providers.listModels({ providerId, config });
+    const entries = models.slice(0, 300).map((model) => ({
+      id: String(model.id),
+      name: String(model.name || model.id),
+      context: Number(model.context) || 128000,
+      tags: [],
+    }));
+    config.discoveredModels = config.discoveredModels || {};
+    config.discoveredModels[providerId] = entries;
+    return entries;
+  }
+
+  require('electron').ipcMain.handle('models:discoverAll', async () => {
+    const config = configModule.loadConfig();
+    const results = {};
+    await Promise.all(catalog.allProviders(config).map(async (provider) => {
+      if (provider.protocol === 'sandbox') return;
+      try {
+        if (provider.keyEnv && provider.kind !== 'local'
+          && !configModule.resolveKey(config, provider.id, provider)
+          && !subscriptionModule.entryFor(provider.id)?.mode) {
+          return;
+        }
+        results[provider.id] = await discoverProviderModels(config, provider.id);
+      } catch (error) {
+        results[provider.id] = { error: error.message };
+      }
+    }));
+    configModule.saveConfig(config);
+    broadcast({ type: 'config:updated' });
+    return { ok: true, results };
+  });
+
+  ipcMainHandle('subscription:status', async () => subscriptionModule.statusAll());
+
+  async function afterSubscriptionSignIn(providerId) {
+    const config = configModule.loadConfig();
+    try {
+      await discoverProviderModels(config, providerId);
+      configModule.saveConfig(config);
+    } catch {}
+    broadcast({ type: 'config:updated' });
+    broadcast({ type: 'models:refresh' });
+    return configWithRuntime(configModule.loadConfig());
+  }
+
+  ipcMainHandle('subscription:start', async (_event, input = {}) => {
+    const providerId = input.providerId === 'openai' ? 'openai' : 'anthropic';
+    const result = await subscriptionModule.start(providerId, (url) => shell.openExternal(url));
+    if (result?.needsCode) {
+      return { needsCode: true, url: result.url, status: subscriptionModule.status(providerId) };
+    }
+    const config = await afterSubscriptionSignIn(providerId);
+    return { needsCode: false, status: subscriptionModule.status(providerId), config };
+  });
+
+  ipcMainHandle('subscription:complete', async (_event, input = {}) => {
+    const providerId = input.providerId === 'openai' ? 'openai' : 'anthropic';
+    const status = await subscriptionModule.complete(providerId, input);
+    const config = await afterSubscriptionSignIn(providerId);
+    return { status, config };
+  });
+
+  ipcMainHandle('subscription:signOut', async (_event, input = {}) => {
+    const providerId = input.providerId === 'openai' ? 'openai' : 'anthropic';
+    const removed = await subscriptionModule.signOut(providerId);
+    broadcast({ type: 'config:updated' });
+    return { removed, status: subscriptionModule.status(providerId) };
   });
 
   require('electron').ipcMain.handle('providers:setKey', async (_event, input = {}) => {
@@ -420,7 +525,7 @@ function registerIpc({ mcp, getWindow }) {
     });
     configModule.saveConfig(config);
     broadcast({ type: 'config:updated' });
-    return { config: configWithRuntime(config), providers: catalog.allProviders(config).map(catalog.publicProvider) };
+    return { config: configWithRuntime(config), providers: catalog.allProviders(config).map((provider) => catalog.publicProvider(provider, config)) };
   });
 
   require('electron').ipcMain.handle('providers:removeKey', async (_event, input = {}) => {
@@ -493,17 +598,10 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('providers:discover', async (_event, input = {}) => {
     const config = configModule.loadConfig();
     try {
-      const models = await providers.listModels({ providerId: input.providerId, config });
-      config.discoveredModels = config.discoveredModels || {};
-      config.discoveredModels[input.providerId] = models.slice(0, 300).map((model) => ({
-        id: String(model.id),
-        name: String(model.name || model.id),
-        context: Number(model.context) || 128000,
-        tags: ['Detected'],
-      }));
+      const models = await discoverProviderModels(config, input.providerId);
       configModule.saveConfig(config);
       broadcast({ type: 'config:updated' });
-      return { ok: true, models: config.discoveredModels[input.providerId] };
+      return { ok: true, models };
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -610,7 +708,7 @@ function registerIpc({ mcp, getWindow }) {
 
   /* -------------------------------------------------------------------- ssh */
 
-  const sshPublic = () => ({ hosts: ssh.listHosts(configModule.loadConfig()) });
+  const sshPublic = () => ({ hosts: getSsh().listHosts(configModule.loadConfig()) });
 
   require('electron').ipcMain.handle('ssh:list', async () => sshPublic());
 
@@ -620,7 +718,7 @@ function registerIpc({ mcp, getWindow }) {
     if (hosts.length >= 24) throw new Error('You can save up to 24 SSH hosts.');
     let host;
     try {
-      host = ssh.normalizeHost(input);
+      host = getSsh().normalizeHost(input);
     } catch (err) {
       throw new Error(err.message);
     }
@@ -628,8 +726,8 @@ function registerIpc({ mcp, getWindow }) {
     const passphrase = String(input.passphrase || '');
     if (host.authType === 'password' && !password) throw new Error('Enter the SSH password.');
     if (host.authType === 'key' && !host.keyPath) throw new Error('Enter the private key path.');
-    host.password = password ? ssh.seal(password) : '';
-    host.passphrase = passphrase ? ssh.seal(passphrase) : '';
+    host.password = password ? getSsh().seal(password) : '';
+    host.passphrase = passphrase ? getSsh().seal(passphrase) : '';
     const next = { ...config, ssh: { ...(config.ssh || {}), hosts: [...hosts, host] } };
     configModule.saveConfig(next);
     broadcast({ type: 'config:updated' });
@@ -646,21 +744,21 @@ function registerIpc({ mcp, getWindow }) {
 
   require('electron').ipcMain.handle('ssh:test', async (_event, input = {}) => {
     const config = configModule.loadConfig();
-    const host = ssh.findHost(config, input.id || input.host);
+    const host = getSsh().findHost(config, input.id || input.host);
     try {
-      const result = await ssh.testHost(host);
+      const result = await getSsh().testHost(host);
       if (result.fingerprint && result.fingerprint !== host.fingerprint) {
         const hosts = (config.ssh?.hosts || []).map((item) => item.id === host.id ? { ...item, fingerprint: result.fingerprint } : item);
         configModule.saveConfig({ ...config, ssh: { ...(config.ssh || {}), hosts } });
         broadcast({ type: 'config:updated' });
       }
-      return { ...result, hosts: ssh.listHosts(configModule.loadConfig()) };
+      return { ...result, hosts: getSsh().listHosts(configModule.loadConfig()) };
     } catch (error) {
       return {
         ok: false,
         code: -1,
         message: String(error?.message || error || 'SSH connection failed').replace(/^Error:\s*/, ''),
-        hosts: ssh.listHosts(configModule.loadConfig()),
+        hosts: getSsh().listHosts(configModule.loadConfig()),
       };
     }
   });
@@ -675,6 +773,7 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('sessions:get', async (_event, id) => {
     const session = store.getSession(id);
     if (!session) return { session: null };
+    for (const message of session.messages || []) delete message.providerItems;
     const queue = (state.queues.get(id) || []).map((item) => ({ queueId: item.id, text: item.text }));
     return { session, running: state.sessionRuns.has(id), queue };
   });
@@ -682,12 +781,13 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('sessions:create', async (_event, input = {}) => {
     const config = configModule.loadConfig();
     const model = input.model && catalog.findModel(input.model, config) ? input.model : config.defaultModel;
-    const mode = ['agent', 'plan', 'ask'].includes(input.mode) ? input.mode : 'agent';
+    const mode = ['agent', 'design', 'plan', 'ask'].includes(input.mode) ? input.mode : 'agent';
     const session = store.createSession({
       workspace: config.workspace,
       model,
       mode,
       title: String(input.title || 'New session').slice(0, 120),
+      reasoningEffort: input.reasoningEffort,
     });
     notifySession(session);
     return { session };
@@ -703,7 +803,10 @@ function registerIpc({ mcp, getWindow }) {
       if (!catalog.findModel(input.model, config)) throw new Error('Unknown model.');
       session.model = input.model;
     }
-    if (input.mode !== undefined && ['agent', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
+    if (input.mode !== undefined && ['agent', 'design', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
+    if (input.reasoningEffort !== undefined && ['auto', 'low', 'medium', 'high'].includes(input.reasoningEffort)) {
+      session.reasoningEffort = input.reasoningEffort;
+    }
     store.saveSession(session);
     notifySession(session);
     return { session };
@@ -748,6 +851,19 @@ function registerIpc({ mcp, getWindow }) {
     const main = getWindow();
     if (main && main !== win) sendEvent(main, payload);
     return queue;
+  }
+
+  function runNotificationBody(session, outcome) {
+    if (outcome?.error) return String(outcome.error);
+    if (outcome?.stopped) return 'Stopped before finishing.';
+    const messages = session?.messages || [];
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message.role !== 'assistant') continue;
+      const text = String(message.content || '').replace(/```[\s\S]*?```/g, ' ').replace(/\s+/g, ' ').trim();
+      if (text) return text.slice(0, 180);
+    }
+    return 'The run is finished.';
   }
 
   function launchRun({ session, config, win }) {
@@ -798,6 +914,7 @@ function registerIpc({ mcp, getWindow }) {
       const main = getWindow();
       if (main && main !== win) sendEvent(main, payload);
       remote.publish({ ...payload, type: 'tool:start', summary: payload.summary });
+      notifications.approval({ label: payload.label, summary: payload.summary, sessionId: session.id });
     });
 
     runAgent({
@@ -820,6 +937,12 @@ function registerIpc({ mcp, getWindow }) {
       });
       notifySession(fresh);
       broadcast({ type: 'sessions:refresh' });
+      notifications.finished({
+        title: fresh.title ? `Finished · ${fresh.title}` : 'Run finished',
+        body: runNotificationBody(fresh, outcome),
+        sessionId: fresh.id,
+        failed: !outcome.ok,
+      });
       maybeReflect(win, fresh);
     }).catch((err) => {
       emit({ type: 'run:done', outcome: { ok: false, error: err.message } });
@@ -847,7 +970,10 @@ function registerIpc({ mcp, getWindow }) {
     }
     const config = configModule.loadConfig();
     if (next.model && catalog.findModel(next.model, config)) session.model = next.model;
-    if (next.mode && ['agent', 'plan', 'ask'].includes(next.mode)) session.mode = next.mode;
+    if (next.mode && ['agent', 'design', 'plan', 'ask'].includes(next.mode)) session.mode = next.mode;
+    if (next.reasoningEffort && ['auto', 'low', 'medium', 'high'].includes(next.reasoningEffort)) {
+      session.reasoningEffort = next.reasoningEffort;
+    }
     const message = {
       id: uid('msg_'),
       role: 'user',
@@ -908,6 +1034,7 @@ function registerIpc({ mcp, getWindow }) {
         attachments,
         model: input.model,
         mode: input.mode,
+        reasoningEffort: input.reasoningEffort,
         win,
         source,
         queuedAt: new Date().toISOString(),
@@ -931,11 +1058,14 @@ function registerIpc({ mcp, getWindow }) {
 
     if (!session) {
       const model = input.model && catalog.findModel(input.model, config) ? input.model : config.defaultModel;
-      const mode = ['agent', 'plan', 'ask'].includes(input.mode) ? input.mode : 'agent';
-      session = store.createSession({ workspace: config.workspace, model, mode });
+      const mode = ['agent', 'design', 'plan', 'ask'].includes(input.mode) ? input.mode : 'agent';
+      session = store.createSession({ workspace: config.workspace, model, mode, reasoningEffort: input.reasoningEffort });
     } else {
       if (input.model && catalog.findModel(input.model, config)) session.model = input.model;
-      if (input.mode && ['agent', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
+      if (input.mode && ['agent', 'design', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
+      if (input.reasoningEffort && ['auto', 'low', 'medium', 'high'].includes(input.reasoningEffort)) {
+        session.reasoningEffort = input.reasoningEffort;
+      }
       session.workspace = session.workspace || config.workspace;
     }
 
@@ -1175,6 +1305,30 @@ ${commands}
     return { servers: mcp.statuses(config) };
   });
 
+  ipcMainHandle('mcp:oauthStart', async (_event, input = {}) => {
+    const config = configModule.loadConfig();
+    const server = (config.mcpServers || []).find((entry) => entry.id === input.id);
+    if (!server) throw new Error('Server not found.');
+    if (server.transport !== 'http') throw new Error('OAuth applies to remote HTTP MCP servers.');
+    const status = await oauthModule.authorizeMcpServer({
+      server,
+      openExternal: (url) => shell.openExternal(url),
+      onEvent: (event) => broadcast({ type: 'mcp:oauth', serverId: server.id, ...event }),
+    });
+    await mcp.ensure(configModule.loadConfig(), { force: true });
+    broadcast({ type: 'config:updated' });
+    return { status, servers: mcp.statuses(configModule.loadConfig()) };
+  });
+
+  ipcMainHandle('mcp:oauthSignOut', async (_event, input = {}) => {
+    oauthModule.cancelFlow(input.id);
+    const removed = oauthModule.removeEntry('mcp', input.id);
+    const config = configModule.loadConfig();
+    await mcp.ensure(config, { force: true });
+    broadcast({ type: 'config:updated' });
+    return { removed, servers: mcp.statuses(config) };
+  });
+
   /* ----------------------------------------------------------------- plugins */
 
   function pluginInstallState() {
@@ -1405,23 +1559,74 @@ ${commands}
 
   /* ---------------------------------------------------------------------- cli */
 
-  require('electron').ipcMain.handle('cli:install', async () => {
-    const binDir = path.join(appPaths().root, 'bin');
-    fs.mkdirSync(binDir, { recursive: true });
-    const target = path.join(APP_ROOT, 'bin', 'blank.js');
-    const cmd = path.join(binDir, isWin ? 'blank.cmd' : 'blank');
-    let content;
-    if (isWin) {
-      content = `@echo off\r\nnode "${target}" %*\r\n`;
-    } else {
-      content = `#!/bin/sh\nexec node "${target}" "$@"\n`;
+  const cliMarker = 'rem blank launcher';
+  const cliTargets = () => {
+    const name = isWin ? 'blank.cmd' : 'blank';
+    const list = [path.join(appPaths().root, 'bin', name)];
+    if (isWin && process.env.LOCALAPPDATA) {
+      list.push(path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WindowsApps', name));
+    } else if (!isWin) {
+      list.push(path.join(app.getPath('home'), '.local', 'bin', name));
     }
-    fs.writeFileSync(cmd, content, { encoding: 'utf8', mode: 0o755 });
+    return list;
+  };
+
+  const cliStatus = () => {
+    const targets = cliTargets();
+    const installed = targets.find((file) => {
+      try { return fs.readFileSync(file, 'utf8').includes(cliMarker); } catch { return false; }
+    });
+    const onPath = targets.length > 1 && installed === targets[1];
     return {
-      path: cmd,
-      dir: binDir,
-      instructions: `Add ${binDir} to PATH, then run "blank" from any terminal.`,
+      installed: Boolean(installed),
+      path: installed || targets[0],
+      onPath,
+      instructions: installed
+        ? onPath
+          ? 'Open a new terminal and run “blank”.'
+          : `Add ${path.dirname(installed)} to PATH, then run “blank”.`
+        : 'Install a launcher for VS Code and other terminals.',
     };
+  };
+
+  require('electron').ipcMain.handle('cli:status', async () => cliStatus());
+
+  require('electron').ipcMain.handle('cli:install', async () => {
+    const script = path.join(APP_ROOT, 'bin', 'blank.js');
+    const runtime = process.execPath;
+    const content = isWin
+      ? `@echo off\r\n${cliMarker}\r\nsetlocal\r\nset "ELECTRON_RUN_AS_NODE=1"\r\n"${runtime}" "${script}" %*\r\n`
+      : `#!/bin/sh\n# ${cliMarker}\nELECTRON_RUN_AS_NODE=1 "${runtime}" "${script}" "$@"\n`;
+    const written = [];
+    for (const file of cliTargets()) {
+      try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        if (fs.existsSync(file)) {
+          const current = fs.readFileSync(file, 'utf8');
+          if (!current.includes(cliMarker)) continue;
+        }
+        fs.writeFileSync(file, content, { encoding: 'utf8', mode: 0o755 });
+        written.push(file);
+      } catch {}
+    }
+    if (!written.length) throw new Error('Could not write a launcher. Check folder permissions.');
+    const status = cliStatus();
+    return {
+      ...status,
+      written,
+      instructions: status.onPath
+        ? 'Open a new terminal and run “blank” — no Node.js install needed.'
+        : `Launcher written to ${written[0]}. Add ${path.dirname(written[0])} to PATH, then run “blank”.`,
+    };
+  });
+
+  require('electron').ipcMain.handle('cli:remove', async () => {
+    for (const file of cliTargets()) {
+      try {
+        if (fs.readFileSync(file, 'utf8').includes(cliMarker)) fs.unlinkSync(file);
+      } catch {}
+    }
+    return cliStatus();
   });
 
   /* -------------------------------------------------------------------- media */
@@ -1432,21 +1637,21 @@ ${commands}
     elevenlabs: 'ElevenLabs', replicate: 'Replicate', fal: 'fal.ai', higgsfield: 'Higgsfield',
   };
 
-  ipcMainHandle('media:list', async (_event, options = {}) => mediaLibrary.listAssets(options));
-  ipcMainHandle('media:get', async (_event, id) => mediaLibrary.getAsset(String(id || '')));
-  ipcMainHandle('media:jobs', async () => mediaLibrary.listJobs());
-  ipcMainHandle('media:job', async (_event, id) => mediaLibrary.getJob(String(id || '')));
-  ipcMainHandle('media:storage', async () => mediaLibrary.storageInfo());
+  ipcMainHandle('media:list', async (_event, options = {}) => getMedia().listAssets(options));
+  ipcMainHandle('media:get', async (_event, id) => getMedia().getAsset(String(id || '')));
+  ipcMainHandle('media:jobs', async () => getMedia().listJobs());
+  ipcMainHandle('media:job', async (_event, id) => getMedia().getJob(String(id || '')));
+  ipcMainHandle('media:storage', async () => getMedia().storageInfo());
   ipcMainHandle('media:engines', async () => {
     const config = configModule.loadConfig();
     return {
-      ...mediaLibrary.engineAvailability(),
-      defaults: config.media?.defaults || mediaLibrary.MEDIA_DEFAULTS,
+      ...getMedia().engineAvailability(),
+      defaults: config.media?.defaults || getMedia().MEDIA_DEFAULTS,
       endpoints: config.media?.endpoints || { comfyui: '' },
-      storage: mediaLibrary.storageInfo(),
+      storage: getMedia().storageInfo(),
     };
   });
-  ipcMainHandle('media:voices', async () => mediaLibrary.listVoices());
+  ipcMainHandle('media:voices', async () => getMedia().listVoices());
   ipcMainHandle('media:setEndpoint', async (_event, input = {}) => {
     if (input.id !== 'comfyui') throw new Error('Unknown media endpoint');
     const raw = String(input.endpoint || '').trim().slice(0, 300);
@@ -1459,18 +1664,18 @@ ${commands}
     const endpoints = { ...(config.media?.endpoints || {}), comfyui: raw };
     configModule.patchConfig({ media: { endpoints } });
     broadcast({ type: 'config:updated' });
-    return { endpoints, engines: mediaLibrary.engineAvailability() };
+    return { endpoints, engines: getMedia().engineAvailability() };
   });
-  ipcMainHandle('media:testEndpoint', async (_event, input = {}) => mediaLibrary.testEndpoint(String(input.endpoint || '')));
+  ipcMainHandle('media:testEndpoint', async (_event, input = {}) => getMedia().testEndpoint(String(input.endpoint || '')));
 
-  ipcMainHandle('media:generate', async (_event, input = {}) => mediaLibrary.generate(input));
-  ipcMainHandle('media:edit', async (_event, input = {}) => mediaLibrary.edit(input));
-  ipcMainHandle('media:cancel', async (_event, id) => mediaLibrary.cancelJob(String(id || '')));
-  ipcMainHandle('media:remove', async (_event, id) => mediaLibrary.removeAsset(String(id || '')));
-  ipcMainHandle('media:favorite', async (_event, id) => mediaLibrary.toggleFavorite(String(id || '')));
-  ipcMainHandle('media:readText', async (_event, id) => mediaLibrary.readText(String(id || '')));
+  ipcMainHandle('media:generate', async (_event, input = {}) => getMedia().generate(input));
+  ipcMainHandle('media:edit', async (_event, input = {}) => getMedia().edit(input));
+  ipcMainHandle('media:cancel', async (_event, id) => getMedia().cancelJob(String(id || '')));
+  ipcMainHandle('media:remove', async (_event, id) => getMedia().removeAsset(String(id || '')));
+  ipcMainHandle('media:favorite', async (_event, id) => getMedia().toggleFavorite(String(id || '')));
+  ipcMainHandle('media:readText', async (_event, id) => getMedia().readText(String(id || '')));
 
-  ipcMainHandle('media:importData', async (_event, input = {}) => mediaLibrary.importData(input));
+  ipcMainHandle('media:importData', async (_event, input = {}) => getMedia().importData(input));
 
   ipcMainHandle('media:import', async (event) => {
     const win = winFromEvent(event);
@@ -1490,7 +1695,7 @@ ${commands}
     const errors = [];
     for (const file of picked.filePaths.slice(0, 20)) {
       try {
-        items.push(await mediaLibrary.importFile(file));
+        items.push(await getMedia().importFile(file));
       } catch (err) {
         errors.push(`${path.basename(file)}: ${err.message}`);
       }
@@ -1499,7 +1704,7 @@ ${commands}
   });
 
   ipcMainHandle('media:export', async (event, id) => {
-    const asset = mediaLibrary.getAsset(String(id || ''));
+    const asset = getMedia().getAsset(String(id || ''));
     if (!asset) throw new Error('Media asset not found');
     const win = winFromEvent(event);
     const ext = path.extname(asset.fileName) || '.bin';
@@ -1510,7 +1715,7 @@ ${commands}
       filters: [{ name: ext.replace('.', '').toUpperCase() || 'Media', extensions: [ext.replace('.', '')] }],
     });
     if (result.canceled || !result.filePath) return { canceled: true };
-    return { canceled: false, ...(await mediaLibrary.copyTo(asset.id, result.filePath)) };
+    return { canceled: false, ...(await getMedia().copyTo(asset.id, result.filePath)) };
   });
 
   ipcMainHandle('media:saveToWorkspace', async (_event, input = {}) => {
@@ -1518,19 +1723,19 @@ ${commands}
     if (!config.workspace) throw new Error('Open a workspace first');
     const folder = String(input.folder || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').slice(0, 160);
     if (folder.split('/').some((part) => part === '..')) throw new Error('Folder must stay inside the workspace');
-    const saved = await mediaLibrary.saveToWorkspace(String(input.id || ''), config.workspace, folder);
+    const saved = await getMedia().saveToWorkspace(String(input.id || ''), config.workspace, folder);
     return { ...saved, folder, workspace: config.workspace };
   });
 
   ipcMainHandle('media:reveal', async (_event, id) => {
-    const file = mediaLibrary.assetFilePath(String(id || ''));
+    const file = getMedia().assetFilePath(String(id || ''));
     if (!file || !fs.existsSync(file)) throw new Error('Asset file is missing');
     shell.showItemInFolder(file);
     return true;
   });
 
   ipcMainHandle('media:open', async (_event, id) => {
-    const file = mediaLibrary.assetFilePath(String(id || ''));
+    const file = getMedia().assetFilePath(String(id || ''));
     if (!file || !fs.existsSync(file)) throw new Error('Asset file is missing');
     const error = await shell.openPath(file);
     if (error) throw new Error(error);
@@ -1551,7 +1756,7 @@ ${commands}
       id,
       hasKey: Boolean(key),
       label: MEDIA_KEY_LABELS[id] || id,
-      engines: mediaLibrary.engineAvailability(),
+      engines: getMedia().engineAvailability(),
     };
   });
 
@@ -1577,6 +1782,70 @@ ${commands}
     return { defaults: config.media?.defaults || {} };
   });
 
+  /* -------------------------------------------------------------------- paper */
+
+  ipcMainHandle('papers:list', async (_event, options = {}) => paperStore.listPapers(options));
+  ipcMainHandle('papers:count', async () => paperStore.paperCount());
+  ipcMainHandle('papers:get', async (_event, id) => paperStore.getPaperContent(String(id || '')));
+
+  ipcMainHandle('papers:create', async (_event, input = {}) => {
+    const paper = paperStore.createPaper({
+      title: input.title,
+      kind: input.kind,
+      content: input.content,
+      language: input.language,
+      description: input.description,
+      source: 'user',
+      sessionId: input.sessionId || '',
+    });
+    broadcast({ type: 'paper:changed', action: 'created', paper });
+    return paper;
+  });
+
+  ipcMainHandle('papers:update', async (_event, input = {}) => {
+    const paper = paperStore.updatePaper(String(input.id || ''), {
+      title: input.title,
+      content: input.content,
+      description: input.description,
+      language: input.language,
+    });
+    broadcast({ type: 'paper:changed', action: 'updated', paper });
+    return paper;
+  });
+
+  ipcMainHandle('papers:favorite', async (_event, id) => {
+    const paper = paperStore.toggleFavorite(String(id || ''));
+    broadcast({ type: 'paper:changed', action: 'favorited', paper });
+    return paper;
+  });
+
+  ipcMainHandle('papers:remove', async (_event, id) => {
+    const result = paperStore.removePaper(String(id || ''));
+    if (result.removed) broadcast({ type: 'paper:removed', id: String(id || '') });
+    return result;
+  });
+
+  ipcMainHandle('papers:export', async (event, id) => {
+    const result = paperStore.getPaperContent(String(id || ''));
+    const win = winFromEvent(event);
+    const dialogResult = await dialog.showSaveDialog(win, {
+      title: 'Export paper',
+      defaultPath: path.join(app.getPath('downloads'), paperStore.exportFileName(result.paper)),
+    });
+    if (dialogResult.canceled || !dialogResult.filePath) return { canceled: true };
+    fs.writeFileSync(dialogResult.filePath, result.content, 'utf8');
+    return { canceled: false, path: dialogResult.filePath };
+  });
+
+  ipcMainHandle('papers:reveal', async (_event, id) => {
+    const meta = paperStore.readMeta(String(id || ''));
+    if (!meta) throw new Error('Paper not found');
+    const file = paperStore.contentPath(meta);
+    if (!fs.existsSync(file)) throw new Error('Paper content is missing');
+    shell.showItemInFolder(file);
+    return true;
+  });
+
   /* ------------------------------------------------------------------- window */
 
   require('electron').ipcMain.handle('window:minimize', async (event) => {
@@ -1597,6 +1866,147 @@ ${commands}
     return { maximized: Boolean(win?.isMaximized()), fullscreen: Boolean(win?.isFullScreen()) };
   });
 
+  function scheduleSummary(schedule) {
+    return {
+      ...schedule,
+      running: state.scheduleRuns.has(schedule.id),
+    };
+  }
+
+  function runSchedule(schedule) {
+    if (!schedule || state.scheduleRuns.has(schedule.id)) return { started: false, reason: 'running' };
+    const config = configModule.loadConfig();
+    const model = schedule.model && catalog.findModel(schedule.model, config) ? schedule.model : config.defaultModel;
+    const workspace = schedule.workspace && fs.existsSync(schedule.workspace) ? schedule.workspace : config.workspace;
+    const session = store.createSession({
+      workspace,
+      model,
+      mode: schedule.mode,
+      reasoningEffort: schedule.reasoningEffort,
+    });
+    session.title = schedule.title;
+    const message = { id: uid('msg_'), role: 'user', content: schedule.prompt, at: new Date().toISOString(), source: 'schedule' };
+    session.messages.push(message);
+    store.saveSession(session);
+    schedulesModule.markRun(schedule.id, { status: 'running', sessionId: session.id });
+    notifySession(session);
+    broadcast({ type: 'sessions:refresh' });
+
+    const controller = new AbortController();
+    state.scheduleRuns.set(schedule.id, { controller, sessionId: session.id });
+
+    const emit = (payload) => {
+      const enriched = { ...payload, sessionId: session.id, runId: `schedule_${schedule.id}` };
+      broadcast(enriched);
+      try { remote.publish(enriched); } catch {}
+    };
+    broadcast({ type: 'schedule:started', scheduleId: schedule.id, sessionId: session.id, title: schedule.title });
+
+    runAgent({
+      session,
+      config,
+      emit,
+      signal: controller.signal,
+      requestApproval: (request) => {
+        if (schedule.allowTools) return Promise.resolve('always');
+        broadcast({
+          type: 'notice',
+          level: 'warn',
+          text: `Scheduled “${schedule.title}” was denied ${request.label || request.tool}. Enable tool use or run it from a chat.`,
+        });
+        return Promise.resolve('deny');
+      },
+      mcp,
+    }).then((outcome) => {
+      const fresh = store.getSession(session.id) || session;
+      schedulesModule.markRun(schedule.id, {
+        status: outcome.ok ? 'ok' : outcome.stopped ? 'stopped' : 'error',
+        sessionId: session.id,
+      });
+      emit({ type: 'run:done', outcome, usage: fresh.usage, title: fresh.title, tasks: fresh.tasks || [], files: fresh.files || [] });
+      broadcast({ type: 'notice', level: outcome.ok ? 'info' : 'warn', text: `Scheduled “${schedule.title}” ${outcome.ok ? 'finished' : outcome.stopped ? 'stopped' : 'ended with an error'}.` });
+      notifications.scheduleFinished({
+        title: `${outcome.ok ? 'Scheduled run finished' : 'Scheduled run stopped'} · ${schedule.title}`,
+        body: runNotificationBody(fresh, outcome),
+        sessionId: fresh.id,
+        failed: !outcome.ok,
+      });
+      notifySession(fresh);
+      maybeReflect(getWindow(), fresh);
+    }).catch((err) => {
+      schedulesModule.markRun(schedule.id, { status: 'error', error: err.message, sessionId: session.id });
+      emit({ type: 'run:done', outcome: { ok: false, error: err.message } });
+      broadcast({ type: 'notice', level: 'warn', text: `Scheduled “${schedule.title}” failed: ${err.message}` });
+      notifications.scheduleFinished({
+        title: `Scheduled run failed · ${schedule.title}`,
+        body: err.message,
+        sessionId: session.id,
+        failed: true,
+      });
+    }).finally(() => {
+      state.scheduleRuns.delete(schedule.id);
+      broadcast({ type: 'schedules:refresh' });
+      broadcast({ type: 'sessions:refresh' });
+    });
+    return { started: true, sessionId: session.id };
+  }
+
+  function scheduleTick() {
+    if (state.disposed) return;
+    for (const schedule of schedulesModule.dueSchedules()) {
+      if (state.scheduleRuns.size >= 2) break;
+      try { runSchedule(schedule); } catch (err) {
+        schedulesModule.markRun(schedule.id, { status: 'error', error: err.message });
+      }
+    }
+  }
+
+  ipcMainHandle('schedules:list', async () => ({
+    schedules: schedulesModule.listSchedules().map(scheduleSummary),
+    running: [...state.scheduleRuns.keys()],
+  }));
+
+  ipcMainHandle('schedules:save', async (event, input = {}) => {
+    const schedule = schedulesModule.saveSchedule(input);
+    broadcast({ type: 'schedules:refresh' });
+    return { schedule: scheduleSummary(schedule) };
+  });
+
+  ipcMainHandle('schedules:delete', async (event, input = {}) => {
+    const run = state.scheduleRuns.get(input.id);
+    if (run) {
+      try { run.controller.abort(); } catch {}
+      state.scheduleRuns.delete(input.id);
+    }
+    const deleted = schedulesModule.deleteSchedule(input.id);
+    broadcast({ type: 'schedules:refresh' });
+    return { deleted };
+  });
+
+  ipcMainHandle('schedules:run', async (event, input = {}) => {
+    const schedule = schedulesModule.getSchedule(input.id);
+    if (!schedule) throw new Error('That schedule no longer exists.');
+    return runSchedule(schedule);
+  });
+
+  ipcMainHandle('notifications:status', async () => ({
+    supported: notifications.supported(),
+    preferences: notifications.preferences(),
+  }));
+
+  ipcMainHandle('notifications:test', async () => {
+    const shown = notifications.notifyTest();
+    return {
+      shown,
+      supported: notifications.supported(),
+      reason: shown ? '' : notifications.supported() ? 'Desktop notifications are disabled in Settings.' : 'This system does not support desktop notifications.',
+    };
+  });
+
+  state.scheduleTimer = setInterval(scheduleTick, 30000);
+  if (state.scheduleTimer.unref) state.scheduleTimer.unref();
+  setTimeout(scheduleTick, 12000).unref?.();
+
   const savedRemote = configModule.loadConfig().remote || {};
   if (savedRemote.autoStart) {
     setTimeout(() => {
@@ -1616,6 +2026,12 @@ ${commands}
 
   function dispose() {
     state.disposed = true;
+    if (state.scheduleTimer) clearInterval(state.scheduleTimer);
+    for (const run of state.scheduleRuns.values()) {
+      try { run.controller.abort(); } catch {}
+    }
+    state.scheduleRuns.clear();
+    try { oauthModule.closeAll(); } catch {}
     for (const run of state.runs.values()) run.controller.abort();
     denyApprovalsFor(() => true);
     state.runs.clear();
@@ -1624,9 +2040,9 @@ ${commands}
     try { remote.stop(); } catch {}
     try { overlay.dispose(); } catch {}
     try { computer.onActivity(null); } catch {}
-    for (const job of mediaLibrary.listJobs()) {
+    for (const job of getMedia().listJobs()) {
       if (job.status === 'queued' || job.status === 'running') {
-        try { mediaLibrary.cancelJob(job.id); } catch {}
+        try { getMedia().cancelJob(job.id); } catch {}
       }
     }
   }

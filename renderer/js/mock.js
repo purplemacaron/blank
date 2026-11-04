@@ -210,7 +210,20 @@
   config.search = { provider: 'duckduckgo', maxResults: 6, baseUrl: '', hasKey: {}, keyIds: [] };
   config.computer = { showCursor: true };
   config.remote = { port: 8787, allowLan: false, allowApprovals: false, autoStart: false };
+  config.notifications = { enabled: true, onFinish: true, onApproval: true, schedules: true };
   config.media = { defaults: {}, hasKey: {}, keyIds: [] };
+  config.subscriptions = {
+    anthropic: { signedIn: false, mode: '', email: '', plan: '', experimental: true },
+    openai: { signedIn: false, mode: '', email: '', plan: '', experimental: true },
+  };
+
+  function subscribe(providerId) {
+    config.subscriptions[providerId] = providerId === 'anthropic'
+      ? { signedIn: true, mode: 'claude', email: 'you@example.com', plan: 'max', experimental: true }
+      : { signedIn: true, mode: 'chatgpt', email: 'you@example.com', plan: 'plus', experimental: true };
+    emit({ type: 'config:updated' });
+    return config;
+  }
 
   /* ------------------------------------------------------- plugins & remote */
 
@@ -307,6 +320,187 @@
   }
 
 
+
+  /* ------------------------------------------------------------------ papers */
+
+  const PAPER_LABELS = { html: 'Page', markdown: 'Document', svg: 'Graphic', code: 'Code' };
+
+  function paperText(content) {
+    return String(content || '')
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&(?:nbsp|amp|lt|gt|quot|#\d+);/gi, ' ')
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/[#>*_`~]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  function paperExcerpt(content) {
+    const text = paperText(content);
+    return text.length > 220 ? `${text.slice(0, 219).trimEnd()}…` : text;
+  }
+  function paperBytes(content) { return new TextEncoder().encode(String(content || '')).length; }
+  function paperTitleFor(content, kind) {
+    const raw = String(content || '');
+    if (kind === 'html' || kind === 'svg') {
+      const title = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      if (title && title[1].trim()) return paperText(title[1]).slice(0, 70);
+      const heading = raw.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+      if (heading && heading[1].trim()) return paperText(heading[1]).slice(0, 70);
+    }
+    const line = raw.split(/\r?\n/).map((entry) => entry.trim()).find(Boolean) || '';
+    return (paperText(line.replace(/^#+\s*/, '')).slice(0, 70) || 'Untitled paper');
+  }
+  function paperPublic(paper) {
+    if (!paper) return null;
+    return {
+      id: paper.id,
+      title: paper.title,
+      kind: paper.kind,
+      kindLabel: PAPER_LABELS[paper.kind] || 'Page',
+      language: paper.language || '',
+      description: paper.description || '',
+      excerpt: paper.excerpt || '',
+      source: paper.source || 'agent',
+      sessionId: paper.sessionId || '',
+      favorite: Boolean(paper.favorite),
+      version: Number(paper.version) || 1,
+      bytes: Number(paper.bytes) || 0,
+      createdAt: paper.createdAt,
+      updatedAt: paper.updatedAt,
+      previewUrl: '',
+    };
+  }
+  function paperCounts() {
+    const counts = { html: 0, markdown: 0, svg: 0, code: 0, favorite: 0 };
+    for (const paper of papers) {
+      counts[paper.kind] = (counts[paper.kind] || 0) + 1;
+      if (paper.favorite) counts.favorite += 1;
+    }
+    return counts;
+  }
+
+  const paperSeeds = [
+    {
+      kind: 'html', title: 'Atlas release brief', language: '', favorite: true, source: 'agent', offset: -5400000,
+      description: 'A one-page brief for the 2.4 release.',
+      content: `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Atlas 2.4 release brief</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; padding: 56px 40px; font: 15px/1.65 system-ui, -apple-system, sans-serif; color: #1c2430; background: #fbfbf9; }
+  main { max-width: 640px; margin: 0 auto; }
+  .eyebrow { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #2f6bff; font-weight: 600; }
+  h1 { font-size: 34px; letter-spacing: -.03em; margin: 10px 0 10px; line-height: 1.15; }
+  p { color: #55606e; margin: 0 0 18px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 26px 0; }
+  .card { border: 1px solid #e6e9ef; border-radius: 10px; padding: 14px; background: #fff; }
+  .card b { display: block; font-size: 20px; letter-spacing: -.02em; }
+  .card span { font-size: 11px; color: #7b8593; }
+  ul { padding-left: 18px; color: #55606e; }
+  li { margin-bottom: 7px; }
+  .foot { margin-top: 32px; font-size: 12px; color: #9aa3b0; border-top: 1px solid #eceef3; padding-top: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Release · 24 October</div>
+  <h1>Atlas 2.4 brings billing into one calm surface.</h1>
+  <p>Usage, invoices and webhook health now live on a single page. The ledger is idempotent, the queue is retry-safe, and every write is audited.</p>
+  <div class="grid">
+    <div class="card"><b>1.8s</b><span>median webhook</span></div>
+    <div class="card"><b>0</b><span>duplicate rows</span></div>
+    <div class="card"><b>99.98%</b><span>delivery</span></div>
+  </div>
+  <ul>
+    <li>Idempotency keyed on the Stripe event id.</li>
+    <li>Retries are bounded and observable.</li>
+    <li>Public responses never include internal account ids.</li>
+  </ul>
+  <div class="foot">Prepared by the agent · Blank Paper</div>
+</main>
+</body>
+</html>`,
+    },
+    {
+      kind: 'markdown', title: 'Billing idempotency notes', language: '', favorite: true, source: 'agent', offset: -86400000 * 1.1,
+      sessionId: 's_atlas_webhooks',
+      description: 'Why duplicate Stripe deliveries must not write twice.',
+      content: `# Billing idempotency notes
+
+Stripe can deliver the same event more than once. The ledger must be idempotent.
+
+## Rules
+
+1. Key every write on the event id.
+2. Never trust read-modify-write for money.
+3. Keep the queue consumer replayable.
+
+## Open questions
+
+- Do refunds need a separate ledger kind?
+- Should failed events page on the second retry?
+
+## Next
+
+Add the duplicate-delivery test before the next release.
+`,
+    },
+    {
+      kind: 'svg', title: 'Quiet mark', language: '', favorite: false, source: 'agent', offset: -86400000 * 5,
+      description: 'A paper-white brand study in blue.',
+      content: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 360" role="img" aria-label="A quiet blue mark">
+  <rect width="520" height="360" fill="#f7f8fb" />
+  <circle cx="260" cy="180" r="104" fill="none" stroke="#2f6bff" stroke-width="2" />
+  <circle cx="260" cy="180" r="64" fill="#eef3ff" />
+  <path d="M150 250 370 110" stroke="#c9d8ff" stroke-width="2" />
+  <path d="M260 76v208" stroke="#dce6ff" stroke-width="1" />
+  <text x="260" y="196" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="42" font-weight="600" fill="#2f6bff">b</text>
+</svg>`,
+    },
+    {
+      kind: 'code', title: 'Webhook guard', language: 'js', favorite: false, source: 'agent', offset: -86400000 * 3,
+      description: 'Idempotent insert for Stripe deliveries.',
+      content: `export async function recordEvent(prisma, event) {
+  return prisma.ledger.upsert({
+    where: { eventId: event.id },
+    update: {},
+    create: {
+      eventId: event.id,
+      type: event.type,
+      amount: event.type === 'invoice.paid'
+        ? event.data.object.amount_paid
+        : 0,
+    },
+  });
+}
+`,
+    },
+  ];
+
+  const papers = paperSeeds.map((seed, index) => ({
+    id: `p_demo${String(index + 1).padStart(3, '0')}`,
+    kind: seed.kind,
+    language: seed.language || '',
+    title: seed.title,
+    description: seed.description || '',
+    excerpt: paperExcerpt(seed.content),
+    content: seed.content,
+    source: seed.source || 'agent',
+    sessionId: seed.sessionId || '',
+    favorite: Boolean(seed.favorite),
+    version: index === 0 ? 3 : index === 1 ? 2 : 1,
+    bytes: paperBytes(seed.content),
+    createdAt: iso(seed.offset),
+    updatedAt: iso(seed.offset + 3600000 * 2),
+  }));
 
   /* ------------------------------------------------------------------ files */
 
@@ -652,10 +846,14 @@
       { id: 'm_demo_t5', role: 'tool', toolCallId: 'tc_demo_5', name: 'edit_file', at: iso(-86400000 * 1.12), isError: false, content: 'Updated src/billing/webhooks.ts — 8 lines added, 6 removed.', meta: { path: 'src/billing/webhooks.ts', checkpointId: 'c_demo_webhook', additions: 8, removals: 6 } },
       { id: 'm_demo_t6', role: 'tool', toolCallId: 'tc_demo_6', name: 'edit_file', at: iso(-86400000 * 1.12), isError: false, content: 'Updated src/billing/webhooks.test.ts — 9 lines added.', meta: { path: 'src/billing/webhooks.test.ts', checkpointId: 'c_demo_test', additions: 9, removals: 0 } },
       { id: 'm_demo_t7', role: 'tool', toolCallId: 'tc_demo_7', name: 'run_command', at: iso(-86400000 * 1.12), isError: false, content: "RUN  v2.1.4 C:/Users/you/Projects/atlas-platform\n\n ✓ src/billing/webhooks.test.ts (4 tests) 214ms\n   ✓ accepts a signed event\n   ✓ rejects a bad signature\n   ✓ is idempotent for duplicate deliveries\n   ✓ retries transient queue failures\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n   Duration  1.42s", meta: { command: 'pnpm vitest run src/billing', exitCode: 0, cwd: 'atlas-platform' } },
+      { id: 'm_demo_t8', role: 'tool', toolCallId: 'tc_demo_8', name: 'create_paper', at: iso(-86400000 * 1.11), isError: false, content: 'Created “Billing idempotency notes” — Document, v2, 418 B.', meta: { paper: { id: 'p_demo002', title: 'Billing idempotency notes', kind: 'markdown', version: 2, bytes: 418 } } },
       {
         id: 'm_demo_a3', role: 'assistant', at: iso(-86400000 * 1.11), model: 'anthropic/claude-sonnet-4-5',
         usage: { input: 5140, output: 1688 },
         reasoning: 'The transaction plus upsert closes the duplicate path. The queue publish still happens after the transaction; if it fails, the ledger row exists and a retry will skip the insert and re-enqueue. That is safe.',
+        toolCalls: [
+          { id: 'tc_demo_8', name: 'create_paper', args: { title: 'Billing idempotency notes', kind: 'markdown', content: '# Billing idempotency notes\n\nStripe can deliver the same event more than once. The ledger must be idempotent.' } },
+        ],
         content: [
           'Done. The handler is now idempotent at the storage boundary, and the public API is unchanged.',
           '',
@@ -1575,6 +1773,51 @@
         emit({ type: 'config:updated' });
         return { servers: mcpServers };
       },
+      async oauthStart(id) {
+        await sleep(700);
+        mcpServers = mcpServers.map((server) => server.id === id ? { ...server, oauth: { signedIn: true, expiresAt: new Date(Date.now() + 3600000).toISOString() } } : server);
+        return { status: { signedIn: true }, servers: mcpServers };
+      },
+      async oauthSignOut(id) {
+        await sleep(200);
+        mcpServers = mcpServers.map((server) => server.id === id ? { ...server, oauth: { signedIn: false } } : server);
+        return { removed: true, servers: mcpServers };
+      },
+    },
+
+    notifications: {
+      async status() { await sleep(30); return { supported: true, preferences: config.notifications }; },
+      async test() { await sleep(120); return { shown: true, supported: true, reason: '' }; },
+    },
+
+    subscription: {
+      async status() { await sleep(40); return config.subscriptions; },
+      async start(providerId) {
+        await sleep(900);
+        if (providerId === 'anthropic') return { needsCode: true, providerId, expiresAt: new Date(Date.now() + 300000).toISOString() };
+        return { config: subscribe(providerId), needsCode: false };
+      },
+      async complete(input) {
+        await sleep(700);
+        return { config: subscribe(input?.providerId || 'anthropic') };
+      },
+      async signOut(providerId) {
+        await sleep(200);
+        config.subscriptions[providerId] = { signedIn: false, mode: '', email: '', plan: '', experimental: true };
+        emit({ type: 'config:updated' });
+        return { config };
+      },
+    },
+
+    schedules: {
+      async list() { await sleep(40); return { schedules: [], running: [] }; },
+      async save(input) {
+        await sleep(120);
+        const now = new Date();
+        return { schedule: { id: `sch_demo_${Math.random().toString(36).slice(2, 6)}`, title: input.title || 'Scheduled run', prompt: input.prompt || '', cadence: input.cadence || 'daily', time: input.time || '09:00', enabled: true, allowTools: Boolean(input.allowTools), nextRunAt: now.toISOString(), runCount: 0 } };
+      },
+      async remove() { await sleep(80); return { deleted: true }; },
+      async run() { await sleep(120); return { started: true }; },
     },
 
     skills: {
@@ -1831,6 +2074,107 @@
         emit({ type: 'config:updated' });
         return { defaults: config.media.defaults };
       },
+    },
+
+    papers: {
+      async list(options = {}) {
+        await sleep(20);
+        let items = papers.slice();
+        if (options.kind && PAPER_LABELS[options.kind]) items = items.filter((paper) => paper.kind === options.kind);
+        if (options.favorite) items = items.filter((paper) => paper.favorite);
+        const query = String(options.query || '').trim().toLowerCase();
+        if (query) {
+          items = items.filter((paper) => `${paper.title} ${paper.description} ${paper.excerpt} ${paper.language}`.toLowerCase().includes(query));
+        }
+        items.sort((a, b) => {
+          if (Boolean(b.favorite) !== Boolean(a.favorite) && options.favorite == null) return Number(Boolean(b.favorite)) - Number(Boolean(a.favorite));
+          return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+        });
+        const total = items.length;
+        const offset = Math.max(0, Number(options.offset) || 0);
+        const limit = Math.max(1, Math.min(200, Number(options.limit) || 80));
+        return {
+          items: items.slice(offset, offset + limit).map(paperPublic),
+          total,
+          offset,
+          limit,
+          counts: paperCounts(),
+        };
+      },
+      async count() { return papers.length; },
+      async get(id) {
+        await sleep(10);
+        const paper = papers.find((entry) => entry.id === id);
+        return paper ? { paper: paperPublic(paper), content: paper.content } : null;
+      },
+      async create(input = {}) {
+        await sleep(80);
+        const kind = PAPER_LABELS[input.kind] ? input.kind : 'html';
+        const content = String(input.content || '');
+        if (!content.trim()) throw new Error('Paper content is empty.');
+        const now = new Date().toISOString();
+        const paper = {
+          id: `p_${Math.random().toString(36).slice(2, 9)}`,
+          kind,
+          language: kind === 'code' ? String(input.language || '').slice(0, 24) : '',
+          title: String(input.title || '').trim().slice(0, 120) || paperTitleFor(content, kind),
+          description: String(input.description || '').trim().slice(0, 280),
+          excerpt: paperExcerpt(content),
+          content,
+          source: 'user',
+          sessionId: '',
+          favorite: false,
+          version: 1,
+          bytes: paperBytes(content),
+          createdAt: now,
+          updatedAt: now,
+        };
+        papers.unshift(paper);
+        const result = paperPublic(paper);
+        emit({ type: 'paper:changed', action: 'created', paper: result });
+        return result;
+      },
+      async update(input = {}) {
+        await sleep(80);
+        const paper = papers.find((entry) => entry.id === input.id);
+        if (!paper) throw new Error('Paper not found.');
+        if (input.content !== undefined) {
+          const content = String(input.content || '');
+          if (!content.trim()) throw new Error('Paper content is empty.');
+          paper.content = content;
+          paper.bytes = paperBytes(content);
+          paper.excerpt = paperExcerpt(content);
+          paper.version = (Number(paper.version) || 1) + 1;
+        }
+        if (typeof input.title === 'string' && input.title.trim()) paper.title = input.title.trim().slice(0, 120);
+        if (typeof input.language === 'string' && paper.kind === 'code') paper.language = input.language.slice(0, 24);
+        paper.updatedAt = new Date().toISOString();
+        const result = paperPublic(paper);
+        emit({ type: 'paper:changed', action: 'updated', paper: result });
+        return result;
+      },
+      async favorite(id) {
+        await sleep(30);
+        const paper = papers.find((entry) => entry.id === id);
+        if (!paper) throw new Error('Paper not found.');
+        paper.favorite = !paper.favorite;
+        paper.updatedAt = new Date().toISOString();
+        const result = paperPublic(paper);
+        emit({ type: 'paper:changed', action: 'favorited', paper: result });
+        return result;
+      },
+      async remove(id) {
+        await sleep(40);
+        const index = papers.findIndex((entry) => entry.id === id);
+        if (index >= 0) papers.splice(index, 1);
+        emit({ type: 'paper:removed', id });
+        return { removed: index >= 0 };
+      },
+      async export(id) {
+        await sleep(60);
+        return { canceled: true, id };
+      },
+      async reveal() { return true; },
     },
 
     plugins: {

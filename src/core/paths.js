@@ -17,6 +17,8 @@ function appPaths() {
     sessions: path.join(root, 'sessions'),
     memory: path.join(root, 'memory.json'),
     insights: path.join(root, 'insights.json'),
+    schedules: path.join(root, 'schedules.json'),
+    oauth: path.join(root, 'oauth.json'),
     checkpoints: path.join(root, 'checkpoints'),
     skills: path.join(root, 'skills'),
     logs: path.join(root, 'logs'),

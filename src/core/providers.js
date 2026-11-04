@@ -3,6 +3,7 @@
 const { findModel, getProvider } = require('./catalog');
 const { resolveKey, keyCandidates, noteKeyUsage } = require('./config');
 const { sandboxStream } = require('./sandbox');
+const subscription = require('./subscription');
 
 const ANTHROPIC_VERSION = '2023-06-01';
 
@@ -104,6 +105,12 @@ async function* openaiStream({ resolved, apiKey, system, messages, tools, option
     stream: true,
   };
   if (typeof options.temperature === 'number') body.temperature = options.temperature;
+  if (options.reasoningEffort && options.reasoningEffort !== 'auto') {
+    const effort = options.reasoningEffort;
+    const family = String(resolved.id || '').split('/').pop().toLowerCase();
+    if (resolved.providerId === 'openrouter') body.reasoning = { effort };
+    if (/^(gpt-5|gpt-oss|o[1-9](?![0-9]))/.test(family)) body.reasoning_effort = effort;
+  }
   if (tools && tools.length) {
     body.tools = tools.map((tool) => ({
       type: 'function',
@@ -176,6 +183,141 @@ async function* openaiStream({ resolved, apiKey, system, messages, tools, option
   yield { type: 'done', finished };
 }
 
+/* ------------------------------------------------ ChatGPT subscriptions */
+
+function responsesInput(messages) {
+  const items = [];
+  for (const message of messages) {
+    if (message.role === 'user') {
+      items.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text: contentForModel(message) }] });
+    } else if (message.role === 'assistant') {
+      const raw = Array.isArray(message.providerItems) ? message.providerItems : [];
+      let functionCalls = 0;
+      for (const item of raw) {
+        if (item.type === 'reasoning') {
+          items.push({
+            type: 'reasoning',
+            ...(item.id ? { id: item.id } : {}),
+            ...(item.encrypted_content ? { encrypted_content: item.encrypted_content } : {}),
+            summary: Array.isArray(item.summary) ? item.summary : [],
+          });
+        } else if (item.type === 'function_call') {
+          functionCalls += 1;
+          items.push({ type: 'function_call', call_id: item.call_id || item.id, name: item.name, arguments: item.arguments || '{}' });
+        }
+      }
+      if (message.content) {
+        items.push({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: message.content }] });
+      }
+      if (!functionCalls) {
+        for (const call of message.toolCalls || []) {
+          items.push({ type: 'function_call', call_id: call.id, name: call.name, arguments: JSON.stringify(call.args || {}) });
+        }
+      }
+    } else if (message.role === 'tool') {
+      items.push({ type: 'function_call_output', call_id: message.toolCallId, output: String(message.content || '') });
+    }
+  }
+  return items;
+}
+
+async function* responsesStream({ resolved, apiKey, system, messages, tools, options, signal }) {
+  const headers = {
+    ...subscription.subscribeHeaders('openai'),
+    authorization: `Bearer ${apiKey}`,
+    'content-type': 'application/json',
+    accept: 'text/event-stream',
+  };
+  const body = {
+    model: resolved.id,
+    instructions: system,
+    input: responsesInput(messages),
+    tools: (tools || []).map((tool) => ({
+      type: 'function',
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      strict: false,
+    })),
+    tool_choice: 'auto',
+    parallel_tool_calls: true,
+    stream: true,
+    store: false,
+    include: ['reasoning.encrypted_content'],
+  };
+  if (options.reasoningEffort && options.reasoningEffort !== 'auto') {
+    body.reasoning = { effort: options.reasoningEffort, summary: 'auto' };
+  } else {
+    body.reasoning = { summary: 'auto' };
+  }
+  if (!body.tools.length) delete body.tools;
+
+  const response = await fetch(`${subscription.codexBase()}/responses`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal: withTimeout(signal, 900000),
+  });
+  if (!response.ok) await readError(response);
+
+  let finished = false;
+  let sawText = false;
+  for await (const frame of sseEvents(response)) {
+    if (!frame.data || frame.data === '[DONE]') continue;
+    let data;
+    try { data = JSON.parse(frame.data); } catch { continue; }
+    const type = data.type || frame.event;
+    if (type === 'error' || type === 'response.failed') {
+      const error = data.error || data.response?.error || {};
+      throw new Error(error.message || 'The subscription endpoint returned an error.');
+    }
+    if (type === 'response.output_text.delta' && data.delta) {
+      sawText = true;
+      yield { type: 'text', text: data.delta };
+      continue;
+    }
+    if (type === 'response.reasoning_summary_text.delta' && data.delta) {
+      yield { type: 'reasoning', text: data.delta };
+      continue;
+    }
+    if (type === 'response.completed') {
+      const payload = data.response || {};
+      const output = Array.isArray(payload.output) ? payload.output : [];
+      const calls = [];
+      for (const item of output) {
+        if (item.type !== 'function_call' || !item.name) continue;
+        let args = {};
+        try { args = item.arguments ? JSON.parse(item.arguments) : {}; } catch { args = { _raw: item.arguments }; }
+        calls.push({
+          id: item.call_id || item.id || `call_${calls.length}_${Date.now()}`,
+          name: item.name,
+          args,
+          rawArgs: item.arguments || '',
+        });
+      }
+      const providerItems = output.filter((item) => ['reasoning', 'function_call'].includes(item.type));
+      if (providerItems.length) yield { type: 'provider_items', items: providerItems };
+      if (payload.usage) {
+        yield {
+          type: 'usage',
+          usage: {
+            input: payload.usage.input_tokens || 0,
+            output: payload.usage.output_tokens || 0,
+          },
+        };
+      }
+      if (!sawText && !calls.length) {
+        const text = output.filter((item) => item.type === 'message').flatMap((item) => item.content || []).filter((part) => part.type === 'output_text').map((part) => part.text || '').join('');
+        if (text) yield { type: 'text', text };
+      }
+      if (calls.length) yield { type: 'tool_calls', calls };
+      finished = true;
+      break;
+    }
+  }
+  yield { type: 'done', finished };
+}
+
 /* --------------------------------------------------------------- Anthropic */
 
 function anthropicMessages(messages) {
@@ -205,12 +347,18 @@ function anthropicMessages(messages) {
   return out;
 }
 
-async function* anthropicStream({ resolved, apiKey, system, messages, tools, options, signal }) {
+async function* anthropicStream({ resolved, apiKey, system, messages, tools, options, signal, subscriptionMode = '' }) {
   const base = trimBase(resolved.baseUrl);
+  const oauthMode = subscriptionMode === 'claude';
   const body = {
     model: resolved.id,
     max_tokens: options.maxTokens || 8192,
-    system,
+    system: oauthMode
+      ? [
+          { type: 'text', text: 'You are Claude Code, Anthropic\'s official CLI for Claude.' },
+          { type: 'text', text: system },
+        ]
+      : system,
     messages: anthropicMessages(messages),
     stream: true,
   };
@@ -222,13 +370,19 @@ async function* anthropicStream({ resolved, apiKey, system, messages, tools, opt
       input_schema: tool.parameters,
     }));
   }
+  const headers = {
+    'content-type': 'application/json',
+    'anthropic-version': ANTHROPIC_VERSION,
+  };
+  if (oauthMode) {
+    headers.authorization = `Bearer ${apiKey}`;
+    headers['anthropic-beta'] = 'oauth-2025-04-20';
+  } else {
+    headers['x-api-key'] = apiKey;
+  }
   const response = await fetch(`${base}/messages`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': ANTHROPIC_VERSION,
-    },
+    headers,
     body: JSON.stringify(body),
     signal: withTimeout(signal),
   });
@@ -348,6 +502,10 @@ async function* geminiStream({ resolved, apiKey, system, messages, tools, option
   if (typeof options.temperature === 'number') body.generationConfig.temperature = options.temperature;
   if (options.maxTokens) body.generationConfig.maxOutputTokens = options.maxTokens;
   if (options.topP) body.generationConfig.topP = options.topP;
+  if (options.reasoningEffort && options.reasoningEffort !== 'auto' && /gemini-2\.5/i.test(resolved.id)) {
+    const budget = options.reasoningEffort === 'low' ? 1024 : options.reasoningEffort === 'medium' ? 8192 : 24576;
+    body.generationConfig.thinkingConfig = { thinkingBudget: budget };
+  }
   if (tools && tools.length) {
     body.tools = [{
       functionDeclarations: tools.map((tool) => ({
@@ -414,10 +572,11 @@ function resolveRequest(modelId, config) {
   if (!provider) throw new Error(`Unknown provider: ${resolved.providerId}`);
   const keys = keyCandidates(config, resolved.providerId, provider);
   const apiKey = keys[0]?.key || resolveKey(config, resolved.providerId, provider);
-  if (resolved.protocol !== 'sandbox' && provider.keyEnv && !apiKey) {
+  const subEntry = subscription.entryFor(resolved.providerId);
+  if (resolved.protocol !== 'sandbox' && provider.keyEnv && !apiKey && !subEntry?.mode) {
     throw new Error(`${provider.name} needs an API key. Open Models to connect it, or set ${provider.keyEnv}.`);
   }
-  return { resolved, provider, apiKey, keys };
+  return { resolved, provider, apiKey, keys, subscriptionMode: subEntry?.mode || '' };
 }
 
 function isAbortError(err) {
@@ -430,9 +589,12 @@ function isKeyRotationError(err) {
   return /invalid.*(api )?key|incorrect api key|unauthorized|quota|insufficient|rate.?limit|too many requests/i.test(String(err?.message || ''));
 }
 
-function protocolStream({ resolved, apiKey, system, messages, tools, agentOptions, signal }) {
+function protocolStream({ resolved, apiKey, system, messages, tools, agentOptions, signal, subscriptionMode = '' }) {
+  if (subscriptionMode === 'chatgpt') {
+    return responsesStream({ resolved, apiKey, system, messages, tools, options: agentOptions, signal });
+  }
   if (resolved.protocol === 'anthropic') {
-    return anthropicStream({ resolved, apiKey, system, messages, tools, options: agentOptions, signal });
+    return anthropicStream({ resolved, apiKey, system, messages, tools, options: agentOptions, signal, subscriptionMode });
   }
   if (resolved.protocol === 'gemini') {
     return geminiStream({ resolved, apiKey, system, messages, tools, options: agentOptions, signal });
@@ -441,14 +603,36 @@ function protocolStream({ resolved, apiKey, system, messages, tools, agentOption
 }
 
 async function* streamChat({ modelId, config, system, messages, tools, signal, options = {} }) {
-  const { resolved, provider, keys } = resolveRequest(modelId, config);
+  const { resolved, provider, keys, subscriptionMode } = resolveRequest(modelId, config);
   const agentOptions = {
     temperature: options.temperature ?? config.agent?.temperature ?? null,
     maxTokens: options.maxTokens || 8192,
+    reasoningEffort: options.reasoningEffort || config.agent?.reasoningEffort || 'auto',
   };
   if (resolved.protocol === 'sandbox') {
     yield* sandboxStream({ resolved, messages, tools, options: agentOptions, signal });
     return;
+  }
+
+  if (subscriptionMode) {
+    const token = await subscription.tokenFor(resolved.providerId);
+    if (token) {
+      let started = false;
+      try {
+        for await (const event of protocolStream({
+          resolved, apiKey: token, system, messages, tools, agentOptions, signal, subscriptionMode,
+        })) {
+          started = true;
+          yield event;
+        }
+        return;
+      } catch (err) {
+        if (isAbortError(err) || signal?.aborted || started) throw err;
+        if (!keys.length || !isKeyRotationError(err)) throw err;
+      }
+    } else if (!keys.length) {
+      throw new Error(`The ${provider.name} subscription sign-in expired. Sign in again in Models, or add an API key.`);
+    }
   }
 
   const attempts = keys.length ? keys : [{ id: '', key: '', source: 'none' }];
@@ -497,11 +681,15 @@ async function completeText({ modelId, config, system, messages, signal, maxToke
   return text.trim();
 }
 
-async function listModelsAt({ baseUrl: rawBaseUrl, apiKey, protocol = 'openai' }) {
+async function listModelsAt({ baseUrl: rawBaseUrl, apiKey, protocol = 'openai', oauthMode = '' }) {
   const baseUrl = trimBase(rawBaseUrl);
   if (!/^https?:\/\//i.test(baseUrl)) throw new Error('A valid http(s) base URL is required.');
   const headers = { accept: 'application/json' };
-  if (protocol === 'anthropic') {
+  if (oauthMode === 'claude') {
+    headers.authorization = `Bearer ${apiKey}`;
+    headers['anthropic-version'] = ANTHROPIC_VERSION;
+    headers['anthropic-beta'] = 'oauth-2025-04-20';
+  } else if (protocol === 'anthropic') {
     headers['x-api-key'] = apiKey;
     headers['anthropic-version'] = ANTHROPIC_VERSION;
   } else if (protocol === 'gemini') {
@@ -527,12 +715,46 @@ async function listModelsAt({ baseUrl: rawBaseUrl, apiKey, protocol = 'openai' }
     .filter((entry) => entry.id);
 }
 
+async function listChatGptModels(apiKey) {
+  const response = await fetch(`${subscription.codexBase()}/models`, {
+    headers: {
+      accept: 'application/json',
+      ...subscription.subscribeHeaders('openai'),
+      authorization: `Bearer ${apiKey}`,
+    },
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!response.ok) await readError(response);
+  const json = await response.json();
+  const raw = Array.isArray(json) ? json : Array.isArray(json.data) ? json.data : Array.isArray(json.models) ? json.models : Array.isArray(json.items) ? json.items : [];
+  return raw
+    .map((entry) => {
+      if (typeof entry === 'string') return { id: entry, name: entry, context: 128000, discovered: true };
+      const id = String(entry.id || entry.slug || entry.model || entry.name || '');
+      return {
+        id,
+        name: entry.display_name || entry.displayName || entry.title || id,
+        context: Number(entry.context_window || entry.context_length || entry.max_context) || 128000,
+        discovered: true,
+      };
+    })
+    .filter((entry) => entry.id);
+}
+
 async function listModels({ providerId, config, apiKey: overrideKey, keyId }) {
   const provider = getProvider(providerId, config);
   if (!provider) throw new Error('Unknown provider.');
   if (provider.protocol === 'sandbox') return provider.models;
   const baseUrl = config.providers?.[providerId]?.baseUrl || provider.baseUrl;
   const apiKey = overrideKey || resolveKey(config, providerId, provider, keyId);
+  const subEntry = subscription.entryFor(providerId);
+  if (!apiKey && subEntry?.mode) {
+    const token = await subscription.tokenFor(providerId);
+    if (token) {
+      if (subEntry.mode === 'chatgpt') return listChatGptModels(token);
+      return listModelsAt({ baseUrl, apiKey: token, protocol: provider.protocol, oauthMode: 'claude' });
+    }
+  }
   if (provider.keyEnv && !apiKey) throw new Error('Add an API key first.');
   return listModelsAt({ baseUrl, apiKey, protocol: provider.protocol });
 }

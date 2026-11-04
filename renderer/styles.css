@@ -789,13 +789,14 @@ body.platform-linux .window-btn.close:hover { background: var(--red); }
 }
 .suggestion {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   padding: 12px 13px;
   border: 1px solid var(--border);
   background: var(--bg);
   border-radius: 10px;
   color: var(--text-secondary);
+  text-align: left;
   transition: border-color 0.14s, background 0.14s, transform 0.14s, box-shadow 0.14s;
 }
 .suggestion:hover {
@@ -814,9 +815,9 @@ body.platform-linux .window-btn.close:hover { background: var(--red); }
   color: var(--text-tertiary);
 }
 .suggestion:hover .suggestion-icon { background: var(--accent-soft); color: var(--accent); }
-.suggestion-copy { min-width: 0; display: flex; flex-direction: column; }
+.suggestion-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: left; }
 .suggestion-title { display: block; font-size: 12.5px; font-weight: 550; color: var(--text); line-height: 17px; }
-.suggestion-text { display: block; margin-top: 1px; font-size: 11px; color: var(--text-tertiary); line-height: 1.45; }
+.suggestion-text { display: block; margin-top: 1px; font-size: 11px; color: var(--text-tertiary); line-height: 1.45; min-height: 2.9em; }
 .suggestion kbd {
   float: right;
   margin-top: 1px;
@@ -1490,7 +1491,10 @@ body.platform-linux .window-btn.close:hover { background: var(--red); }
 .mode-choice.selected { background: var(--accent-soft); color: var(--accent-text); }
 .mode-choice-icon { display: flex; color: var(--text-tertiary); }
 .mode-choice.selected .mode-choice-icon { color: var(--accent); }
-.mode-choice-name { flex: 1; }
+.mode-choice-name { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; line-height: 14px; }
+.mode-choice-hint { font-size: 10px; color: var(--text-faint); }
+.mode-choice.selected .mode-choice-hint { color: var(--accent-text); opacity: 0.72; }
+.mode-picker-note { margin: 6px 9px 2px; font-size: 10px; line-height: 1.45; color: var(--text-faint); }
 .mode-choice-check { display: flex; color: var(--accent); }
 .mode-picker-sep { height: 1px; background: var(--border-soft); margin: 5px 2px; }
 .approval-preset { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 0 2px 3px; }
@@ -3915,3 +3919,56 @@ html[data-theme="dark"] .tok-kw { color: #8db3ff; }
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Schedules */
+.schedule-compose-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.schedule-compose-row .field-input { flex: 1 1 220px; height: 30px; }
+.schedule-compose-row .setting-inline-input { width: auto; }
+#schedule-prompt { margin: 8px 0; }
+.schedule-check { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); }
+.schedule-check input { accent-color: var(--accent); }
+.schedule-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.schedule-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+.schedule-row.running { border-color: var(--accent-border, var(--accent)); }
+.schedule-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.schedule-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.schedule-title { font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.schedule-meta { font-size: 10px; color: var(--text-faint); }
+.schedule-prompt { font-size: 11px; color: var(--text-muted); line-height: 1.45; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.schedule-error { font-size: 10px; color: var(--red); line-height: 1.4; }
+.schedule-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+
+/* Subscription sign-in */
+.subscription-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+.subscription-mark {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+.subscription-copy { flex: 1; min-width: 0; }
+.subscription-title { font-size: 11.5px; font-weight: 600; color: var(--text); }
+.subscription-note { font-size: 10px; color: var(--text-faint); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subscription-dialog { display: flex; flex-direction: column; gap: 10px; }
+.subscription-dialog code { font-size: 10.5px; padding: 1px 4px; border-radius: 4px; background: var(--bg-subtle); }

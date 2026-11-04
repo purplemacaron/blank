@@ -11,7 +11,15 @@
     mcp: { servers: [], catalog: [], loading: false },
     learn: { data: null, reflecting: false },
     plugins: { items: [], query: '', filter: 'all', loading: false },
-    settings: { remote: null, ssh: null },
+    settings: { remote: null, ssh: null, schedules: [] },
+    paper: {
+      loaded: false,
+      items: [],
+      counts: { html: 0, markdown: 0, svg: 0, code: 0, favorite: 0 },
+      filter: 'all',
+      favorite: false,
+      query: '',
+    },
     media: {
       loaded: false,
       loading: false,
@@ -26,6 +34,7 @@
       engines: null,
       storage: null,
       defaults: null,
+      pending: null,
       compose: {
         kind: 'image',
         prompt: '',
@@ -52,6 +61,55 @@
     model3d: { label: '3D', plural: '3D', icon: 'cube', noun: 'model' },
   };
 
+  const PAPER_KIND = {
+    html: { label: 'Page', icon: 'book' },
+    markdown: { label: 'Document', icon: 'file-text' },
+    svg: { label: 'Graphic', icon: 'image' },
+    code: { label: 'Code', icon: 'file-code' },
+  };
+
+  const PAPER_TEMPLATES = {
+    html: `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>A quiet page</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 15px/1.6 system-ui, sans-serif; color: #1d2733; background: #fbfbf9; }
+    main { width: min(560px, 100%); padding: 48px 32px; }
+    h1 { margin: 0 0 10px; font-size: 28px; letter-spacing: -0.02em; }
+    p { margin: 0 0 18px; color: #5b6572; }
+    a { color: #2f6bff; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>A quiet page</h1>
+    <p>Edit this paper, or ask the agent to build it out.</p>
+  </main>
+</body>
+</html>`,
+    markdown: `# A quiet document
+
+Start writing, or ask the agent to draft it.
+`,
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" role="img" aria-label="A quiet graphic">
+  <rect width="480" height="320" fill="#f7f8fb" />
+  <circle cx="240" cy="160" r="84" fill="none" stroke="#2f6bff" stroke-width="2" />
+  <path d="M156 160h168M240 76v168" stroke="#c9d6f5" stroke-width="1" />
+</svg>
+`,
+    code: 'function greet(name) {\n  return "Hello, " + name + ".";\n}\n',
+  };
+
+  const PAPER_PLACEHOLDERS = {
+    html: 'Write a page, or paste full HTML…',
+    markdown: 'Write Markdown…',
+    svg: 'Write an SVG graphic…',
+    code: 'Paste a snippet…',
+  };
+
   const TOOL_LABELS = {
     read_file: ['Read files', 'Read text files inside the workspace'],
     write_file: ['Create files', 'Create new files inside the workspace'],
@@ -74,6 +132,10 @@
     list_media: ['List media', 'Browse the local media library'],
     generate_media: ['Generate media', 'Create images, video, music and 3D locally or in the cloud'],
     edit_media: ['Edit media', 'Transform media assets with deterministic operations'],
+    create_paper: ['Create Paper', 'Write a live page, document, graphic or code paper'],
+    update_paper: ['Update Paper', 'Revise a paper and raise its version'],
+    read_paper: ['Read Paper', 'Open a paper from the library'],
+    list_papers: ['List Papers', 'Browse the local Paper library'],
     mcp: ['MCP tools', 'Call tools exposed by connected MCP servers'],
   };
 
@@ -143,7 +205,11 @@
   function providerConnected(provider) {
     if (!provider) return false;
     if (provider.kind === 'local') return true;
-    return Boolean(providerConfig(provider.id).hasKey);
+    return Boolean(providerConfig(provider.id).hasKey) || Boolean(subscriptionFor(provider.id)?.signedIn);
+  }
+
+  function subscriptionFor(providerId) {
+    return (currentConfig().subscriptions || {})[providerId] || null;
   }
 
   function providerUsable(provider) {
@@ -151,6 +217,7 @@
     if (provider.kind === 'local') return true;
     const config = providerConfig(provider.id);
     if (config.hasKey) return true;
+    if (subscriptionFor(provider.id)?.signedIn) return true;
     return provider.kind === 'custom' && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(config.baseUrl || '');
   }
 
@@ -270,6 +337,9 @@
       const connected = providerConnected(provider);
       const entry = providerConfig(provider.id);
       const modelCount = (provider.models || []).length;
+      const countLabel = modelCount
+        ? `${modelCount} model${modelCount === 1 ? '' : 's'}`
+        : connected ? 'No models yet' : 'Models via key';
       const kindLabel = provider.kind === 'local' ? 'Local runtime' : provider.kind === 'custom' ? 'Custom endpoint' : (provider.protocol || 'Cloud');
       return `<button class="provider-card ${connected ? 'connected' : ''}" type="button" data-provider="${U.attr(provider.id)}">
         <div class="provider-card-top">
@@ -279,7 +349,7 @@
         </div>
         <p class="provider-desc">${esc(provider.description || (provider.kind === 'custom' ? 'Custom OpenAI-compatible endpoint.' : 'Connect a key to use this provider.'))}</p>
         <div class="provider-card-foot">
-          ${icon('layers', 11)} ${modelCount} model${modelCount === 1 ? '' : 's'}
+          ${icon('layers', 11)} ${countLabel}
           <span class="sep"></span>
           ${connected
             ? `<span class="key-on">${icon('check-circle', 11)} ${provider.kind === 'local' ? 'Local' : entry.keyCount > 1 ? `${entry.keyCount} keys` : entry.keySource === 'env' ? 'Environment' : 'Key saved'}</span>`
@@ -313,6 +383,14 @@
         </div>
         <span class="badge ${providerConnected(provider) ? 'green' : ''} dot" id="provider-badge">${providerConnected(provider) ? 'Connected' : 'Not connected'}</span>
       </div>
+      ${['anthropic', 'openai'].includes(provider.id) ? `<div class="subscription-card">
+        <span class="subscription-mark">${icon(provider.id === 'anthropic' ? 'sparkles' : 'zap', 14)}</span>
+        <div class="subscription-copy">
+          <div class="subscription-title">${provider.id === 'anthropic' ? 'Claude subscription' : 'ChatGPT subscription'}</div>
+          <div class="subscription-note" id="subscription-note">Not connected · experimental sign-in</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" type="button" id="subscription-action">${icon('key', 11)} Sign in</button>
+      </div>` : ''}
       ${local
         ? `<div class="setting-note" style="margin-bottom:14px">${icon('monitor', 11)} This provider runs on your machine. No key is required.</div>`
         : `<div class="key-section">
@@ -349,7 +427,7 @@
       </div>
       <div class="test-result" id="provider-test" hidden></div>
       <div class="settings-section" style="margin-top:18px">
-        <h2 style="font-size:12px;margin-bottom:6px">Available models <span class="badge">${(provider.models || []).length}</span></h2>
+        <h2 style="font-size:12px;margin-bottom:6px">Available models <span class="badge" id="provider-model-count">${(provider.models || []).length || ''}</span></h2>
         <div class="provider-model-list" id="provider-models"></div>
       </div>
       ${provider.kind === 'custom' ? `<div class="provider-actions"><button class="btn btn-danger-soft btn-sm" type="button" data-remove-provider>${icon('trash', 12)} Remove provider</button></div>` : ''}
@@ -362,13 +440,25 @@
       body,
     });
 
-    function paintModels() {
+    let discovering = false;
+
+    function paintModels(status) {
       const list = body.querySelector('#provider-models');
       const models = provider.models || [];
       const config = currentConfig();
       const activeDefault = config.defaultModel;
       const usable = providerUsable(provider);
-      list.innerHTML = (usable ? '' : `<div class="setting-note model-key-note">${icon('key', 11)} Add a key above to use these models.</div>`) + models.map((model) => {
+      const count = body.querySelector('#provider-model-count');
+      if (count) count.textContent = models.length ? String(models.length) : '';
+      let note = '';
+      if (!usable) {
+        note = `<div class="setting-note model-key-note">${icon('key', 11)} Add a key above to load models from this provider.</div>`;
+      } else if (!models.length) {
+        note = status === 'loading'
+          ? `<div class="setting-note model-key-note"><span class="spinner" style="width:10px;height:10px"></span> Fetching models from the provider…</div>`
+          : `<div class="setting-note model-key-note">${icon('refresh', 11)} No models yet. Try Discover models.</div>`;
+      }
+      list.innerHTML = note + models.map((model) => {
         const fullId = `${provider.id}/${model.id}`;
         const isDefault = fullId === activeDefault;
         return `<div class="provider-model-row">
@@ -381,7 +471,33 @@
             ? `<button class="model-use-btn" type="button" data-use-model="${U.attr(fullId)}" ${isDefault ? 'disabled' : ''}>${isDefault ? `${icon('check', 10)} Default` : 'Use'}</button>`
             : `<button class="model-use-btn" type="button" data-focus-key="1">Add key</button>`}
         </div>`;
-      }).join('') || `<div class="setting-note">No models listed. Try Discover models.</div>`;
+      }).join('');
+    }
+
+    async function loadModels(options = {}) {
+      if (discovering) return;
+      discovering = true;
+      if (options.loading) paintModels('loading');
+      try {
+        const result = await API.models.discover(provider.id);
+        if (!result.ok) throw new Error(result.error || 'No models returned.');
+        const fresh = await API.models.list();
+        vstate.models.providers = fresh.providers || [];
+        vstate.models.models = fresh.models || [];
+        vstate.models.config = fresh.config || {};
+        applyCatalog(fresh);
+        const updated = vstate.models.providers.find((p) => p.id === provider.id);
+        if (updated) provider.models = updated.models;
+        await refreshEntry();
+        paintModels();
+        if (!options.quiet) UI.toast(`${result.models?.length || 0} models discovered.`, 'success');
+        onChanged?.();
+      } catch (error) {
+        paintModels();
+        if (!options.quiet) UI.toast(error.message, 'error');
+      } finally {
+        discovering = false;
+      }
     }
 
     function paintKeys() {
@@ -413,12 +529,12 @@
       if (rotate) rotate.innerHTML = UI.switchHtml(entry.autoRotate !== false, 'data-auto-rotate');
       const badge = body.querySelector('#provider-badge');
       if (badge) {
-        const ready = Boolean((entry.keys || []).length) || keys.length > 0;
+        const ready = Boolean((entry.keys || []).length) || keys.length > 0 || Boolean(subscriptionFor(provider.id)?.signedIn);
         badge.className = `badge ${ready ? 'green' : ''} dot`;
         badge.textContent = ready ? 'Connected' : 'Not connected';
       }
       const meta = modal?.element?.querySelector('.modal-head .modal-desc');
-      if (meta) meta.textContent = keys.length ? 'Ready to route requests.' : 'Add a key to start using this provider.';
+      if (meta) meta.textContent = keys.length || subscriptionFor(provider.id)?.signedIn ? 'Ready to route requests.' : 'Add a key to start using this provider.';
     }
 
     async function refreshEntry() {
@@ -426,14 +542,119 @@
       applyConfig(config);
       entry = (config.providers || {})[provider.id] || {};
       paintKeys();
+      paintSubscription();
+    }
+
+    function paintSubscription() {
+      const button = body.querySelector('#subscription-action');
+      if (!button) return;
+      const sub = subscriptionFor(provider.id);
+      const note = body.querySelector('#subscription-note');
+      if (sub?.signedIn) {
+        const parts = ['Signed in'];
+        if (sub.email) parts.push(sub.email);
+        if (sub.plan) parts.push(sub.plan);
+        if (sub.expired) parts.push('expired');
+        note.textContent = `${parts.join(' · ')} · experimental`;
+        button.dataset.subscription = 'out';
+        button.innerHTML = `${icon('lock', 11)} Sign out`;
+        button.disabled = false;
+      } else {
+        note.textContent = 'Not connected · experimental sign-in';
+        button.dataset.subscription = 'in';
+        button.innerHTML = `${icon('key', 11)} Sign in`;
+        button.disabled = false;
+      }
+    }
+
+    function promptClaudeCode() {
+      return new Promise((resolve) => {
+        const pane = document.createElement('div');
+        pane.innerHTML = `<div class="subscription-dialog">
+          <p class="setting-note">Authorize Blank in the browser, then paste the code shown on the page (code#state).</p>
+          <input class="field-input" id="claude-code" placeholder="Paste the authorization code" spellcheck="false" autocomplete="off" />
+        </div>`;
+        const foot = document.createElement('div');
+        foot.className = 'modal-actions';
+        foot.innerHTML = '<button class="btn btn-ghost" type="button" data-cancel>Cancel</button><button class="btn btn-primary" type="button" data-confirm>Finish sign-in</button>';
+        const dialog = UI.modal({ title: 'Finish Claude sign-in', description: 'The browser tab waits for this code.', body: pane, footer: foot });
+        const input = pane.querySelector('#claude-code');
+        const confirm = foot.querySelector('[data-confirm]');
+        foot.querySelector('[data-cancel]').addEventListener('click', () => { dialog.close(); resolve(''); });
+        confirm.addEventListener('click', () => {
+          const value = input.value.trim();
+          if (!value) { input.focus(); return; }
+          dialog.close();
+          resolve(value);
+        });
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') { event.preventDefault(); confirm.click(); }
+        });
+        setTimeout(() => input.focus(), 40);
+      });
+    }
+
+    async function startSubscription() {
+      const button = body.querySelector('#subscription-action');
+      const sub = subscriptionFor(provider.id);
+      if (sub?.signedIn) {
+        const ok = await UI.confirm({ title: 'Sign out of this subscription?', message: 'The stored OAuth token is deleted. API keys are untouched.', confirmLabel: 'Sign out', detail: provider.name });
+        if (!ok) return;
+        button.disabled = true;
+        try {
+          await API.subscription.signOut(provider.id);
+          applyConfig(await API.config.get());
+          paintSubscription();
+          paintKeys();
+          onChanged?.();
+          UI.toast('Signed out.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); button.disabled = false; }
+        return;
+      }
+      button.disabled = true;
+      button.innerHTML = `${icon('refresh', 11)} ${provider.id === 'openai' ? 'Waiting for browser…' : 'Opening browser…'}`;
+      try {
+        const result = await API.subscription.start(provider.id);
+        if (result.needsCode) {
+          button.disabled = false;
+          paintSubscription();
+          const code = await promptClaudeCode();
+          if (!code) return;
+          button.disabled = true;
+          button.innerHTML = `${icon('refresh', 11)} Finishing…`;
+          const completed = await API.subscription.complete(provider.id, code);
+          applyConfig(completed.config);
+          UI.toast('Claude subscription connected.', 'success');
+        } else {
+          applyConfig(result.config);
+          UI.toast(provider.id === 'openai' ? 'ChatGPT subscription connected.' : 'Claude subscription connected.', 'success');
+        }
+        paintSubscription();
+        paintKeys();
+        await refreshEntry();
+        onChanged?.();
+        void loadModels({ quiet: true, loading: true });
+      } catch (error) {
+        UI.toast(error.message, 'error');
+        button.disabled = false;
+        paintSubscription();
+      }
     }
 
     paintModels();
     paintKeys();
+    paintSubscription();
+
+    if (provider.id !== 'sandbox' && providerUsable(provider) && !(provider.models || []).length) {
+      setTimeout(() => {
+        if (modal.element?.isConnected) loadModels({ quiet: true, loading: true });
+      }, 250);
+    }
 
     const testBox = body.querySelector('#provider-test');
 
     body.addEventListener('click', async (event) => {
+      if (event.target.closest('#subscription-action')) { void startSubscription(); return; }
       if (event.target.closest('[data-add-key]')) {
         const button = event.target.closest('[data-add-key]');
         const input = body.querySelector('#provider-key');
@@ -455,6 +676,7 @@
           paintKeys();
           UI.toast('Key added and made active.', 'success');
           onChanged?.();
+          void loadModels({ loading: true });
         } catch (error) { UI.toast(error.message, 'error'); }
         finally { button.disabled = false; }
         return;
@@ -552,25 +774,9 @@
         const button = event.target.closest('[data-discover]');
         button.disabled = true;
         button.innerHTML = `<span class="spinner" style="width:11px;height:11px"></span> Discovering…`;
-        try {
-          const result = await API.models.discover(provider.id);
-          if (!result.ok) throw new Error(result.error || 'No models returned.');
-          const fresh = await API.models.list();
-          vstate.models.providers = fresh.providers || [];
-          vstate.models.models = fresh.models || [];
-          vstate.models.config = fresh.config || {};
-          applyCatalog(fresh);
-          const updated = vstate.models.providers.find((p) => p.id === provider.id);
-          if (updated) provider.models = updated.models;
-          await refreshEntry();
-          paintModels();
-          UI.toast(`${result.models?.length || 0} models discovered.`, 'success');
-          onChanged?.();
-        } catch (error) { UI.toast(error.message, 'error'); }
-        finally {
-          button.disabled = false;
-          button.innerHTML = `${icon('refresh', 12)} Discover models`;
-        }
+        await loadModels({ loading: true });
+        button.disabled = false;
+        button.innerHTML = `${icon('refresh', 12)} Discover models`;
         return;
       }
 
@@ -1187,6 +1393,9 @@
             ${server.error ? `<div class="mcp-error">${esc(server.error)}</div>` : ''}
           </div>
           <div class="mcp-actions">
+            ${server.transport === 'http' ? (server.oauth?.signedIn
+              ? `<button class="btn btn-ghost btn-sm" type="button" data-mcp-signout="${U.attr(server.id)}" title="OAuth token stored">${icon('lock', 11)} Sign out</button>`
+              : `<button class="btn btn-secondary btn-sm" type="button" data-mcp-signin="${U.attr(server.id)}">${icon('key', 11)} Sign in</button>`) : ''}
             ${UI.switchHtml(server.enabled && server.connected, `data-mcp-toggle="${U.attr(server.id)}"`)}
             <button class="mini-icon" type="button" data-mcp-remove="${U.attr(server.id)}" title="Remove server">${icon('trash', 13)}</button>
           </div>
@@ -1232,8 +1441,36 @@
         } catch (error) { toggle.classList.toggle('on', !next); UI.toast(error.message, 'error'); }
         return;
       }
-      const remove = event.target.closest('[data-mcp-remove]');
-      if (remove) {
+      const signIn = event.target.closest('[data-mcp-signin]');
+      if (signIn) {
+        const button = signIn;
+        button.disabled = true;
+        button.innerHTML = `${icon('refresh', 11)} Waiting…`;
+        try {
+          const result = await API.mcp.oauthStart(button.dataset.mcpSignin);
+          if (result.servers) vstate.mcp.servers = result.servers;
+          paintMcp(host);
+          UI.toast('MCP server signed in.', 'success');
+        } catch (error) {
+          UI.toast(error.message, 'error');
+          button.disabled = false;
+          button.innerHTML = `${icon('key', 11)} Sign in`;
+        }
+        return;
+      }
+      const signOut = event.target.closest('[data-mcp-signout]');
+      if (signOut) {
+        const ok = await UI.confirm({ title: 'Sign out of this MCP server?', message: 'The stored OAuth token is deleted. The server will ask again on the next connection.', confirmLabel: 'Sign out', detail: 'OAuth' });
+        if (!ok) return;
+        try {
+          const result = await API.mcp.oauthSignOut(signOut.dataset.mcpSignout);
+          if (result.servers) vstate.mcp.servers = result.servers;
+          paintMcp(host);
+          UI.toast('Signed out.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      const remove = event.target.closest('[data-mcp-remove]');      if (remove) {
         const server = vstate.mcp.servers.find((s) => s.id === remove.dataset.mcpRemove);
         if (!server) return;
         const ok = await UI.confirm({ title: 'Remove this MCP server?', message: 'Its tools will disappear from the agent immediately.', confirmLabel: 'Remove server', danger: true, detail: server.name });
@@ -1560,6 +1797,8 @@
     const remoteUrls = remoteRunning && Array.isArray(remoteState.urls) ? remoteState.urls : [];
     const teamCfg = config.team || { enabled: false, members: [] };
     const teamMembers = Array.isArray(teamCfg.members) ? teamCfg.members : [];
+    const schedules = Array.isArray(vstate.settings.schedules) ? vstate.settings.schedules : [];
+    const notificationsCfg = config.notifications || {};
     const language = config.language === 'en' ? 'en' : 'ko';
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
@@ -1572,6 +1811,8 @@
           <button class="settings-nav-item active" type="button" data-settings-go="general">${icon('settings', 13)} General</button>
           <button class="settings-nav-item" type="button" data-settings-go="agent">${icon('bot', 13)} Agent</button>
           <button class="settings-nav-item" type="button" data-settings-go="team">${icon('bot', 13)} Agent team</button>
+          <button class="settings-nav-item" type="button" data-settings-go="schedules">${icon('clock', 13)} Schedules</button>
+          <button class="settings-nav-item" type="button" data-settings-go="notifications">${icon('bell', 13)} Notifications</button>
           <button class="settings-nav-item" type="button" data-settings-go="approvals">${icon('shield', 13)} Approvals</button>
           <button class="settings-nav-item" type="button" data-settings-go="search">${icon('globe', 13)} Web search</button>
           <button class="settings-nav-item" type="button" data-settings-go="computer">${icon('monitor', 13)} Computer</button>
@@ -1582,7 +1823,7 @@
         <div class="settings-content">
           <section class="settings-section" id="settings-general">
             <h2>General</h2>
-            <p>The canvas, the default model, and how much of the agent's thinking you see.</p>
+            <p>The workspace, the default model, and how much of the agent's thinking you see.</p>
             <div class="settings-group">
               <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Theme</div><div class="setting-desc">White is the default. System follows your OS.</div></div>
@@ -1630,6 +1871,10 @@
                 <div class="setting-control"><input class="setting-inline-input" style="width:76px" id="agent-max-steps" type="number" min="1" max="64" value="${Number(agent.maxSteps) || 32}" /></div>
               </div>
               <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Reasoning effort</div><div class="setting-desc">Starting effort for new chats. Passed to GPT-5, o-series, OpenRouter and Gemini 2.5 models.</div></div>
+                <div class="setting-control"><select class="setting-inline-input" id="agent-reasoning">${['auto', 'low', 'medium', 'high'].map((value) => `<option value="${value}" ${(agent.reasoningEffort || 'auto') === value ? 'selected' : ''}>${value[0].toUpperCase() + value.slice(1)}</option>`).join('')}</select></div>
+              </div>
+              <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Auto-compact context</div><div class="setting-desc">Summarize older turns when the window fills.</div></div>
                 <div class="setting-control">${UI.switchHtml(agent.autoCompact !== false, 'data-agent-toggle="autoCompact"')}</div>
               </div>
@@ -1667,6 +1912,76 @@
               <span class="setting-note">Up to six members. Each may use a different model id.</span>
             </div>
             <div class="settings-permission-note">${icon('bot', 12)} Team runs share this session's workspace and consume tokens in parallel. Reports return to the main agent, not directly to you.</div>
+          </section>
+
+          <section class="settings-section" id="settings-schedules">
+            <h2>Schedules</h2>
+            <p>Run a prompt on a timer while Blank is open. Each run becomes a normal session you can read and continue.</p>
+            <div class="settings-group">
+              <div class="setting-row schedule-compose-row">
+                <input class="field-input" id="schedule-title" maxlength="80" placeholder="Schedule name" spellcheck="false" />
+                <select class="setting-inline-input" id="schedule-cadence">
+                  <option value="daily">Every day</option>
+                  <option value="weekdays">Weekdays</option>
+                  <option value="hourly">Every hour</option>
+                </select>
+                <input class="setting-inline-input" id="schedule-time" type="time" value="09:00" />
+              </div>
+              <textarea class="settings-textarea" id="schedule-prompt" rows="3" placeholder="What should Blank do when this runs?"></textarea>
+              <div class="provider-actions">
+                <button class="btn btn-primary btn-sm" type="button" data-save-schedule>${icon('plus', 12)} Add schedule</button>
+                <label class="schedule-check"><input type="checkbox" id="schedule-tools" /> Allow tools without asking</label>
+                <span class="setting-note">Off means approval-gated tools are denied automatically.</span>
+              </div>
+            </div>
+            <div class="schedule-list">
+              ${schedules.length ? schedules.map((schedule) => {
+                const next = schedule.nextRunAt ? new Date(schedule.nextRunAt) : null;
+                const nextText = next && !Number.isNaN(next.getTime()) ? next.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Paused';
+                const cadence = schedule.cadence === 'hourly' ? `Every hour at :${String(schedule.time || '09:00').slice(3, 5)}` : schedule.cadence === 'weekdays' ? `Weekdays at ${schedule.time}` : `Every day at ${schedule.time}`;
+                const lastText = schedule.lastRunAt ? new Date(schedule.lastRunAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+                return `<div class="schedule-row ${schedule.running ? 'running' : ''}" data-schedule-id="${U.attr(schedule.id)}">
+                  <div class="schedule-copy">
+                    <div class="schedule-head"><span class="schedule-title">${esc(schedule.title)}</span>${schedule.running ? '<span class="badge amber">Running</span>' : schedule.lastStatus === 'ok' ? '<span class="badge green">OK</span>' : schedule.lastStatus === 'error' ? '<span class="badge red">Error</span>' : ''}</div>
+                    <div class="schedule-meta"><span>${esc(cadence)}</span> · <span>${next ? `next ${esc(nextText)}` : 'Paused'}</span>${lastText ? ` · <span>last ${esc(lastText)}</span>` : ''}</div>
+                    <div class="schedule-prompt">${esc(U.truncate(schedule.prompt, 140))}</div>
+                    ${schedule.lastError ? `<div class="schedule-error">${esc(U.truncate(schedule.lastError, 160))}</div>` : ''}
+                  </div>
+                  <div class="schedule-actions">
+                    <button class="btn btn-secondary btn-sm" type="button" data-run-schedule="${U.attr(schedule.id)}" ${schedule.running ? 'disabled' : ''}>${icon('play', 11)} Run now</button>
+                    <button class="mini-icon" type="button" data-delete-schedule="${U.attr(schedule.id)}" title="Delete schedule">${icon('trash', 13)}</button>
+                  </div>
+                </div>`;
+              }).join('') : '<div class="setting-note">No schedules yet.</div>'}
+            </div>
+          </section>
+
+          <section class="settings-section" id="settings-notifications">
+            <h2>Notifications</h2>
+            <p>Native desktop notifications for work that finishes while Blank is in the background. Focused windows stay quiet.</p>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Desktop notifications</div><div class="setting-desc">Master switch for every notification below.</div></div>
+                <div class="setting-control">${UI.switchHtml(notificationsCfg.enabled !== false, 'data-notification-toggle="enabled"')}</div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Run finished</div><div class="setting-desc">A chat run completes or stops while the window is in the background.</div></div>
+                <div class="setting-control">${UI.switchHtml(notificationsCfg.onFinish !== false, 'data-notification-toggle="onFinish"')}</div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Approval needed</div><div class="setting-desc">A tool is waiting for your decision and Blank is not focused.</div></div>
+                <div class="setting-control">${UI.switchHtml(notificationsCfg.onApproval !== false, 'data-notification-toggle="onApproval"')}</div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Scheduled results</div><div class="setting-desc">A schedule finishes, fails or is stopped in the background.</div></div>
+                <div class="setting-control">${UI.switchHtml(notificationsCfg.schedules !== false, 'data-notification-toggle="schedules"')}</div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Test notification</div><div class="setting-desc">Sends one notification now, even while this window is focused.</div><div class="setting-note" id="notification-test-note"></div></div>
+                <div class="setting-control"><button class="btn btn-secondary btn-sm" type="button" data-test-notification>${icon('bell', 12)} Send test</button></div>
+              </div>
+            </div>
+            <div class="settings-permission-note">${icon('bell', 12)} Clicking a notification brings Blank to the front and opens the related session. Nothing is sent to a server.</div>
           </section>
 
           <section class="settings-section" id="settings-approvals">
@@ -1796,7 +2111,7 @@
                 <div class="setting-control"><button class="btn btn-secondary btn-sm" type="button" data-open-data>${icon('folder-open', 12)} Open</button></div>
               </div>
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">Command line</div><div class="setting-desc">Install a blank launcher for terminals and editor tasks.</div><div class="setting-note" id="cli-note">The launcher points at this installation.</div></div>
+                <div class="setting-copy"><div class="setting-label">Command line</div><div class="setting-desc">Run the same sessions and tools headlessly in VS Code’s terminal. Uses far less memory than the window.</div><div class="setting-note" id="cli-note">Adds a blank command for VS Code and other terminals.</div></div>
                 <div class="setting-control"><button class="btn btn-secondary btn-sm" type="button" data-install-cli>${icon('terminal', 12)} Install CLI</button></div>
               </div>
               <div class="setting-row">
@@ -1816,7 +2131,7 @@
               <div class="about-block">
                 <div class="about-copy">
                   <h3>Blank</h3>
-                  <p>A quiet, local-first agent harness. Chat, code, plan and create media from one white canvas — with keys, sessions and memory kept on your machine.</p>
+                  <p>A quiet, local-first agent harness. Chat, code, plan and create media from one calm surface — with keys, sessions and memory kept on your machine.</p>
                   <div class="about-versions">
                     <span class="badge">Electron ${esc(info.electron || runtime.electron || '—')}</span>
                     <span class="badge">Node ${esc(info.node || runtime.node || '—')}</span>
@@ -1966,12 +2281,91 @@
         try {
           const updated = await API.config.update({ agent: {
             maxSteps: Math.max(1, Math.min(64, Number(host.querySelector('#agent-max-steps').value) || 32)),
+            reasoningEffort: host.querySelector('#agent-reasoning').value,
             compactAt: Math.max(0.5, Math.min(0.95, (Number(host.querySelector('#agent-compact-at').value) || 82) / 100)),
           } });
           applyConfig(updated);
           UI.toast('Agent limits saved.', 'success');
           paintSettings(host);
         } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      if (event.target.closest('[data-save-schedule]')) {
+        const prompt = host.querySelector('#schedule-prompt').value.trim();
+        if (!prompt) { UI.toast('Write the prompt this schedule should run.', 'error'); return; }
+        const button = event.target.closest('[data-save-schedule]');
+        button.disabled = true;
+        try {
+          await API.schedules.save({
+            title: host.querySelector('#schedule-title').value.trim() || 'Scheduled run',
+            prompt,
+            cadence: host.querySelector('#schedule-cadence').value,
+            time: host.querySelector('#schedule-time').value || '09:00',
+            allowTools: host.querySelector('#schedule-tools').checked,
+          });
+          const result = await API.schedules.list();
+          vstate.settings.schedules = result.schedules || [];
+          paintSettings(host);
+          UI.toast('Schedule added.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); button.disabled = false; }
+        return;
+      }
+      const runScheduleButton = event.target.closest('[data-run-schedule]');
+      if (runScheduleButton) {
+        runScheduleButton.disabled = true;
+        try {
+          await API.schedules.run(runScheduleButton.dataset.runSchedule);
+          const result = await API.schedules.list();
+          vstate.settings.schedules = result.schedules || [];
+          paintSettings(host);
+          UI.toast('Schedule started in a new session.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); runScheduleButton.disabled = false; }
+        return;
+      }
+      const deleteScheduleButton = event.target.closest('[data-delete-schedule]');
+      if (deleteScheduleButton) {
+        const schedule = schedules.find((entry) => entry.id === deleteScheduleButton.dataset.deleteSchedule);
+        if (!schedule) return;
+        const ok = await UI.confirm({ title: 'Delete this schedule?', message: 'The timer stops. Past sessions stay.', confirmLabel: 'Delete schedule', danger: true, detail: schedule.title });
+        if (!ok) return;
+        try {
+          await API.schedules.remove(schedule.id);
+          const result = await API.schedules.list();
+          vstate.settings.schedules = result.schedules || [];
+          paintSettings(host);
+          UI.toast('Schedule deleted.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      const notificationToggle = event.target.closest('[data-notification-toggle]');
+      if (notificationToggle) {
+        const key = notificationToggle.dataset.notificationToggle;
+        const next = !notificationToggle.classList.contains('on');
+        notificationToggle.classList.toggle('on', next);
+        notificationToggle.setAttribute('aria-checked', String(next));
+        try {
+          const updated = await API.config.update({ notifications: { [key]: next } });
+          applyConfig(updated);
+          UI.toast(next ? 'Notification enabled.' : 'Notification disabled.', 'success');
+        } catch (error) {
+          notificationToggle.classList.toggle('on', !next);
+          notificationToggle.setAttribute('aria-checked', String(!next));
+          UI.toast(error.message, 'error');
+        }
+        return;
+      }
+      if (event.target.closest('[data-test-notification]')) {
+        const button = event.target.closest('[data-test-notification]');
+        const note = host.querySelector('#notification-test-note');
+        button.disabled = true;
+        try {
+          const result = await API.notifications.test();
+          if (note) note.textContent = result.shown ? 'Sent. Check your notification center.' : result.reason || 'Could not send a notification.';
+          UI.toast(result.shown ? 'Test notification sent.' : result.reason || 'Notifications are unavailable.', result.shown ? 'success' : 'warn');
+        } catch (error) {
+          if (note) note.textContent = error.message;
+          UI.toast(error.message, 'error');
+        } finally { button.disabled = false; }
         return;
       }
       if (event.target.closest('[data-save-instructions]')) {
@@ -2153,7 +2547,14 @@
         button.disabled = true;
         try {
           const result = await API.cli.install();
-          host.querySelector('#cli-note').textContent = result.instructions;
+          const note = host.querySelector('#cli-note');
+          if (note) {
+            note.textContent = result.onPath
+              ? 'blank is ready in new terminals.'
+              : `Installed at ${result.path}`;
+            window.__blankI18n?.run();
+          }
+          button.innerHTML = `${icon('terminal', 12)} Reinstall`;
           UI.toast('CLI launcher installed.', 'success', { title: result.path, timeout: 8000 });
         } catch (error) { UI.toast(error.message, 'error'); }
         finally { button.disabled = false; }
@@ -2181,14 +2582,16 @@
     vstate.host = host;
     host.innerHTML = pageLoading('Settings', 'Preferences, approvals and local data.');
     try {
-      const [config, storage, remote] = await Promise.all([
+      const [config, storage, remote, schedules] = await Promise.all([
         API.config.get(),
         API.media.storage().catch(() => null),
         API.remote?.status ? API.remote.status().catch(() => null) : Promise.resolve(null),
+        API.schedules?.list ? API.schedules.list().catch(() => null) : Promise.resolve(null),
       ]);
       if (!alive(host, 'settings')) return;
       vstate.media.storage = storage || vstate.media.storage;
       vstate.settings.remote = remote;
+      vstate.settings.schedules = schedules?.schedules || [];
       vstate.settings.ssh = config?.ssh || null;
       applyConfig(config);
       paintSettings(host);
@@ -2246,7 +2649,7 @@
     image: ['Brutalist poster for a solo exhibition', 'Cobalt gradient study, soft film grain', 'Isometric city at dusk', 'Botanical plate in muted ink'],
     video: ['Slow orbital shot over a glass city', 'Tidal lines in a deep blue sea', 'Neon rain on an empty street', 'Paper shapes drifting in light'],
     audio: ['Warm lo-fi loop for late-night coding', 'Cinematic ambient beneath rain', 'Bright synthwave drive at 110 bpm', 'Airy jazz chords for a studio'],
-    model3d: ['Faceted crystal artifact', 'Modular brutalist desk lamp', 'Low-poly mountain diorama', 'Twisted ceramic vase'],
+    model3d: ['Faceted crystal study', 'Modular brutalist desk lamp', 'Low-poly mountain diorama', 'Twisted ceramic vase'],
   };
   const notifiedJobs = new Set();
 
@@ -2322,6 +2725,14 @@
       if (!vstate.media._composeReady) {
         applyKindDefaults(vstate.media.compose.kind);
         vstate.media._composeReady = true;
+      }
+      const pending = vstate.media.pending;
+      if (pending) {
+        vstate.media.pending = null;
+        applyKindDefaults(pending.kind || vstate.media.compose.kind);
+        if (pending.prompt != null) vstate.media.compose.prompt = pending.prompt;
+        if (pending.engine) vstate.media.compose.engine = pending.engine;
+        if (pending.voice) vstate.media.compose.voice = pending.voice;
       }
       paintStudio(host);
     } catch (error) { if (alive(host, 'studio')) pageError(host, 'Studio', error); }
@@ -3970,6 +4381,491 @@
     return modal;
   }
 
+  /* ---------------------------------------------------------------------- paper */
+
+  function paperKind(kind) { return PAPER_KIND[kind] || PAPER_KIND.html; }
+
+  function paperTotal() {
+    const counts = vstate.paper.counts || {};
+    return (counts.html || 0) + (counts.markdown || 0) + (counts.svg || 0) + (counts.code || 0);
+  }
+
+  function recountPapers() {
+    const counts = { html: 0, markdown: 0, svg: 0, code: 0, favorite: 0 };
+    for (const paper of vstate.paper.items) {
+      counts[paper.kind] = (counts[paper.kind] || 0) + 1;
+      if (paper.favorite) counts.favorite += 1;
+    }
+    vstate.paper.counts = counts;
+  }
+
+  function applyPaperList(data) {
+    vstate.paper.items = Array.isArray(data?.items) ? data.items : [];
+    vstate.paper.counts = data?.counts || {};
+    vstate.paper.loaded = true;
+  }
+
+  async function mountPaper(host) {
+    vstate.page = 'paper';
+    vstate.host = host;
+    if (!vstate.paper.loaded) host.innerHTML = pageLoading('Paper', 'Live pages, documents and graphics.');
+    else paintPaper(host);
+    try {
+      const data = await API.papers.list({ limit: 200 });
+      if (!alive(host, 'paper')) return;
+      applyPaperList(data);
+      paintPaper(host);
+    } catch (error) {
+      if (!alive(host, 'paper')) return;
+      if (!vstate.paper.loaded) pageError(host, 'Paper', error);
+      else UI.toast(error.message || 'Could not refresh papers.', 'error');
+    }
+  }
+
+  function paperFilterMarkup() {
+    const counts = vstate.paper.counts || {};
+    const favorites = vstate.paper.favorite;
+    return `<button class="studio-filter paper-filter ${vstate.paper.filter === 'all' && !favorites ? 'active' : ''}" type="button" data-paper-filter="all">All <span class="count">${paperTotal()}</span></button>
+      ${Object.entries(PAPER_KIND).map(([id, meta]) => `<button class="studio-filter paper-filter ${vstate.paper.filter === id && !favorites ? 'active' : ''}" type="button" data-paper-filter="${id}">${icon(meta.icon, 11)} ${meta.label} <span class="count">${counts[id] || 0}</span></button>`).join('')}
+      <button class="studio-filter paper-filter fav ${favorites ? 'active' : ''}" type="button" data-paper-favorites>${icon('heart', 11)} Favorites <span class="count">${counts.favorite || 0}</span></button>`;
+  }
+
+  function paintPaperFilters(host) {
+    const total = host.querySelector('#paper-total');
+    if (total) total.textContent = String(paperTotal());
+    const wrap = host.querySelector('#paper-filters');
+    if (wrap) wrap.innerHTML = paperFilterMarkup();
+  }
+
+  function paintPaper(host) {
+    host.innerHTML = `<div class="page-inner">
+      ${UI.pageHeader({
+        title: 'Paper',
+        actions: `<button class="btn btn-secondary btn-sm" type="button" data-paper-new>${icon('plus', 12)} New paper</button>`,
+        meta: `<span class="badge blue" id="paper-total">${paperTotal()}</span>`,
+      })}
+      <div class="paper-toolbar">
+        <div class="paper-filters" id="paper-filters">${paperFilterMarkup()}</div>
+        <span class="paper-toolbar-spacer"></span>
+        <label class="search-field paper-search">${icon('search', 12)}<input id="paper-search" type="search" placeholder="Search papers" value="${U.attr(vstate.paper.query)}" spellcheck="false" /></label>
+      </div>
+      <div class="paper-grid" id="paper-grid"></div>
+    </div>`;
+    paintPaperGrid(host);
+    host.oninput = (event) => {
+      if (event.target.id !== 'paper-search') return;
+      vstate.paper.query = event.target.value;
+      paintPaperGrid(host);
+    };
+    host.onclick = (event) => {
+      if (event.target.closest('[data-paper-new]')) { openPaperComposer(); return; }
+      if (event.target.closest('[data-paper-clear]')) {
+        vstate.paper.query = '';
+        vstate.paper.filter = 'all';
+        vstate.paper.favorite = false;
+        paintPaper(host);
+        return;
+      }
+      const filter = event.target.closest('[data-paper-filter]');
+      if (filter) {
+        vstate.paper.filter = filter.dataset.paperFilter;
+        vstate.paper.favorite = false;
+        paintPaperFilters(host);
+        paintPaperGrid(host);
+        return;
+      }
+      if (event.target.closest('[data-paper-favorites]')) {
+        vstate.paper.favorite = !vstate.paper.favorite;
+        paintPaperFilters(host);
+        paintPaperGrid(host);
+        return;
+      }
+      const fav = event.target.closest('[data-paper-fav]');
+      if (fav) {
+        event.stopPropagation();
+        togglePaperFavorite(fav.dataset.paperFav);
+        return;
+      }
+      const card = event.target.closest('[data-paper-id]');
+      if (card) { openPaper(card.dataset.paperId); return; }
+    };
+  }
+
+  function visiblePapers() {
+    const query = vstate.paper.query.trim().toLowerCase();
+    return vstate.paper.items.filter((paper) => {
+      if (vstate.paper.filter !== 'all' && paper.kind !== vstate.paper.filter) return false;
+      if (vstate.paper.favorite && !paper.favorite) return false;
+      if (!query) return true;
+      return `${paper.title} ${paper.excerpt} ${paper.kindLabel} ${paper.language || ''}`.toLowerCase().includes(query);
+    });
+  }
+
+  function paperSheet(paper) {
+    if (paper.kind === 'code') {
+      return `<div class="paper-facsimile code"><pre>${esc((paper.excerpt || '// Empty paper').slice(0, 170))}</pre></div>`;
+    }
+    if (paper.kind === 'svg') {
+      return `<div class="paper-facsimile art"><span class="pa-ring"></span><span class="pa-bar a"></span><span class="pa-bar b"></span><span class="pa-dot"></span></div>`;
+    }
+    if (paper.kind === 'markdown') {
+      return `<div class="paper-facsimile doc"><span class="pd-heading"></span><span class="pd-line w90"></span><span class="pd-line w76"></span><span class="pd-line w84"></span><span class="pd-gap"></span><span class="pd-line w64"></span><span class="pd-line w88"></span><span class="pd-line w52"></span></div>`;
+    }
+    return `<div class="paper-facsimile page"><span class="pp-chrome"><i></i><i></i><i></i></span><span class="pp-hero"></span><span class="pp-line w78"></span><span class="pp-line w88"></span><span class="pp-line w56"></span></div>`;
+  }
+
+  function paperCard(paper) {
+    const meta = paperKind(paper.kind);
+    return `<div class="paper-card-wrap">
+      <button class="paper-card" type="button" data-paper-id="${U.attr(paper.id)}" aria-labelledby="paper-title-${U.attr(paper.id)}">
+        <div class="paper-card-sheet" data-kind="${U.attr(paper.kind)}">
+          ${paperSheet(paper)}
+          <span class="paper-kind-badge">${icon(meta.icon, 9)} ${meta.label}</span>
+        </div>
+        <div class="paper-card-body">
+          <div class="paper-card-title" id="paper-title-${U.attr(paper.id)}">${esc(paper.title)}</div>
+          <div class="paper-card-excerpt">${esc(paper.excerpt || 'No preview text')}</div>
+          <div class="paper-card-meta">
+            <span class="paper-version">v${paper.version}</span><span class="sep"></span>
+            <span>${esc(U.relativeTime(paper.updatedAt))}</span>
+            <span class="paper-size">${U.fmtBytes(paper.bytes)}</span>
+          </div>
+        </div>
+      </button>
+      <button class="paper-fav ${paper.favorite ? 'on' : ''}" type="button" data-paper-fav="${U.attr(paper.id)}" title="${paper.favorite ? 'Remove from favorites' : 'Add to favorites'}" aria-label="${paper.favorite ? 'Remove from favorites' : 'Add to favorites'}" aria-pressed="${paper.favorite ? 'true' : 'false'}">${icon('heart', 12)}</button>
+    </div>`;
+  }
+
+  function paintPaperGrid(host) {
+    const grid = host.querySelector('#paper-grid');
+    if (!grid) return;
+    const items = visiblePapers();
+    if (!items.length) {
+      const empty = vstate.paper.items.length
+        ? `<div class="paper-empty">${UI.emptyState({
+            iconName: 'search',
+            title: 'Nothing matches',
+            description: 'Try another kind, clear the favorites filter or search for something else.',
+            actionHtml: `<button class="btn btn-secondary btn-sm" type="button" data-paper-clear>${icon('refresh', 12)} Clear filters</button>`,
+          })}</div>`
+        : `<div class="paper-empty">${UI.emptyState({
+            iconName: 'book',
+            title: 'No papers yet',
+            description: 'Ask the agent for a page, report, diagram or document. Everything it makes lands here.',
+            actionHtml: `<button class="btn btn-primary btn-sm" type="button" data-paper-new>${icon('plus', 12)} New paper</button>`,
+          })}</div>`;
+      grid.innerHTML = empty;
+      return;
+    }
+    grid.innerHTML = items.map((paper) => paperCard(paper)).join('');
+  }
+
+  async function refreshPapers(host) {
+    try {
+      const data = await API.papers.list({ limit: 200 });
+      applyPaperList(data);
+      if (vstate.page === 'paper') {
+        const target = host || vstate.host;
+        paintPaperFilters(target);
+        paintPaperGrid(target);
+      }
+    } catch {}
+  }
+
+  async function togglePaperFavorite(id) {
+    if (!id) return;
+    try {
+      const updated = await API.papers.favorite(id);
+      const index = vstate.paper.items.findIndex((paper) => paper.id === id);
+      if (index >= 0 && updated) vstate.paper.items[index] = { ...vstate.paper.items[index], ...updated };
+      recountPapers();
+      if (vstate.page === 'paper' && vstate.host) {
+        paintPaperFilters(vstate.host);
+        paintPaperGrid(vstate.host);
+      }
+    } catch (error) { UI.toast(error.message || 'Could not update this paper.', 'error'); }
+  }
+
+  const schedulePaperRefresh = U.debounce(() => {
+    if (vstate.page !== 'paper' || !vstate.host) return;
+    refreshPapers(vstate.host);
+  }, 200);
+
+  function handlePaperEvent(event) {
+    if (!event || typeof event.type !== 'string' || !event.type.startsWith('paper:')) return;
+    if (event.type === 'paper:changed' || event.type === 'paper:removed') schedulePaperRefresh();
+  }
+
+  function openPaperComposer(options = {}) {
+    let paper = options.paper || null;
+    let content = typeof options.content === 'string' ? options.content : '';
+    const startKind = paper?.kind || options.kind || 'html';
+    let currentKind = startKind;
+    let busy = false;
+
+    const body = document.createElement('div');
+    body.className = 'paper-compose';
+    body.innerHTML = `
+      <div class="paper-compose-top">
+        <label class="field paper-compose-title"><span class="field-label">Title</span><input class="field-input" id="paper-title" type="text" maxlength="120" placeholder="A name for this paper" value="${U.attr(paper?.title || '')}" spellcheck="false" /></label>
+        ${paper
+          ? `<div class="paper-compose-kind"><span class="field-label">Kind</span><span class="paper-compose-kindchip">${icon(paperKind(currentKind).icon, 12)} ${esc(paperKind(currentKind).label)}</span></div>`
+          : `<label class="field paper-compose-kind"><span class="field-label">Kind</span><select class="field-select" id="paper-kind">${Object.entries(PAPER_KIND).map(([id, meta]) => `<option value="${id}" ${currentKind === id ? 'selected' : ''}>${meta.label}</option>`).join('')}</select></label>`}
+      </div>
+      <label class="field paper-compose-body">
+        <span class="field-label">Content <small>${paper ? 'changes raise the version' : 'under 2 MB'}</small></span>
+        <textarea class="field-textarea paper-content-input" id="paper-content" spellcheck="false" placeholder="${U.attr(PAPER_PLACEHOLDERS[currentKind])}">${esc(content)}</textarea>
+      </label>
+      ${paper?.kind === 'code' ? `<label class="field paper-compose-language"><span class="field-label">Language <small>optional</small></span><input class="field-input" id="paper-language" type="text" maxlength="24" placeholder="js, py, sh…" value="${U.attr(paper.language || '')}" spellcheck="false" /></label>` : paper ? '' : `<label class="field paper-compose-language" data-paper-language ${currentKind === 'code' ? '' : 'hidden'}><span class="field-label">Language <small>optional</small></span><input class="field-input" id="paper-language" type="text" maxlength="24" placeholder="js, py, sh…" spellcheck="false" /></label>`}
+    `;
+
+    const footer = document.createElement('div');
+    footer.className = 'paper-compose-foot';
+    footer.innerHTML = `<span class="paper-compose-note">${icon('lock', 11)} Sandboxed preview</span><span style="flex:1"></span>
+      <button class="btn btn-secondary btn-sm" type="button" data-modal-close>Cancel</button>
+      <button class="btn btn-primary btn-sm" type="button" data-paper-save>${paper ? 'Save changes' : 'Create paper'}</button>`;
+
+    const handle = UI.modal({
+      title: paper ? 'Edit paper' : 'New paper',
+      description: paper ? 'Changes are saved as a new version.' : 'Pages and documents stay local in your Paper library.',
+      body,
+      footer,
+      size: 'wide',
+      className: 'paper-compose-modal',
+      onClose: () => { if (options.onClose) options.onClose(); },
+    });
+
+    const titleInput = body.querySelector('#paper-title');
+    const contentInput = body.querySelector('#paper-content');
+    const languageInput = () => body.querySelector('#paper-language');
+    const kindSelect = body.querySelector('#paper-kind');
+    const saveButton = footer.querySelector('[data-paper-save]');
+
+    kindSelect?.addEventListener('change', () => {
+      const next = kindSelect.value;
+      if (!PAPER_KIND[next]) return;
+      const previous = currentKind;
+      currentKind = next;
+      if (!contentInput.value.trim() || contentInput.value === PAPER_TEMPLATES[previous]) {
+        contentInput.value = PAPER_TEMPLATES[next] || '';
+      }
+      contentInput.placeholder = PAPER_PLACEHOLDERS[next];
+      const languageField = body.querySelector('[data-paper-language]');
+      if (languageField) languageField.hidden = next !== 'code';
+    });
+
+    async function save() {
+      if (busy) return;
+      const title = titleInput.value.trim();
+      const text = contentInput.value;
+      if (!text.trim()) {
+        UI.toast('Write some content first.', 'warn');
+        contentInput.focus();
+        return;
+      }
+      const language = languageInput()?.value.trim() || '';
+      busy = true;
+      saveButton.disabled = true;
+      const original = saveButton.innerHTML;
+      saveButton.innerHTML = `<span class="spinner" style="width:11px;height:11px;border-color:rgba(255,255,255,.4);border-top-color:#fff"></span> Saving…`;
+      try {
+        const saved = paper
+          ? await API.papers.update({ id: paper.id, title, content: text, language })
+          : await API.papers.create({ title: title || undefined, kind: currentKind, content: text, language });
+        busy = false;
+        handle.close();
+        await refreshPapers();
+        UI.toast(paper ? 'Paper updated.' : 'Paper created.', 'success');
+        if (options.onSaved) options.onSaved(saved, text);
+        else openPaper(saved.id);
+      } catch (error) {
+        busy = false;
+        saveButton.disabled = false;
+        saveButton.innerHTML = original;
+        UI.toast(error.message || 'Could not save this paper.', 'error', { timeout: 7000 });
+      }
+    }
+
+    saveButton.addEventListener('click', save);
+    contentInput.addEventListener('keydown', (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        event.preventDefault();
+        save();
+      }
+    });
+    setTimeout(() => { titleInput.focus(); }, 60);
+  }
+
+  async function openPaper(id) {
+    if (!id) return;
+    let paper = null;
+    let content = '';
+    try {
+      const result = await API.papers.get(id);
+      if (result && result.paper) { paper = result.paper; content = String(result.content || ''); } else if (result && result.id) { paper = result; content = String(result.content || ''); }
+    } catch (error) {
+      UI.toast(error.message || 'Could not open this paper.', 'error');
+      return;
+    }
+    if (!paper) { UI.toast('That paper is no longer in the library.', 'warn'); return; }
+    let tab = 'preview';
+    let device = 'desktop';
+
+    const body = document.createElement('div');
+    body.className = 'paper-viewer';
+
+    function metaLabel() { return `${paperKind(paper.kind).label} · v${paper.version}`; }
+
+    function stageMarkup() {
+      return `<div class="paper-viewer-bar">
+        <div class="paper-tabs" role="tablist">
+          <button class="paper-tab ${tab === 'preview' ? 'active' : ''}" type="button" role="tab" data-paper-tab="preview">${icon('eye', 12)} Preview</button>
+          <button class="paper-tab ${tab === 'code' ? 'active' : ''}" type="button" role="tab" data-paper-tab="code">${icon('code', 12)} Code</button>
+        </div>
+        <div class="paper-devices" ${paper.kind === 'html' && tab === 'preview' ? '' : 'hidden'}>
+          <button class="paper-device ${device === 'desktop' ? 'active' : ''}" type="button" data-paper-device="desktop" title="Desktop">${icon('monitor', 13)}</button>
+          <button class="paper-device ${device === 'tablet' ? 'active' : ''}" type="button" data-paper-device="tablet" title="Tablet">${icon('tablet', 13)}</button>
+          <button class="paper-device ${device === 'phone' ? 'active' : ''}" type="button" data-paper-device="phone" title="Phone">${icon('smartphone', 13)}</button>
+        </div>
+        <span class="paper-bar-spacer"></span>
+        <div class="paper-viewer-actions">
+          <button class="mini-icon ${paper.favorite ? 'fav-on' : ''}" type="button" data-paper-action="favorite" title="${paper.favorite ? 'Remove from favorites' : 'Add to favorites'}">${icon('heart', 13)}</button>
+          <button class="mini-icon" type="button" data-paper-action="copy" title="Copy content">${icon('copy', 13)}</button>
+          <button class="mini-icon" type="button" data-paper-action="export" title="Export">${icon('download', 13)}</button>
+          <button class="mini-icon" type="button" data-paper-action="reveal" title="Show file">${icon('folder-open', 13)}</button>
+          <button class="mini-icon" type="button" data-paper-action="edit" title="Edit">${icon('edit', 13)}</button>
+          <span class="paper-bar-sep"></span>
+          <button class="mini-icon danger" type="button" data-paper-action="delete" title="Delete">${icon('trash', 13)}</button>
+        </div>
+      </div>
+      <div class="paper-stage" data-paper-stage data-kind="${U.attr(paper.kind)}" data-device="${paper.kind === 'html' ? device : 'fluid'}"></div>
+      <div class="paper-viewer-foot">
+        <span>${esc(paperKind(paper.kind).label)}</span><span class="sep"></span><span>v${paper.version}</span><span class="sep"></span><span>${U.fmtBytes(paper.bytes)}</span>
+        <span class="paper-foot-note">${esc(paper.source === 'agent' ? 'Made by the agent' : 'Made by you')}</span>
+      </div>`;
+    }
+
+    function paintStage() {
+      const stage = body.querySelector('[data-paper-stage]');
+      if (!stage) return;
+      if (tab === 'code' || paper.kind === 'code') {
+        stage.innerHTML = `<div class="paper-code"><pre><code>${MD.highlight(content, paper.language || languageFor(paper.title))}</code></pre></div>`;
+        return;
+      }
+      if (paper.kind === 'markdown') {
+        stage.innerHTML = `<article class="paper-doc md">${MD.render(content)}</article>`;
+        return;
+      }
+      const frame = document.createElement('iframe');
+      frame.className = 'paper-frame';
+      frame.setAttribute('sandbox', 'allow-scripts');
+      frame.setAttribute('referrerpolicy', 'no-referrer');
+      frame.setAttribute('title', paper.title || 'Paper preview');
+      if (paper.previewUrl) frame.src = paper.previewUrl;
+      else frame.srcdoc = content;
+      stage.innerHTML = '';
+      stage.append(frame);
+    }
+
+    function paintViewer() {
+      body.innerHTML = stageMarkup();
+      paintStage();
+    }
+
+    paintViewer();
+    const handle = UI.modal({
+      title: paper.title,
+      description: metaLabel(),
+      body,
+      size: 'large',
+      className: 'paper-modal',
+    });
+
+    function updateHead() {
+      const titleNode = handle.element.querySelector('.modal-head h2');
+      const descNode = handle.element.querySelector('.modal-head p');
+      if (titleNode) titleNode.textContent = paper.title;
+      if (descNode) descNode.textContent = metaLabel();
+    }
+
+    body.addEventListener('click', async (event) => {
+      const tabButton = event.target.closest('[data-paper-tab]');
+      if (tabButton) {
+        tab = tabButton.dataset.paperTab === 'code' ? 'code' : 'preview';
+        paintViewer();
+        return;
+      }
+      const deviceButton = event.target.closest('[data-paper-device]');
+      if (deviceButton) {
+        device = deviceButton.dataset.paperDevice;
+        body.querySelectorAll('[data-paper-device]').forEach((button) => button.classList.toggle('active', button === deviceButton));
+        body.querySelector('[data-paper-stage]')?.setAttribute('data-device', device);
+        return;
+      }
+      const action = event.target.closest('[data-paper-action]');
+      if (!action) return;
+      const name = action.dataset.paperAction;
+      if (name === 'favorite') {
+        try {
+          const updated = await API.papers.favorite(paper.id);
+          paper = { ...paper, ...updated };
+          action.classList.toggle('fav-on', paper.favorite);
+          action.title = paper.favorite ? 'Remove from favorites' : 'Add to favorites';
+          refreshPapers();
+        } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      if (name === 'copy') {
+        const copied = await U.copyText(content);
+        UI.toast(copied ? 'Paper copied.' : 'Could not copy this paper.', copied ? 'success' : 'error');
+        return;
+      }
+      if (name === 'export') {
+        action.disabled = true;
+        try {
+          const result = await API.papers.export(paper.id);
+          if (result && !result.canceled) UI.toast(`Exported to ${result.path}`, 'success', { title: 'Paper', timeout: 7000 });
+        } catch (error) { UI.toast(error.message, 'error'); }
+        finally { action.disabled = false; }
+        return;
+      }
+      if (name === 'reveal') {
+        API.papers.reveal(paper.id).catch((error) => UI.toast(error.message, 'error'));
+        return;
+      }
+      if (name === 'edit') {
+        openPaperComposer({
+          paper,
+          content,
+          onSaved: (updated, nextContent) => {
+            paper = updated;
+            content = nextContent;
+            updateHead();
+            paintViewer();
+            refreshPapers();
+          },
+        });
+        return;
+      }
+      if (name === 'delete') {
+        const confirmed = await UI.confirm({
+          title: 'Delete this paper?',
+          message: `“${paper.title}” will be removed from the Paper library.`,
+          detail: 'Export it first if you want to keep a copy. This cannot be undone.',
+          confirmLabel: 'Delete',
+          danger: true,
+        });
+        if (!confirmed) return;
+        try {
+          await API.papers.remove(paper.id);
+          handle.close();
+          await refreshPapers();
+          UI.toast('Paper deleted.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+      }
+    });
+  }
+
   /* --------------------------------------------------------------- media events */
 
   const scheduleStudioRefresh = U.debounce(async () => {
@@ -4023,6 +4919,17 @@
 
   /* -------------------------------------------------------------------- routing */
 
+  function openStudio(options = {}) {
+    const kind = Object.prototype.hasOwnProperty.call(KIND, options.kind) ? options.kind : vstate.media.compose.kind;
+    vstate.media.pending = {
+      kind,
+      prompt: typeof options.prompt === 'string' ? options.prompt : null,
+      engine: typeof options.engine === 'string' ? options.engine : '',
+      voice: typeof options.voice === 'string' ? options.voice : '',
+    };
+    if (window.App?.openPage) App.openPage('studio');
+  }
+
   function render(page, host) {
     if (!host) return;
     vstate.page = page;
@@ -4038,14 +4945,19 @@
     if (page === 'learning') { mountLearning(host); return; }
     if (page === 'settings') { mountSettings(host); return; }
     if (page === 'studio') { mountStudio(host); return; }
+    if (page === 'paper') { mountPaper(host); return; }
     host.innerHTML = `<div class="page-inner">${UI.emptyState({ iconName: 'alert-circle', title: 'Unknown page', description: 'This surface is not part of this build.' })}</div>`;
   }
 
   window.Views = {
     render,
     handleMediaEvent,
+    handlePaperEvent,
     openMediaDetail,
     openMediaEngines,
+    openStudio,
+    openPaper,
+    openPaperComposer,
     openModelPicker,
     openFilePreview,
     openSettingsSection,

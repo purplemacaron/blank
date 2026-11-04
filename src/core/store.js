@@ -26,7 +26,7 @@ function sessionPath(id) {
   return path.join(appPaths().sessions, `${id}.json`);
 }
 
-function createSession({ workspace = '', model = '', mode = 'agent', title = 'New session' } = {}) {
+function createSession({ workspace = '', model = '', mode = 'agent', title = 'New session', reasoningEffort = 'auto' } = {}) {
   ensureHome();
   const now = new Date().toISOString();
   const session = {
@@ -37,6 +37,7 @@ function createSession({ workspace = '', model = '', mode = 'agent', title = 'Ne
     workspace,
     model,
     mode,
+    reasoningEffort: ['auto', 'low', 'medium', 'high'].includes(reasoningEffort) ? reasoningEffort : 'auto',
     messages: [],
     tasks: [],
     usage: { input: 0, output: 0 },

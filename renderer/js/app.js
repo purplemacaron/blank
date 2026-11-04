@@ -12,6 +12,7 @@
   const PAGE_META = {
     chat: { label: 'Chat', icon: 'message' },
     studio: { label: 'Studio', icon: 'wand' },
+    paper: { label: 'Paper', icon: 'book' },
     models: { label: 'Models', icon: 'sparkles' },
     skills: { label: 'Skills', icon: 'layers' },
     memory: { label: 'Memory', icon: 'brain' },
@@ -236,12 +237,13 @@
   /* ------------------------------------------------------------------ badges */
 
   async function loadBadges() {
-    const [skills, memory, mcp, learn, storage] = await Promise.all([
+    const [skills, memory, mcp, learn, storage, papers] = await Promise.all([
       safe(API.skills.list(), null),
       safe(API.memory.list(), null),
       safe(API.mcp.list(), null),
       safe(API.learn.state(), null),
       safe(API.media.storage(), null),
+      safe(API.papers.count(), null),
     ]);
     if (skills?.skills) {
       setBadge('badge-skills', skills.skills.length, { title: `${skills.skills.length} skills` });
@@ -263,6 +265,9 @@
     }
     if (storage) {
       setBadge('badge-studio', storage.count || 0, { title: `${storage.count || 0} media assets` });
+    }
+    if (papers !== null) {
+      setBadge('badge-paper', papers, { title: `${papers} papers` });
     }
   }
 
@@ -919,6 +924,7 @@
       { icon: 'plus', title: 'New session', sub: 'Start with a clean context', kbd: U.kbd('Ctrl N'), run: () => newSession() },
       { icon: 'message', title: 'Go to Chat', sub: 'Conversation with the agent', run: () => openPage('chat') },
       { icon: 'wand', title: 'Open Studio', sub: 'Images, video, music and 3D', run: () => openPage('studio') },
+      { icon: 'book', title: 'Open Paper', sub: 'Live pages, documents and graphics', run: () => openPage('paper') },
       { icon: 'sparkles', title: 'Switch default model…', sub: 'Model used by new sessions', kbd: U.kbd('Ctrl M'), run: () => openDefaultModelPicker($('palette-trigger')) },
       { icon: 'sparkles', title: 'Models', sub: 'Providers, keys and discovery', run: () => openPage('models') },
       { icon: 'layers', title: 'Skills', sub: 'Reusable workflows and instructions', run: () => openPage('skills') },
@@ -1295,6 +1301,7 @@
 
     if (CHAT_EVENTS.has(event.type) && window.ChatView?.handleEvent) ChatView.handleEvent(event);
     if (event.type.startsWith('media:')) window.Views?.handleMediaEvent(event);
+    if (event.type.startsWith('paper:')) window.Views?.handlePaperEvent(event);
 
     switch (event.type) {
       case 'config:updated':
@@ -1302,6 +1309,11 @@
         break;
       case 'sessions:refresh':
         refreshSessions();
+        break;
+      case 'notification:open':
+        if (event.sessionId) {
+          refreshSessions().then(() => loadSession(event.sessionId)).catch(() => {});
+        }
         break;
       case 'session:updated':
         if (event.session) upsertSession(event.session);
@@ -1325,6 +1337,8 @@
       case 'media:job':
       case 'media:asset':
       case 'media:removed':
+      case 'paper:changed':
+      case 'paper:removed':
         refreshBadgesSoon();
         break;
       case 'window:state':
@@ -1551,6 +1565,12 @@
     state.ready = true;
     flushEvents();
 
+    if (API.models?.discoverAll) {
+      API.models.discoverAll().then(() => {
+        if (state.page === 'models') window.Views?.render('models', $('page-view'));
+      }).catch(() => {});
+    }
+
     if (initialConfig && initialConfig.onboarded === false) {
       setTimeout(openOnboarding, 500);
     }
@@ -1589,6 +1609,7 @@
   App.handleEvent = handleEvent;
   App.openFilePreview = (path) => window.Views?.openFilePreview(path);
   App.openMedia = (id) => window.Views?.openMediaDetail(id);
+  App.openPaper = (id) => window.Views?.openPaper(id);
 
   window.App = App;
   window.addEventListener('beforeunload', () => {

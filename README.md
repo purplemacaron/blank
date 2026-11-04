@@ -1,6 +1,6 @@
 # Blank
 
-A quiet, local-first agent harness for your desktop. White by default, blue accent, keyboard friendly, and built to span chat, code, tools, media, and remote control — not just one of them.
+A quiet, local-first agent harness for your desktop. White by default, blue accent, keyboard friendly, and built to span chat, code, tools, media, Paper, and remote control — not just one of them.
 
 [Download Blank](https://purplemacaron.github.io/blank/) · [Source](https://github.com/purplemacaron/blank) · [Releases](https://github.com/purplemacaron/blank/releases)
 
@@ -35,7 +35,7 @@ Enable a small team of read-only specialists — Scout, Architect and Critic by 
 The interface ships in Korean and English. Switch in **Settings → General → Interface language**; the choice persists and reloads the window.
 
 **MCP and plugins**
-stdio and HTTP MCP servers with namespaced tools (`mcp__server__tool`). The Plugins page installs curated servers and skills in one click — filesystem, GitHub, Playwright, Context7, accessibility and performance audits — and MCP servers can start with the app.
+stdio and HTTP MCP servers with namespaced tools (`mcp__server__tool`). HTTP servers can sign in with OAuth; tokens are stored user-only and never shown. The Plugins page installs curated servers and skills in one click — filesystem, GitHub, Playwright, Context7, accessibility and performance audits — and MCP servers can start with the app. Anthropic and OpenAI provider cards also offer experimental subscription sign-in alongside API keys.
 
 **Computer use**
 Screenshot capture plus native mouse and keyboard input. A transparent, click-through overlay draws the cursor so you can see what the agent is doing. Every action goes through the normal approval policy.
@@ -45,6 +45,12 @@ An opt-in authenticated web app served from the desktop app. Each start issues a
 
 **Media studio**
 Generate and edit images, video, audio, and 3D models. Audio includes speech synthesis through installed system voices (Windows SAPI, macOS `say`, Linux espeak) with voice and rate controls. Bundled Blank engines work offline for procedural images, video, music sketches, and OBJ/STL meshes. Connect ComfyUI as a local HTTP engine, or use cloud engines: OpenAI Images, Google Imagen/Veo, Stability, ElevenLabs, Replicate, fal, and Higgsfield. Assets live in a local library with favorites, import/export, and a 3D viewer.
+
+**Paper**
+Agent-created pages, documents, graphics and code live in a local Paper library. `create_paper` and `update_paper` write versioned files under `~/.blank/papers`; chat shows a Paper card that opens the result. The viewer switches between Preview and Code and between desktop, tablet and phone widths. HTML and SVG render through a dedicated `blank-paper` protocol inside a sandboxed frame without same-origin access, so a page cannot reach the app or its data.
+
+**Schedules and notifications**
+Run a prompt on an hourly, daily or weekday timer from **Settings → Schedules**; each run becomes a normal session. Native desktop notifications report finished runs, pending approvals and scheduled results while the window is in the background, with per-category switches and a test action in **Settings → Notifications**.
 
 **Send while responding**
 Press send during a run and the message is queued in the composer tray. The queue drains automatically when the current run finishes; individual queued messages can be removed first.
@@ -72,8 +78,8 @@ Publishing is automated:
 2. Create a release to attach installers. The **Build installers** workflow builds Windows, macOS and Linux packages and uploads them to the GitHub Release:
 
    ```sh
-   git tag v1.1.3
-   git push origin v1.1.3
+   git tag v1.1.4
+   git push origin v1.1.4
    ```
 
 The site reads `https://api.github.com/repos/<owner>/<repo>/releases/latest`, so it updates as soon as a release is published. For local checks, serve `docs/` over HTTP with any static file server, or run `npx electron scripts/qa-site.js` to capture desktop and mobile screenshots in `qa/`.
@@ -88,6 +94,8 @@ sessions/        conversation transcripts and checkpoints
 memory.json      durable memories
 skills/          user skills (SKILL.md)
 media/           generated and imported assets
+papers/          Paper pages, documents, graphics and code
+schedules.json   timer definitions and last run state
 logs/            runtime logs
 ```
 
@@ -99,8 +107,8 @@ Set `BLANK_HOME` to use a different folder. Keys are stored locally in `config.j
 electron/        main process, preload, IPC, cursor overlay
 renderer/        Chromium UI (classic scripts, no build step)
   js/            app shell, chat, views, components, mock API
-src/core/        agent loop, providers, tools, config, MCP, search,
-                 plugins, remote, media engines
+src/core/        agent loop, providers, tools, config, MCP, paper,
+                 schedules, OAuth, search, plugins, remote, media engines
 bin/             terminal client
 examples/        MCP echo server used in the MCP examples
 assets/          app icon assets

@@ -58,6 +58,8 @@
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.7v2M12 19.3v2M4.3 4.3l1.4 1.4M18.3 18.3l1.4 1.4M2.7 12h2M19.3 12h2M4.3 19.7l1.4-1.4M18.3 5.7l1.4-1.4"/>',
     moon: '<path d="M20 14.5A8.3 8.3 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/>',
     monitor: '<rect x="3" y="4.5" width="18" height="12.5" rx="2.5"/><path d="M8.5 21h7M12 17v4"/>',
+    tablet: '<rect x="5" y="2.8" width="14" height="18.4" rx="2.4"/><path d="M11.2 18.2h1.6"/>',
+    smartphone: '<rect x="7.5" y="2.5" width="9" height="19" rx="2.2"/><path d="M11.1 18.7h1.8"/>',
     keyboard: '<rect x="2.8" y="6" width="18.4" height="12" rx="2.6"/><path d="M6.5 9.5h.01M9.5 9.5h.01M12.5 9.5h.01M15.5 9.5h.01M18.5 9.5h.01M6.5 12.8h.01M9.5 12.8h.01M12.5 12.8h.01M15.5 12.8h.01M18.5 12.8h.01M7.5 15.8h9"/>',
     layout: '<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M9 4.5v15M9 11h12"/>',
     book: '<path d="M4.2 5.3A2.3 2.3 0 0 1 6.5 3H20v15.2H6.5a2.3 2.3 0 0 0-2.3 2.3Z"/><path d="M4.2 5.3v15.2a2.3 2.3 0 0 0 2.3 1.8H20M8 7.8h8M8 11.3h6"/>',
@@ -107,6 +109,7 @@
     'download-cloud': '<path d="M7 17.5a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9.5a3.8 3.8 0 0 1 .3 7.5"/><path d="M12 11v9M8.6 16.4 12 20l3.4-3.6"/>',
     type: '<path d="M5 6.5V4h14v2.5M12 4v16M8.5 20h7"/>',
     'flask': '<path d="M9.5 3.5h5M10.5 3.5v5.2L5.3 17a2.4 2.4 0 0 0 2.1 3.5h9.2a2.4 2.4 0 0 0 2.1-3.5l-5.2-8.3V3.5"/><path d="M7.8 14h8.4"/>',
+    bell: '<path d="M18 9.2a6 6 0 0 0-12 0c0 4.2-1.5 5.7-2.2 6.5a1 1 0 0 0 .7 1.7h14.9a1 1 0 0 0 .7-1.7c-.7-.8-2.1-2.3-2.1-6.5Z"/><path d="M9.5 20a2.7 2.7 0 0 0 5 0"/>',
   };
 
   function icon(name, size, extraClass) {
@@ -141,6 +144,10 @@
     list_media: 'image',
     generate_media: 'wand',
     edit_media: 'sliders',
+    create_paper: 'book',
+    update_paper: 'edit',
+    read_paper: 'eye',
+    list_papers: 'list',
   };
 
   window.Icons = { icon, hydrate, TOOL_ICONS, paths: P };

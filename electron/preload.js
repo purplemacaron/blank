@@ -44,6 +44,7 @@ const api = {
     probe: (input) => invoke('providers:probe', input),
     test: (input) => invoke('providers:test', input),
     discover: (providerId) => invoke('providers:discover', { providerId }),
+    discoverAll: () => invoke('models:discoverAll'),
     addCustom: (input) => invoke('providers:addCustom', input),
     removeCustom: (providerId) => invoke('providers:removeCustom', providerId),
   },
@@ -112,6 +113,27 @@ const api = {
     addExample: () => invoke('mcp:addExample'),
     remove: (id) => invoke('mcp:remove', id),
     toggle: (input) => invoke('mcp:toggle', input),
+    oauthStart: (id) => invoke('mcp:oauthStart', { id }),
+    oauthSignOut: (id) => invoke('mcp:oauthSignOut', { id }),
+  },
+
+  schedules: {
+    list: () => invoke('schedules:list'),
+    save: (input) => invoke('schedules:save', input),
+    remove: (id) => invoke('schedules:delete', { id }),
+    run: (id) => invoke('schedules:run', { id }),
+  },
+
+  notifications: {
+    status: () => invoke('notifications:status'),
+    test: () => invoke('notifications:test'),
+  },
+
+  subscription: {
+    status: () => invoke('subscription:status'),
+    start: (providerId) => invoke('subscription:start', { providerId }),
+    complete: (providerId, code) => invoke('subscription:complete', { providerId, code }),
+    signOut: (providerId) => invoke('subscription:signOut', { providerId }),
   },
 
   skills: {
@@ -136,6 +158,18 @@ const api = {
     reflect: () => invoke('learn:reflect'),
     apply: (id) => invoke('learn:apply', id),
     dismiss: (id) => invoke('learn:dismiss', id),
+  },
+
+  papers: {
+    list: (options) => invoke('papers:list', options),
+    count: () => invoke('papers:count'),
+    get: (id) => invoke('papers:get', id),
+    create: (input) => invoke('papers:create', input),
+    update: (input) => invoke('papers:update', input),
+    favorite: (id) => invoke('papers:favorite', id),
+    remove: (id) => invoke('papers:remove', id),
+    export: (id) => invoke('papers:export', id),
+    reveal: (id) => invoke('papers:reveal', id),
   },
 
   media: {
@@ -170,6 +204,8 @@ const api = {
 
   cli: {
     install: () => invoke('cli:install'),
+    status: () => invoke('cli:status'),
+    remove: () => invoke('cli:remove'),
   },
 
   window: {

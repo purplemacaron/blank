@@ -9,11 +9,16 @@ const {
 const { loadConfig, saveConfig } = require('../src/core/config');
 const { MCPManager } = require('../src/core/mcp');
 const { mediaPaths, ensureMedia } = require('../src/core/media/util');
+const paperStore = require('../src/core/paper');
 const { registerIpc, attachWindowEvents } = require('./ipc');
 
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'blank-media',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: false },
+  },
+  {
+    scheme: 'blank-paper',
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: false },
   },
 ]);
@@ -25,6 +30,17 @@ const mcp = new MCPManager();
 let quitting = false;
 
 app.setAppUserModelId('dev.blank.harness');
+
+// A dev window runs beside an installed copy instead of fighting its lock.
+if (process.argv.includes('--dev')) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'Blank Dev'));
+}
+
+/* Keep the renderer heap honest and avoid a spare renderer process. The cap
+   is far above what the UI needs; the exposed GC lets us release hidden-window
+   memory when the app is minimized. */
+app.commandLine.appendSwitch('js-flags', '--expose-gc --max-old-space-size=512');
+app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess');
 
 function registerMediaProtocol() {
   ensureMedia();
@@ -47,6 +63,56 @@ function registerMediaProtocol() {
       return await net.fetch(pathToFileURL(file).toString());
     } catch {
       return notFound;
+    }
+  });
+}
+
+/* Paper previews run in a sandboxed iframe on their own scheme so the app CSP
+   never has to allow inline scripts. The response CSP keeps each paper
+   self-contained: no same-origin access and no fetch/XHR exfiltration. */
+const PAPER_HTML_CSP = [
+  "default-src 'none'",
+  "img-src data: blob: https:",
+  "media-src data: blob: https:",
+  "style-src 'unsafe-inline' https:",
+  "script-src 'unsafe-inline' https:",
+  "font-src data: https:",
+  "connect-src 'none'",
+  "form-action 'none'",
+  "base-uri 'none'",
+].join('; ');
+
+const PAPER_SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'";
+
+function registerPaperProtocol() {
+  protocol.handle('blank-paper', async (request) => {
+    const notFound = () => new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain' } });
+    try {
+      const url = new URL(request.url);
+      if (url.hostname !== 'view') return notFound();
+      let id;
+      try {
+        id = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+      } catch {
+        return notFound();
+      }
+      const meta = paperStore.readMeta(id);
+      if (!meta || !['html', 'svg'].includes(meta.kind)) return notFound();
+      const file = paperStore.contentPath(meta);
+      if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return notFound();
+      const raw = fs.readFileSync(file, 'utf8');
+      const body = meta.kind === 'html' ? paperStore.htmlDocument(raw) : raw;
+      return new Response(body, {
+        status: 200,
+        headers: {
+          'content-type': paperStore.paperMime(meta.kind),
+          'content-security-policy': meta.kind === 'html' ? PAPER_HTML_CSP : PAPER_SVG_CSP,
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+        },
+      });
+    } catch {
+      return notFound();
     }
   });
 }
@@ -98,8 +164,8 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      spellcheck: true,
-      backgroundThrottling: false,
+      spellcheck: false,
+      backgroundThrottling: true,
     },
   });
 
@@ -150,6 +216,14 @@ function createWindow() {
   mainWindow.on('unresponsive', () => {
     dialog.showErrorBox('Blank is unresponsive', 'The window stopped responding. You can close it and restart Blank.');
   });
+
+  mainWindow.on('minimize', () => {
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.webContents.executeJavaScript('window.gc && window.gc(); true', true).catch(() => {});
+      if (global.gc) global.gc();
+    }, 1200);
+  });
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -166,6 +240,7 @@ if (!gotLock) {
   app.whenReady().then(async () => {
     ensureWorkspace();
     registerMediaProtocol();
+    registerPaperProtocol();
     buildMenu();
     ipc = registerIpc({ mcp, getWindow: () => mainWindow });
     createWindow();

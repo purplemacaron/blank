@@ -7,10 +7,18 @@ const {
   safePath, readFileText, addMemory, searchMemory, getSkill, listSkills,
   createCheckpoint, isTextFile,
 } = require('./store');
-const mediaLibrary = require('./media');
-const search = require('./search');
-const computer = require('./computer');
-const ssh = require('./ssh');
+/* Heavy or platform-specific modules load on first use. Chat, planning and
+   file edits never pay for sharp, ffmpeg or ssh2 in memory. */
+let mediaCache = null;
+let searchCache = null;
+let computerCache = null;
+let sshCache = null;
+let paperCache = null;
+const mediaLibrary = () => (mediaCache || (mediaCache = require('./media')));
+const papers = () => (paperCache || (paperCache = require('./paper')));
+const search = () => (searchCache || (searchCache = require('./search')));
+const computer = () => (computerCache || (computerCache = require('./computer')));
+const ssh = () => (sshCache || (sshCache = require('./ssh')));
 
 const MAX_RESULT = 40000;
 const BINARY_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.zip', '.gz', '.tar', '.7z', '.exe', '.dll', '.so', '.dylib', '.mp3', '.mp4', '.mov', '.woff', '.woff2', '.ttf', '.otf', '.class', '.jar', '.wasm', '.bin']);
@@ -347,6 +355,68 @@ const TOOL_SPECS = [
       required: ['id'],
     },
     mutating: true,
+  },
+  {
+    name: 'create_paper',
+    label: 'Create paper',
+    description: 'Create a Paper — a live document kept in the Blank Paper library and shown to the user as a paper card. Use html for a self-contained interactive page, markdown for a document, svg for a graphic, or code for a snippet. Keep HTML self-contained: inline CSS and JS, no network requests, no external scripts. Returns the paper id; revise it later with update_paper.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short paper title. If omitted it is inferred from the content.' },
+        kind: { type: 'string', enum: ['html', 'markdown', 'svg', 'code'], description: 'Paper kind (default html).' },
+        content: { type: 'string', description: 'Complete content. HTML pages should include their own styles inside the document.' },
+        language: { type: 'string', description: 'For code papers, the language (js, python, css, sql, …).' },
+        description: { type: 'string', description: 'Optional one-sentence note shown in the library.' },
+      },
+      required: ['content'],
+    },
+    mutating: true,
+  },
+  {
+    name: 'update_paper',
+    label: 'Update paper',
+    description: 'Revise an existing Paper. Pass content to replace the page and bump its version, or pass only title/description/language to relabel it. Read the paper first when the user refers to its current contents.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Paper id from create_paper or list_papers.' },
+        content: { type: 'string', description: 'New complete content.' },
+        title: { type: 'string' },
+        description: { type: 'string' },
+        language: { type: 'string', description: 'For code papers only.' },
+      },
+      required: ['id'],
+    },
+    mutating: true,
+  },
+  {
+    name: 'read_paper',
+    label: 'Read paper',
+    description: 'Read the full content of a Paper in the library.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Paper id.' },
+      },
+      required: ['id'],
+    },
+    planSafe: true,
+  },
+  {
+    name: 'list_papers',
+    label: 'Browse papers',
+    description: 'List Papers in the Blank Paper library, newest first. Returns ids, titles, kinds and versions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Optional text filter on title, description and excerpt.' },
+        kind: { type: 'string', enum: ['html', 'markdown', 'svg', 'code'], description: 'Optional paper kind filter.' },
+        favorite: { type: 'boolean', description: 'Only starred papers.' },
+        limit: { type: 'integer', description: 'Maximum papers (default 20, max 50).' },
+      },
+    },
+    planSafe: true,
   },
 ];
 
@@ -702,13 +772,13 @@ async function toolWebFetch(args, ctx) {
 
 async function toolWebSearch(args, ctx) {
   try {
-    const payload = await search.searchWeb(args.query, {
+    const payload = await search().searchWeb(args.query, {
       config: ctx.config || {},
       signal: ctx.signal,
       count: args.count,
     });
     return {
-      content: search.formatResults(payload),
+      content: search().formatResults(payload),
       meta: { query: payload.query, backend: payload.backend, results: payload.results },
     };
   } catch (err) {
@@ -718,7 +788,7 @@ async function toolWebSearch(args, ctx) {
 
 async function toolComputerScreenshot(args, ctx) {
   try {
-    const shot = await computer.screenshot();
+    const shot = await computer().screenshot();
     const kb = (shot.bytes / 1024).toFixed(0);
     return {
       content: `Screenshot saved: ${shot.path}\nDisplay: ${shot.display || 'unknown'} · ${kb} KB\n\nThe file is outside the workspace in Blank's data folder. Coordinates used by computer_use refer to absolute screen pixels.`,
@@ -731,7 +801,7 @@ async function toolComputerScreenshot(args, ctx) {
 
 async function toolComputerUse(args, ctx) {
   try {
-    const result = await computer.perform(args.action, args);
+    const result = await computer().perform(args.action, args);
     if (args.action === 'windows') {
       const items = (result.windows || []).slice(0, 60).map((win) => {
         const title = win.MainWindowTitle || win.title || '';
@@ -817,14 +887,14 @@ function describeMediaAsset(asset, saved) {
 
 async function collectMediaResults(job, args, ctx) {
   const assets = job.assetIds
-    .map((id) => mediaLibrary.getAsset(id))
+    .map((id) => mediaLibrary().getAsset(id))
     .filter(Boolean);
   const saved = [];
   if (args.save_to_workspace && assets.length) {
     const folder = String(args.folder || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
     if (!ctx.workspace) throw new Error('No workspace is open, so the file cannot be saved.');
     for (const asset of assets) {
-      const result = await mediaLibrary.saveToWorkspace(asset.id, ctx.workspace, folder);
+      const result = await mediaLibrary().saveToWorkspace(asset.id, ctx.workspace, folder);
       saved.push(result.relative);
     }
   }
@@ -839,7 +909,7 @@ async function collectMediaResults(job, args, ctx) {
 
 async function toolListMedia(args, ctx) {
   const limit = Math.min(50, Math.max(1, Number(args.limit) || 12));
-  const list = mediaLibrary.listAssets({ kind: args.kind, query: args.query, limit });
+  const list = mediaLibrary().listAssets({ kind: args.kind, query: args.query, limit });
   if (!list.items.length) {
     return { content: 'No matching media assets yet. Use generate_media to create one.' };
   }
@@ -856,7 +926,7 @@ async function toolGenerateMedia(args, ctx) {
     return { content: 'kind must be image, video, audio or model3d.', isError: true };
   }
   if (!String(args.prompt || '').trim()) return { content: 'prompt is required.', isError: true };
-  const job = mediaLibrary.generate({
+  const job = mediaLibrary().generate({
     kind: args.kind,
     prompt: String(args.prompt),
     engine: args.engine || 'blank',
@@ -873,14 +943,14 @@ async function toolGenerateMedia(args, ctx) {
     save_to_workspace: args.save_to_workspace,
     folder: args.folder,
   });
-  const finished = await mediaLibrary.waitForJob(job.id, { signal: ctx.signal });
+  const finished = await mediaLibrary().waitForJob(job.id, { signal: ctx.signal });
   return collectMediaResults(finished, args, ctx);
 }
 
 async function toolEditMedia(args, ctx) {
   const id = String(args.id || '').trim();
   if (!id) return { content: 'id is required. Use list_media to find an asset id.', isError: true };
-  const job = mediaLibrary.edit({
+  const job = mediaLibrary().edit({
     id,
     prompt: args.prompt || '',
     engine: args.engine || 'blank',
@@ -888,21 +958,90 @@ async function toolEditMedia(args, ctx) {
     save_to_workspace: args.save_to_workspace,
     folder: args.folder,
   });
-  const finished = await mediaLibrary.waitForJob(job.id, { signal: ctx.signal });
+  const finished = await mediaLibrary().waitForJob(job.id, { signal: ctx.signal });
   return collectMediaResults(finished, args, ctx);
+}
+
+function describePaper(paper) {
+  const details = [paper.kindLabel, `v${paper.version}`];
+  if (paper.language) details.push(paper.language);
+  if (paper.favorite) details.push('starred');
+  return `- “${paper.title}” (${details.join(', ')}) · id ${paper.id}`;
+}
+
+async function toolCreatePaper(args, ctx) {
+  const paper = papers().createPaper({
+    title: args.title || '',
+    kind: args.kind || 'html',
+    content: args.content || '',
+    language: args.language || '',
+    description: args.description || '',
+    source: 'agent',
+    sessionId: ctx.session?.id || '',
+  });
+  const lines = [
+    `Created paper “${paper.title}” (${paper.kindLabel}, v${paper.version}) · id ${paper.id}`,
+    `Open it in Paper. Revise it with update_paper using id ${paper.id}.`,
+  ];
+  return { content: lines.join('\n'), meta: { paper } };
+}
+
+async function toolUpdatePaper(args, ctx) {
+  const id = String(args.id || '').trim();
+  if (!id) return { content: 'id is required. Use list_papers to find a paper id.', isError: true };
+  const paper = papers().updatePaper(id, {
+    title: args.title,
+    content: args.content,
+    description: args.description,
+    language: args.language,
+  });
+  const lines = [
+    `Updated paper “${paper.title}” (${paper.kindLabel}, v${paper.version}) · id ${paper.id}`,
+    `Open it in Paper to review the result.`,
+  ];
+  return { content: lines.join('\n'), meta: { paper } };
+}
+
+async function toolReadPaper(args) {
+  const id = String(args.id || '').trim();
+  if (!id) return { content: 'id is required. Use list_papers to find a paper id.', isError: true };
+  const result = papers().getPaperContent(id);
+  const lines = [
+    `Paper “${result.paper.title}” (${result.paper.kindLabel}, v${result.paper.version}) · id ${result.paper.id}`,
+    result.paper.description ? result.paper.description : '',
+    '',
+    result.content || '(empty)',
+  ].filter((line, index) => line || index === 2);
+  return { content: lines.join('\n'), meta: { paper: result.paper } };
+}
+
+async function toolListPapers(args) {
+  const limit = Math.min(50, Math.max(1, Number(args.limit) || 20));
+  const list = papers().listPapers({
+    query: args.query,
+    kind: args.kind,
+    favorite: args.favorite === true,
+    limit,
+  });
+  if (!list.items.length) {
+    return { content: 'No matching papers yet. Use create_paper to make one.' };
+  }
+  const lines = [`Paper library — ${list.total} paper${list.total === 1 ? '' : 's'} (showing ${list.items.length}):`];
+  for (const paper of list.items) lines.push(describePaper(paper));
+  return { content: lines.join('\n'), meta: { papers: list.items, count: list.total } };
 }
 
 async function toolSshRun(args, ctx) {
   let host;
   try {
-    host = ssh.findHost(ctx.config, args.host);
+    host = ssh().findHost(ctx.config, args.host);
   } catch (err) {
     return { content: err.message, isError: true };
   }
   const command = String(args.command || '');
   if (!command.trim()) return { content: 'command is required.', isError: true };
   try {
-    const result = await ssh.runCommand(host, command, {
+    const result = await ssh().runCommand(host, command, {
       timeoutMs: Math.max(5000, Math.min(600000, Number(args.timeout_ms) || 120000)),
       cwd: String(args.cwd || '').trim(),
     });
@@ -943,6 +1082,10 @@ const HANDLERS = {
   list_media: toolListMedia,
   generate_media: toolGenerateMedia,
   edit_media: toolEditMedia,
+  create_paper: toolCreatePaper,
+  update_paper: toolUpdatePaper,
+  read_paper: toolReadPaper,
+  list_papers: toolListPapers,
 };
 
 function getToolDefinition(name) {
@@ -1050,6 +1193,10 @@ function summarizeArgs(name, args = {}) {
   if (name === 'generate_media') return `${args.kind || 'image'} · ${args.prompt || ''}`;
   if (name === 'edit_media') return `${args.id || ''}${args.prompt ? ` · ${args.prompt}` : ''}`;
   if (name === 'list_media') return [args.kind, args.query].filter(Boolean).join(' · ');
+  if (name === 'create_paper') return `${args.kind || 'html'} · ${args.title || args.description || String(args.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70)}`;
+  if (name === 'update_paper') return args.title || args.id || '';
+  if (name === 'read_paper') return args.id || '';
+  if (name === 'list_papers') return [args.kind, args.query].filter(Boolean).join(' · ');
   return args.path || '';
 }
 

@@ -5,11 +5,35 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { appPaths } = require('../paths');
 
-let sharp = null;
-try { sharp = require('sharp'); } catch {}
-let ffmpegPath = '';
-try { ffmpegPath = require('ffmpeg-static') || ''; } catch {}
-if (ffmpegPath && !fs.existsSync(ffmpegPath)) ffmpegPath = '';
+/* Load native/heavy tools only when a media operation actually needs them.
+   This keeps app and CLI startup light in memory. */
+let sharpLib = null;
+let sharpTried = false;
+function getSharp() {
+  if (!sharpTried) {
+    sharpTried = true;
+    try { sharpLib = require('sharp'); } catch { sharpLib = null; }
+  }
+  return sharpLib;
+}
+
+function sharp(...args) {
+  const lib = getSharp();
+  if (!lib) throw new Error('Image processing needs sharp, which is unavailable in this build.');
+  return lib(...args);
+}
+
+let ffmpegPath = null;
+let ffmpegTried = false;
+function getFfmpegPath() {
+  if (!ffmpegTried) {
+    ffmpegTried = true;
+    let value = '';
+    try { value = require('ffmpeg-static') || ''; } catch {}
+    ffmpegPath = value && fs.existsSync(value) ? value : '';
+  }
+  return ffmpegPath;
+}
 
 const IMAGE_MIME = {
   '.png': 'image/png',
@@ -151,15 +175,15 @@ function fileSize(file) {
 }
 
 function sharpAvailable() {
-  return Boolean(sharp);
+  return Boolean(getSharp());
 }
 
 function ffmpegAvailable() {
-  return Boolean(ffmpegPath);
+  return Boolean(getFfmpegPath());
 }
 
 function ffmpegBin() {
-  return ffmpegPath || 'ffmpeg';
+  return getFfmpegPath() || 'ffmpeg';
 }
 
 function runProcess(bin, args, options = {}) {
@@ -219,7 +243,7 @@ function cleanFfmpegError(stderr) {
 async function probeMedia(file) {
   const ext = path.extname(file).toLowerCase();
   const out = { duration: 0, width: 0, height: 0, mime: mimeForFile(file), bytes: fileSize(file) };
-  if (IMAGE_MIME[ext] && sharp) {
+  if (IMAGE_MIME[ext] && getSharp()) {
     try {
       const meta = await sharp(file).metadata();
       out.width = meta.width || 0;
@@ -288,7 +312,7 @@ async function makePoster(videoFile, outFile, atSeconds = 1) {
 }
 
 async function makeThumbnail(input, outFile, width = 640) {
-  if (!sharp) return '';
+  if (!getSharp()) return '';
   try {
     await sharp(input)
       .rotate()
@@ -302,7 +326,7 @@ async function makeThumbnail(input, outFile, width = 640) {
 }
 
 async function imageInfo(bufferOrPath) {
-  if (!sharp) return { width: 0, height: 0 };
+  if (!getSharp()) return { width: 0, height: 0 };
   try {
     const meta = await sharp(bufferOrPath).metadata();
     return { width: meta.width || 0, height: meta.height || 0, format: meta.format || '' };
@@ -407,7 +431,7 @@ function safeName(value) {
 }
 
 module.exports = {
-  sharp, ffmpegPath, sharpAvailable, ffmpegAvailable, ffmpegBin,
+  sharp, getSharp, sharpAvailable, ffmpegAvailable, ffmpegBin,
   IMAGE_MIME, MEDIA_MIME, KIND_EXT,
   mediaPaths, ensureMedia, hashString, mulberry32, pick, range, clamp,
   escapeXml, hexToRgb, rgbToHex, shade, mix, extForMime, mimeForFile, fileSize,

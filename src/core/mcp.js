@@ -3,6 +3,7 @@
 const { spawn } = require('child_process');
 const { EventEmitter } = require('events');
 const { slugify } = require('./paths');
+const oauth = require('./oauth');
 
 const PROTOCOL = '2025-06-18';
 const CLIENT_INFO = { name: 'blank', version: '1.0.0' };
@@ -186,12 +187,17 @@ class HttpClient {
     this.error = '';
   }
 
-  headers() {
+  async headers() {
     const headers = {
       'content-type': 'application/json',
       accept: 'application/json, text/event-stream',
       ...(this.server.headers || {}),
     };
+    const configured = Object.keys(headers).some((key) => key.toLowerCase() === 'authorization');
+    if (!configured) {
+      const token = await oauth.accessToken('mcp', this.server.id);
+      if (token) headers.authorization = `Bearer ${token}`;
+    }
     if (this.sessionId) headers['mcp-session-id'] = this.sessionId;
     return headers;
   }
@@ -199,7 +205,7 @@ class HttpClient {
   async post(payload, timeout = 30000) {
     const response = await fetch(this.server.url, {
       method: 'POST',
-      headers: this.headers(),
+      headers: await this.headers(),
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(timeout),
     });
@@ -207,6 +213,11 @@ class HttpClient {
     if (session) this.sessionId = session;
     if (!response.ok) {
       const text = await response.text().catch(() => '');
+      if (response.status === 401) {
+        const error = new Error('This MCP server requires OAuth sign-in. Open MCP and choose Sign in.');
+        error.code = 'OAUTH_REQUIRED';
+        throw error;
+      }
       throw new Error(`MCP HTTP ${response.status}: ${text.slice(0, 400) || response.statusText}`);
     }
     if (response.status === 202) return null;
@@ -362,6 +373,8 @@ class MCPManager extends EventEmitter {
         toolCount: client?.connected ? (client.tools || []).length : 0,
         tools: client?.connected ? (client.tools || []).map((tool) => tool.name) : [],
         error: client?.error || '',
+        needsAuth: /OAuth sign-in|401/i.test(client?.error || ''),
+        oauth: server.transport === 'http' ? oauth.status('mcp', server.id) : { signedIn: false },
       };
     });
   }

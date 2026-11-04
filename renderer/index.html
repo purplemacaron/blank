@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: blank-media:; media-src 'self' data: blob: blank-media:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'self';" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: blank-media:; media-src 'self' data: blob: blank-media:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'self'; frame-src 'self' blank-paper:;" />
   <title>Blank</title>
   <link rel="icon" type="image/png" sizes="512x512" href="../assets/icon.png" />
   <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
@@ -71,6 +71,10 @@
             <button class="nav-item" data-page="studio" type="button">
               <span class="nav-icon" data-icon="wand"></span><span class="nav-label">Studio</span>
               <span class="nav-badge accent" id="badge-studio" hidden></span>
+            </button>
+            <button class="nav-item" data-page="paper" type="button">
+              <span class="nav-icon" data-icon="book"></span><span class="nav-label">Paper</span>
+              <span class="nav-count" id="badge-paper"></span>
             </button>
             <button class="nav-item" data-page="models" type="button">
               <span class="nav-icon" data-icon="sparkles"></span><span class="nav-label">Models</span>

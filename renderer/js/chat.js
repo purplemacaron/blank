@@ -9,12 +9,21 @@
     todo_write: 'Update plan', remember: 'Save memory', memory_search: 'Search memory',
     read_skill: 'Read skill', delegate: 'Sub-agent',
     list_media: 'Search media', generate_media: 'Generate media', edit_media: 'Edit media',
+    create_paper: 'Create Paper', update_paper: 'Update Paper', read_paper: 'Read Paper', list_papers: 'List Papers',
   };
 
   const MODES = {
     agent: { label: 'Agent', icon: 'bot' },
+    design: { label: 'Design', icon: 'palette' },
     plan: { label: 'Plan', icon: 'checklist' },
     ask: { label: 'Ask', icon: 'message' },
+  };
+
+  const REASONING = {
+    auto: { label: 'Auto', hint: 'Provider default' },
+    low: { label: 'Low', hint: 'Fast, shallow' },
+    medium: { label: 'Medium', hint: 'Balanced' },
+    high: { label: 'High', hint: 'Deeper, slower' },
   };
 
   const Chat = {
@@ -25,6 +34,7 @@
     buffer: [],
     draftModel: '',
     draftMode: 'agent',
+    draftReasoning: 'auto',
     attachments: [],
     queue: [],
     pendingApprovals: new Map(),
@@ -41,6 +51,10 @@
   }
   function currentMode() {
     return Chat.session?.mode || Chat.draftMode || 'agent';
+  }
+  function currentReasoning() {
+    const value = Chat.session?.reasoningEffort || Chat.draftReasoning || App.state.config?.agent?.reasoningEffort || 'auto';
+    return REASONING[value] ? value : 'auto';
   }
   function catalog() {
     return App.state.catalog || { providers: [], models: [] };
@@ -100,6 +114,10 @@
     if (name === 'generate_media') return `${value.kind || 'image'} · ${value.prompt || ''}`;
     if (name === 'edit_media') return value.prompt || value.id || '';
     if (name === 'list_media') return value.query || value.kind || 'recent assets';
+    if (name === 'create_paper') return value.title || U.truncate(value.content || '', 70);
+    if (name === 'update_paper') return value.title || value.id || '';
+    if (name === 'read_paper') return value.id || '';
+    if (name === 'list_papers') return value.query || value.kind || 'recent papers';
     if (name === 'todo_write') return `${(value.todos || []).length} items`;
     if (name.startsWith('mcp__')) {
       const entries = Object.entries(value).slice(0, 2).map(([key, val]) => `${key}: ${typeof val === 'object' ? JSON.stringify(val) : String(val)}`);
@@ -154,6 +172,21 @@
     </button>`;
   }
 
+  function paperToolCard(paper) {
+    if (!paper || !paper.id) return '';
+    const meta = {
+      html: { label: 'Page', icon: 'book' },
+      markdown: { label: 'Document', icon: 'file-text' },
+      svg: { label: 'Graphic', icon: 'image' },
+      code: { label: 'Code', icon: 'file-code' },
+    }[paper.kind] || { label: 'Paper', icon: 'book' };
+    return `<button class="tool-paper-card" type="button" data-action="open-paper" data-id="${U.attr(paper.id)}">
+      <span class="tool-paper-mark">${icon(meta.icon, 15)}</span>
+      <span class="tool-paper-copy"><b>${U.esc(paper.title || 'Untitled paper')}</b><small>${U.esc(meta.label)}${paper.version ? ` · v${U.esc(paper.version)}` : ''}${paper.bytes ? ` · ${U.esc(U.fmtBytes(paper.bytes))}` : ''}</small></span>
+      <span class="tool-media-open">${icon('arrow-up-right', 12)}</span>
+    </button>`;
+  }
+
   function toolDetailsMarkup(name, args, result) {
     const meta = result?.meta || {};
     const content = result?.content || '';
@@ -161,6 +194,12 @@
     if (Array.isArray(meta.media) && meta.media.length) {
       html += `<div class="tool-section-label">${meta.media.length} asset${meta.media.length === 1 ? '' : 's'} in Studio</div><div class="tool-media-grid">${meta.media.map(mediaThumb).join('')}</div>`;
       if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div><pre class="tool-pre">${U.esc(clip(content, 3000))}</pre>`;
+    } else if (meta.paper && meta.paper.id) {
+      html += `<div class="tool-section-label">Paper</div>${paperToolCard(meta.paper)}`;
+      if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div><pre class="tool-pre">${U.esc(clip(content, 2400))}</pre>`;
+    } else if (Array.isArray(meta.papers) && meta.papers.length) {
+      html += `<div class="tool-section-label">${meta.papers.length} paper${meta.papers.length === 1 ? '' : 's'} in the library</div><div class="tool-paper-list">${meta.papers.slice(0, 6).map(paperToolCard).join('')}</div>`;
+      if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div><pre class="tool-pre">${U.esc(clip(content, 2400))}</pre>`;
     } else if (name === 'todo_write') {
       const tasks = meta.tasks || args?.todos || [];
       html += `<div class="tool-section-label">Plan</div>${tasksMarkup(tasks)}`;
@@ -414,12 +453,19 @@
   function updateComposer() {
     const input = document.getElementById('composer-input');
     const modeButton = document.getElementById('composer-mode');
+    const reasoningButton = document.getElementById('composer-reasoning');
     const context = document.getElementById('composer-context');
     const hint = document.getElementById('composer-approval-hint');
     const send = document.getElementById('composer-send');
     if (!input || !modeButton) return;
     const mode = currentMode();
     modeButton.innerHTML = `${icon(modeOf(mode).icon, 13)}<span>${U.esc(modeOf(mode).label)}</span><span class="ws-caret">${icon('chevron-updown', 10)}</span>`;
+    if (reasoningButton) {
+      const effort = currentReasoning();
+      reasoningButton.innerHTML = `${icon('brain', 13)}<span>${U.esc(REASONING[effort].label)}</span><span class="ws-caret">${icon('chevron-updown', 10)}</span>`;
+      reasoningButton.title = `Reasoning · ${REASONING[effort].label}`;
+      reasoningButton.classList.toggle('active', effort !== 'auto');
+    }
     const modelButton = document.getElementById('composer-model');
     if (modelButton) {
       const modelId = currentModel();
@@ -431,7 +477,9 @@
       ? 'Describe what you want planned. Reads only.'
       : mode === 'ask'
         ? 'Ask a question about your codebase…'
-        : 'Ask Blank to build, debug, or explain…';
+        : mode === 'design'
+          ? 'Describe the interface you want to design…'
+          : 'Ask Blank to build, debug, or explain…';
     if (context) context.innerHTML = contextRing();
     if (hint) {
       const perms = App.state.config?.permissions || {};
@@ -526,6 +574,14 @@
           <button class="suggestion" type="button" data-action="suggest" data-suggest="review">
             <span class="suggestion-icon">${icon('shield', 14)}</span>
             <span class="suggestion-copy"><span class="suggestion-title">Review a change</span><span class="suggestion-text">Find correctness and security gaps.</span></span>
+          </button>
+          <button class="suggestion" type="button" data-action="suggest" data-suggest="design">
+            <span class="suggestion-icon">${icon('palette', 14)}</span>
+            <span class="suggestion-copy"><span class="suggestion-title">Design a page</span><span class="suggestion-text">Build a clean interface in Design mode.</span></span>
+          </button>
+          <button class="suggestion" type="button" data-action="suggest" data-suggest="audio">
+            <span class="suggestion-icon">${icon('music', 14)}</span>
+            <span class="suggestion-copy"><span class="suggestion-title">Compose audio</span><span class="suggestion-text">Make a track or voiceover in Studio.</span></span>
           </button>
         </div>
         <div class="hero-foot">
@@ -1035,6 +1091,7 @@
       Chat.session = {
         id: null, title: 'New session', messages: [], tasks: [], files: [], allowTools: [],
         model: Chat.draftModel || App.state.config?.defaultModel, mode: Chat.draftMode || 'agent',
+        reasoningEffort: currentReasoning(),
         usage: { input: 0, output: 0 }, summary: '', compactedCount: 0,
       };
     }
@@ -1053,6 +1110,7 @@
         attachments,
         model: currentModel(),
         mode: currentMode(),
+        reasoningEffort: currentReasoning(),
         queue: Boolean(options.queue),
       });
       Chat.sending = false;
@@ -1193,6 +1251,34 @@
       renderHead();
       updateComposer();
       App.refreshSessions();
+    });
+  }
+
+  function openReasoningPicker(anchor) {
+    if (!anchor) return;
+    const current = currentReasoning();
+    const content = document.createElement('div');
+    content.className = 'mode-picker';
+    content.innerHTML = `<div class="mode-picker-head">Reasoning</div>${Object.entries(REASONING).map(([value, item]) => `<button class="mode-choice ${value === current ? 'selected' : ''}" type="button" data-reasoning="${value}">
+      <span class="mode-choice-icon">${icon(value === 'auto' ? 'sparkles' : 'brain', 15)}</span>
+      <span class="mode-choice-name">${U.esc(item.label)}<span class="mode-choice-hint">${U.esc(item.hint)}</span></span>
+      ${value === current ? `<span class="mode-choice-check">${icon('check', 13)}</span>` : ''}
+    </button>`).join('')}<div class="mode-picker-note">Thinking is shown when the model returns it.</div>`;
+    const pop = UI.popover(anchor, content, { width: 232 });
+    content.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-reasoning]');
+      if (!button) return;
+      const value = button.dataset.reasoning;
+      pop.close();
+      if (Chat.session?.id) {
+        Chat.session.reasoningEffort = value;
+        API.sessions.update({ id: Chat.session.id, reasoningEffort: value }).catch((error) => UI.toast(error.message, 'error'));
+      } else {
+        Chat.draftReasoning = value;
+      }
+      updateComposer();
+      renderHead();
+      UI.toast(`Reasoning: ${REASONING[value].label}`, 'success');
     });
   }
 
@@ -1563,6 +1649,7 @@
                 <button class="composer-tool" type="button" data-action="attach-files" title="Attach text files">${icon('paperclip', 13)}<span>Attach</span></button>
                 <span class="composer-divider"></span>
                 <button class="composer-tool composer-model" id="composer-model" type="button" data-action="pick-model" title="Switch model"></button>
+                <button class="composer-tool" id="composer-reasoning" type="button" data-action="pick-reasoning" title="Reasoning effort"></button>
                 <button class="composer-tool" id="composer-mode" type="button" data-action="pick-mode"></button>
                 <span class="spacer"></span>
                 <span id="composer-context"></span>
@@ -1635,6 +1722,7 @@
       }
       if (action === 'pick-model') { openModelPicker(actionNode); return; }
       if (action === 'pick-mode') { openModePicker(actionNode); return; }
+      if (action === 'pick-reasoning') { openReasoningPicker(actionNode); return; }
       if (action === 'session-menu' || action === 'open-session-menu') { openSessionMenu(actionNode); return; }
       if (action === 'toggle-rail') { App.toggleRail(); return; }
       if (action === 'suggest') { handleSuggestion(actionNode.dataset.suggest); return; }
@@ -1657,6 +1745,7 @@
       if (action === 'undo-checkpoint') { undoCheckpoint(actionNode); return; }
       if (action === 'open-file') { App.openFilePreview(actionNode.dataset.path); return; }
       if (action === 'open-media') { App.openMedia(actionNode.dataset.id); return; }
+      if (action === 'open-paper') { if (window.Views?.openPaper) Views.openPaper(actionNode.dataset.id); return; }
       if (action === 'open-studio') { App.openPage('studio'); return; }
       if (action === 'toggle-reasoning') {
         actionNode.closest('.reasoning')?.classList.toggle('open');
@@ -1684,9 +1773,21 @@
       }
       renderHead();
       updateComposer();
-      focusComposer('Plan this change: ');
+      Chat.focusComposer('Plan this change: ');
     } else if (kind === 'review') {
-      focusComposer('Review the current changes. Focus on correctness, security, and missing tests.');
+      Chat.focusComposer('Review the current changes. Focus on correctness, security, and missing tests.');
+    } else if (kind === 'design') {
+      if (!Chat.session?.id) Chat.draftMode = 'design'; else {
+        Chat.session.mode = 'design';
+        API.sessions.update({ id: Chat.session.id, mode: 'design' }).catch(() => {});
+      }
+      renderHead();
+      updateComposer();
+      Chat.focusComposer('Design a clean, responsive page for ');
+    } else if (kind === 'audio') {
+      if (window.Views?.openStudio) {
+        Views.openStudio({ kind: 'audio', engine: 'blank-audio', prompt: 'Warm ambient loop with soft piano, slow tape texture, 40 seconds' });
+      }
     }
   }
 
@@ -1729,6 +1830,7 @@
       Chat.queue = result.queue || [];
       Chat.draftMode = Chat.session.mode || 'agent';
       Chat.draftModel = Chat.session.model || Chat.draftModel;
+      Chat.draftReasoning = Chat.session.reasoningEffort || 'auto';
       renderHead();
       updateComposer();
       renderThread({ smooth: false, keepScroll: Boolean(options.keepScroll) });
@@ -1753,6 +1855,7 @@
     Chat.attachments = [];
     Chat.draftModel = App.state.config?.defaultModel || Chat.draftModel || 'sandbox/blank-1';
     Chat.draftMode = 'agent';
+    Chat.draftReasoning = App.state.config?.agent?.reasoningEffort || 'auto';
     const input = document.getElementById('composer-input');
     if (input) { input.value = ''; U.autoGrow(input, 224); }
     renderAttachments();

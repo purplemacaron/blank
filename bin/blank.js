@@ -134,7 +134,7 @@ function helpText() {
   const rows = [
     ['/help', 'Show this help'],
     ['/model [id]', 'List models or switch the session model'],
-    ['/mode [agent|plan|ask]', 'Switch mode'],
+    ['/mode [agent|design|plan|ask]', 'Switch mode'],
     ['/new', 'Start a new session'],
     ['/sessions', 'List recent sessions'],
     ['/compact', 'Summarize earlier context'],
@@ -309,7 +309,7 @@ async function handleCommand(input, context) {
     }
     case '/mode': {
       if (!argText) { log(`  mode is ${bold(session.mode)}`); return; }
-      if (!['agent', 'plan', 'ask'].includes(argText)) { log(red('  mode must be agent, plan, or ask')); return; }
+      if (!['agent', 'design', 'plan', 'ask'].includes(argText)) { log(red('  mode must be agent, design, plan, or ask')); return; }
       session.mode = argText;
       store.saveSession(session);
       log(`  ${blue('●')} mode → ${bold(argText)}`);
@@ -629,7 +629,7 @@ async function main() {
 
   ${dim('Options')}
     -m, --model <id>       Override the model
-        --mode <mode>      agent | plan | ask
+        --mode <mode>      agent | design | plan | ask
     -w, --workspace <dir>  Workspace for this run
         --session <id>     Resume a session
     -y, --yes              Auto-approve tools (use carefully)
@@ -648,7 +648,7 @@ async function main() {
       const found = findModelByQuery(args.flags.model, config);
       if (found) { config.defaultModel = found.fullId; }
     }
-    const mode = ['agent', 'plan', 'ask'].includes(args.flags.mode) ? args.flags.mode : (args.flags.model ? undefined : 'agent');
+    const mode = ['agent', 'design', 'plan', 'ask'].includes(args.flags.mode) ? args.flags.mode : (args.flags.model ? undefined : 'agent');
     await startRepl({
       config,
       workspace,
@@ -667,7 +667,7 @@ async function main() {
       prompt,
       config,
       workspace,
-      mode: ['agent', 'plan', 'ask'].includes(args.flags.mode) ? args.flags.mode : 'agent',
+      mode: ['agent', 'design', 'plan', 'ask'].includes(args.flags.mode) ? args.flags.mode : 'agent',
       model: args.flags.model,
       autoYes: Boolean(args.flags.yes),
       verbose: Boolean(args.flags.verbose),
