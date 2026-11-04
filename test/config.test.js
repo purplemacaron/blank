@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const {
   normalizeProviderKeys,
   normalizeMediaDefaults,
+  normalizeModelDefaults,
   keyCandidates,
   addProviderKey,
   removeProviderKey,
@@ -100,4 +101,14 @@ test('retired Blank media engines migrate to real engines only', () => {
   assert.deepEqual(config.media.defaults.audio, { engine: 'system-voice', duration: 12 });
   assert.deepEqual(config.media.defaults.model3d, { engine: '' });
   assert.equal(normalizeMediaDefaults(config), false);
+});
+
+test('retired preview model migrates to no model', () => {
+  const config = { providers: {}, defaultModel: 'sandbox/blank-1', fallbackModel: 'blank-1' };
+  assert.equal(normalizeModelDefaults(config), true);
+  assert.equal(config.defaultModel, '');
+  assert.equal(config.fallbackModel, '');
+  config.defaultModel = 'openai/gpt-5';
+  assert.equal(normalizeModelDefaults(config), false);
+  assert.equal(config.defaultModel, 'openai/gpt-5');
 });

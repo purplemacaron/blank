@@ -129,13 +129,6 @@ const api = {
     test: () => invoke('notifications:test'),
   },
 
-  subscription: {
-    status: () => invoke('subscription:status'),
-    start: (providerId) => invoke('subscription:start', { providerId }),
-    complete: (providerId, code) => invoke('subscription:complete', { providerId, code }),
-    signOut: (providerId) => invoke('subscription:signOut', { providerId }),
-  },
-
   skills: {
     list: () => invoke('skills:list'),
     get: (id) => invoke('skills:get', id),

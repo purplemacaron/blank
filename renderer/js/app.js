@@ -11,7 +11,6 @@
 
   const PAGE_META = {
     chat: { label: 'Chat', icon: 'message' },
-    studio: { label: 'Studio', icon: 'wand' },
     paper: { label: 'Paper', icon: 'book' },
     models: { label: 'Models', icon: 'sparkles' },
     skills: { label: 'Skills', icon: 'layers' },
@@ -85,7 +84,7 @@
   }
 
   function currentModelId() {
-    return currentSession()?.model || state.config?.defaultModel || 'sandbox/blank-1';
+    return currentSession()?.model || state.config?.defaultModel || '';
   }
 
   function filePathOf(entry) {
@@ -140,7 +139,7 @@
   }
 
   function refreshSidebarModel() {
-    const fullId = state.config?.defaultModel || 'sandbox/blank-1';
+    const fullId = state.config?.defaultModel || '';
     const provider = providerOf(fullId);
     const model = U.modelOf(state.catalog, fullId);
     const mono = $('sidebar-model-mono');
@@ -148,23 +147,23 @@
     const label = $('sidebar-model-label');
     const button = $('sidebar-model');
     if (mono) {
-      const logo = window.ProviderLogos?.for(provider);
+      const logo = fullId ? window.ProviderLogos?.for(provider) : '';
       mono.classList.toggle('has-logo', Boolean(logo));
       if (logo) mono.innerHTML = logo;
-      else mono.textContent = provider?.monogram || provider?.name?.slice(0, 1) || 'B';
+      else if (fullId) mono.textContent = provider?.monogram || provider?.name?.slice(0, 1) || 'B';
+      else mono.innerHTML = icon('cpu', 13);
     }
-    if (name) name.textContent = model?.name || U.modelLabel(state.catalog, fullId);
-    if (label) label.textContent = provider ? `Default · ${provider.name}` : 'Default model';
-    if (button) button.title = `Default model · ${fullId}`;
+    if (name) name.textContent = fullId ? (model?.name || U.modelLabel(state.catalog, fullId)) : 'Choose a model';
+    if (label) label.textContent = fullId ? (provider ? `Default · ${provider.name}` : 'Default model') : 'Connect a provider';
+    if (button) button.title = fullId ? `Default model · ${fullId}` : 'Choose a model';
   }
 
   function updateRuntimePill() {
     const label = $('runtime-label');
     const dot = $('runtime-dot');
     const pill = $('runtime-pill');
-    const preview = Boolean(window.__BLANK_PREVIEW__);
-    if (label) label.textContent = preview ? 'Preview' : 'Local';
-    if (dot) dot.classList.toggle('off', preview);
+    if (label) label.textContent = 'Local';
+    if (dot) dot.classList.remove('off');
     if (pill) {
       const info = state.info || state.config?.runtime || {};
       const parts = ['Local-first agent runtime'];
@@ -174,8 +173,6 @@
     }
     const version = $('sidebar-version');
     if (version) version.textContent = 'Blank';
-    const tag = $('preview-tag');
-    if (tag) tag.hidden = !preview;
   }
 
   function setConfig(config, options = {}) {
@@ -237,12 +234,11 @@
   /* ------------------------------------------------------------------ badges */
 
   async function loadBadges() {
-    const [skills, memory, mcp, learn, storage, papers] = await Promise.all([
+    const [skills, memory, mcp, learn, papers] = await Promise.all([
       safe(API.skills.list(), null),
       safe(API.memory.list(), null),
       safe(API.mcp.list(), null),
       safe(API.learn.state(), null),
-      safe(API.media.storage(), null),
       safe(API.papers.count(), null),
     ]);
     if (skills?.skills) {
@@ -262,9 +258,6 @@
     if (learn) {
       const pending = (learn.pending || []).length;
       setBadge('badge-learning', pending, { title: `${pending} insights to review` });
-    }
-    if (storage) {
-      setBadge('badge-studio', storage.count || 0, { title: `${storage.count || 0} media assets` });
     }
     if (papers !== null) {
       setBadge('badge-paper', papers, { title: `${papers} papers` });
@@ -923,7 +916,7 @@
     return [
       { icon: 'plus', title: 'New session', sub: 'Start with a clean context', kbd: U.kbd('Ctrl N'), run: () => newSession() },
       { icon: 'message', title: 'Go to Chat', sub: 'Conversation with the agent', run: () => openPage('chat') },
-      { icon: 'wand', title: 'Open Studio', sub: 'Images, video, music and 3D', run: () => openPage('studio') },
+      { icon: 'wand', title: 'Create media', sub: 'Images, video, audio and 3D in chat', run: () => window.Views?.openStudio?.() },
       { icon: 'book', title: 'Open Paper', sub: 'Live pages, documents and graphics', run: () => openPage('paper') },
       { icon: 'sparkles', title: 'Switch default model…', sub: 'Model used by new sessions', kbd: U.kbd('Ctrl M'), run: () => openDefaultModelPicker($('palette-trigger')) },
       { icon: 'sparkles', title: 'Models', sub: 'Providers, keys and discovery', run: () => openPage('models') },
@@ -1149,7 +1142,6 @@
 
   function onboardingModelChoices() {
     const preferred = [
-      ['sandbox', 'blank-1', 'Offline preview', 'No key. A guided model for trying every surface.'],
       ['anthropic', 'claude-sonnet-4-5', 'Long-horizon agent work', 'Strong tool use and code reasoning.'],
       ['openai', 'gpt-5.1', 'Frontier reasoning', 'Broad capability across coding and analysis.'],
       ['google', 'gemini-2.5-pro', 'Huge context window', 'Useful for large repositories and documents.'],
@@ -1163,15 +1155,6 @@
       if (!model) continue;
       choices.push({ fullId: `${provider.id}/${model.id}`, provider, model, tagline, description });
     }
-    if (!choices.length) {
-      choices.push({
-        fullId: 'sandbox/blank-1',
-        provider: { id: 'sandbox', name: 'Blank Sandbox', monogram: 'b' },
-        model: { name: 'Blank 1' },
-        tagline: 'Offline preview',
-        description: 'No key required.',
-      });
-    }
     return choices;
   }
 
@@ -1179,10 +1162,10 @@
     if (!state.config) return;
     let step = 0;
     let saving = false;
-    let draftModel = state.config.defaultModel || 'sandbox/blank-1';
+    let draftModel = state.config.defaultModel || '';
     let chosenWorkspace = state.workspace || state.config.workspace || '';
     const choices = onboardingModelChoices();
-    if (!choices.some((choice) => choice.fullId === draftModel)) draftModel = choices[0].fullId;
+    if (choices.length && !choices.some((choice) => choice.fullId === draftModel)) draftModel = choices[0].fullId;
 
     const body = document.createElement('div');
     body.className = 'onboarding-body';
@@ -1192,6 +1175,20 @@
     }
 
     function modelStep() {
+      if (!choices.length) {
+        return `<div class="onboard-step">
+          <div class="onboard-hero">
+            <span class="onboard-mark"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="15" fill="#2F6BFF"/><path d="M23 13h13l12 12v23a4 4 0 0 1-4 4H23a4 4 0 0 1-4-4V17a4 4 0 0 1 4-4Z" fill="#fff"/><path d="M36 13v12h12Z" fill="#DCE7FF"/></svg></span>
+            <div><h2>Connect a provider</h2><p>Blank runs on the model you choose. Add an API key in Models.</p></div>
+          </div>
+          ${stepsMarkup()}
+          <div class="onboard-note">${icon('lock', 12)}<span>Blank needs a model. Add a provider API key in Models.</span></div>
+          <div class="onboard-actions">
+            <button class="btn btn-ghost" type="button" data-onboard-skip>Set up later</button>
+            <button class="btn btn-primary" type="button" data-onboard-connect>Open Models ${icon('arrow-right', 12)}</button>
+          </div>
+        </div>`;
+      }
       return `<div class="onboard-step">
         <div class="onboard-hero">
           <span class="onboard-mark"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="15" fill="#2F6BFF"/><path d="M23 13h13l12 12v23a4 4 0 0 1-4 4H23a4 4 0 0 1-4-4V17a4 4 0 0 1 4-4Z" fill="#fff"/><path d="M36 13v12h12Z" fill="#DCE7FF"/></svg></span>
@@ -1206,10 +1203,10 @@
             <span class="radio-dot"></span>
           </button>`).join('')}</div>
         </div>
-        <div class="onboard-note">${icon('lock', 12)}<span>Keys are stored only on this machine. The Sandbox model works fully offline; add provider keys later in Models.</span></div>
+        <div class="onboard-note">${icon('lock', 12)}<span>Keys are stored only on this machine.</span></div>
         <div class="onboard-actions">
           <button class="btn btn-ghost" type="button" data-onboard-skip>Set up later</button>
-          <button class="btn btn-primary" type="button" data-onboard-next>Continue ${icon('arrow-right', 12)}</button>
+          <button class="btn btn-primary" type="button" data-onboard-next ${draftModel ? '' : 'disabled'}>Continue ${icon('arrow-right', 12)}</button>
         </div>
       </div>`;
     }
@@ -1250,7 +1247,7 @@
       if (step === 1) paint();
       try {
         const patch = { onboarded: true };
-        if (!skip) patch.defaultModel = draftModel;
+        if (!skip && draftModel) patch.defaultModel = draftModel;
         const config = await API.config.update(patch);
         if (config) setConfig(config);
         else setConfig({ ...state.config, onboarded: true });
@@ -1264,14 +1261,33 @@
       }
     }
 
+    async function openModelsFromOnboarding() {
+      if (saving) return;
+      saving = true;
+      try {
+        const config = await API.config.update({ onboarded: true });
+        if (config) setConfig(config);
+        else setConfig({ ...state.config, onboarded: true });
+        modal.close();
+        openPage('models');
+      } catch (error) {
+        saving = false;
+        UI.toast(error.message, 'error');
+      }
+    }
+
     body.addEventListener('click', async (event) => {
       const modelButton = event.target.closest('[data-onboard-model]');
       if (modelButton) {
         draftModel = modelButton.dataset.onboardModel;
         qsa('.onboard-choice', body).forEach((button) => button.classList.toggle('selected', button === modelButton));
+        const next = body.querySelector('[data-onboard-next]');
+        if (next) next.disabled = !draftModel;
         return;
       }
       if (event.target.closest('[data-onboard-skip]')) { finish(true); return; }
+      if (event.target.closest('[data-onboard-connect]')) { openModelsFromOnboarding(); return; }
+      if (event.target.closest('[data-onboard-next]') && !choices.length) { openModelsFromOnboarding(); return; }
       if (event.target.closest('[data-onboard-next]')) { step = 1; paint(); return; }
       if (event.target.closest('[data-onboard-back]')) { step = 0; paint(); return; }
       if (event.target.closest('[data-onboard-choose]')) {
@@ -1532,7 +1548,7 @@
     else {
       state.config = {
         version: 1,
-        defaultModel: 'sandbox/blank-1',
+        defaultModel: '',
         theme: 'light',
         onboarded: true,
         permissions: {},

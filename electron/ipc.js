@@ -8,6 +8,7 @@ const { appPaths, ensureHome, uid, slugify } = require('../src/core/paths');
 const configModule = require('../src/core/config');
 const catalog = require('../src/core/catalog');
 const store = require('../src/core/store');
+const reasoning = require('../src/core/reasoning');
 const providers = require('../src/core/providers');
 const { runAgent, compactSession } = require('../src/core/agent');
 const learn = require('../src/core/learn');
@@ -19,7 +20,6 @@ const { createComputerOverlay } = require('./computer-overlay');
 const plugins = require('../src/core/plugins');
 const schedulesModule = require('../src/core/schedules');
 const oauthModule = require('../src/core/oauth');
-const subscriptionModule = require('../src/core/subscription');
 const paperStore = require('../src/core/paper');
 const notifications = require('./notifications');
 
@@ -85,7 +85,6 @@ function registerIpc({ mcp, getWindow }) {
     const publicConfig = configModule.publicConfig(config, catalog);
     return {
       ...publicConfig,
-      subscriptions: subscriptionModule.statusAll(),
       runtime: {
         version: app.getVersion(),
         platform: process.platform,
@@ -231,7 +230,7 @@ function registerIpc({ mcp, getWindow }) {
       const config = configModule.loadConfig();
       if (!config.agent?.autoReflect) return;
       if (state.reflectionInFlight) return;
-      if (!session.model || session.model.startsWith('sandbox/')) return;
+      if (!session.model) return;
       const assistantTurns = (session.messages || []).filter((message) => message.role === 'assistant').length;
       if (assistantTurns < 4 || assistantTurns % 6 !== 0) return;
       state.reflectionInFlight = true;
@@ -319,7 +318,7 @@ function registerIpc({ mcp, getWindow }) {
         ...clean.agent,
         maxSteps: Math.max(1, Math.min(64, Number(clean.agent.maxSteps) || 32)),
         compactAt: Math.max(0.5, Math.min(0.95, Number(clean.agent.compactAt) || 0.82)),
-        reasoningEffort: ['auto', 'low', 'medium', 'high'].includes(clean.agent.reasoningEffort)
+        reasoningEffort: reasoning.isEffort(clean.agent.reasoningEffort)
           ? clean.agent.reasoningEffort
           : undefined,
       };
@@ -418,7 +417,6 @@ function registerIpc({ mcp, getWindow }) {
   async function discoverProviderModels(config, providerId) {
     const provider = catalog.getProvider(providerId, config);
     if (!provider) throw new Error('Unknown provider.');
-    if (provider.protocol === 'sandbox') return provider.models || [];
     const models = await providers.listModels({ providerId, config });
     const entries = models.slice(0, 300).map((model) => ({
       id: String(model.id),
@@ -435,11 +433,9 @@ function registerIpc({ mcp, getWindow }) {
     const config = configModule.loadConfig();
     const results = {};
     await Promise.all(catalog.allProviders(config).map(async (provider) => {
-      if (provider.protocol === 'sandbox') return;
       try {
         if (provider.keyEnv && provider.kind !== 'local'
-          && !configModule.resolveKey(config, provider.id, provider)
-          && !subscriptionModule.entryFor(provider.id)?.mode) {
+          && !configModule.resolveKey(config, provider.id, provider)) {
           return;
         }
         results[provider.id] = await discoverProviderModels(config, provider.id);
@@ -450,43 +446,6 @@ function registerIpc({ mcp, getWindow }) {
     configModule.saveConfig(config);
     broadcast({ type: 'config:updated' });
     return { ok: true, results };
-  });
-
-  ipcMainHandle('subscription:status', async () => subscriptionModule.statusAll());
-
-  async function afterSubscriptionSignIn(providerId) {
-    const config = configModule.loadConfig();
-    try {
-      await discoverProviderModels(config, providerId);
-      configModule.saveConfig(config);
-    } catch {}
-    broadcast({ type: 'config:updated' });
-    broadcast({ type: 'models:refresh' });
-    return configWithRuntime(configModule.loadConfig());
-  }
-
-  ipcMainHandle('subscription:start', async (_event, input = {}) => {
-    const providerId = input.providerId === 'openai' ? 'openai' : 'anthropic';
-    const result = await subscriptionModule.start(providerId, (url) => shell.openExternal(url));
-    if (result?.needsCode) {
-      return { needsCode: true, url: result.url, status: subscriptionModule.status(providerId) };
-    }
-    const config = await afterSubscriptionSignIn(providerId);
-    return { needsCode: false, status: subscriptionModule.status(providerId), config };
-  });
-
-  ipcMainHandle('subscription:complete', async (_event, input = {}) => {
-    const providerId = input.providerId === 'openai' ? 'openai' : 'anthropic';
-    const status = await subscriptionModule.complete(providerId, input);
-    const config = await afterSubscriptionSignIn(providerId);
-    return { status, config };
-  });
-
-  ipcMainHandle('subscription:signOut', async (_event, input = {}) => {
-    const providerId = input.providerId === 'openai' ? 'openai' : 'anthropic';
-    const removed = await subscriptionModule.signOut(providerId);
-    broadcast({ type: 'config:updated' });
-    return { removed, status: subscriptionModule.status(providerId) };
   });
 
   require('electron').ipcMain.handle('providers:setKey', async (_event, input = {}) => {
@@ -658,7 +617,7 @@ function registerIpc({ mcp, getWindow }) {
     config.customProviders = config.customProviders.filter((entry) => entry.id !== providerId);
     if (config.providers) delete config.providers[providerId];
     if (config.discoveredModels) delete config.discoveredModels[providerId];
-    if (String(config.defaultModel).startsWith(`${providerId}/`)) config.defaultModel = 'sandbox/blank-1';
+    if (String(config.defaultModel).startsWith(`${providerId}/`)) config.defaultModel = '';
     configModule.saveConfig(config);
     broadcast({ type: 'config:updated' });
     return configWithRuntime(config);
@@ -808,7 +767,7 @@ function registerIpc({ mcp, getWindow }) {
       session.model = input.model;
     }
     if (input.mode !== undefined && ['agent', 'design', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
-    if (input.reasoningEffort !== undefined && ['auto', 'low', 'medium', 'high'].includes(input.reasoningEffort)) {
+    if (input.reasoningEffort !== undefined && reasoning.isEffort(input.reasoningEffort)) {
       session.reasoningEffort = input.reasoningEffort;
     }
     store.saveSession(session);
@@ -976,7 +935,7 @@ function registerIpc({ mcp, getWindow }) {
     const config = configModule.loadConfig();
     if (next.model && catalog.findModel(next.model, config)) session.model = next.model;
     if (next.mode && ['agent', 'design', 'plan', 'ask'].includes(next.mode)) session.mode = next.mode;
-    if (next.reasoningEffort && ['auto', 'low', 'medium', 'high'].includes(next.reasoningEffort)) {
+    if (next.reasoningEffort && reasoning.isEffort(next.reasoningEffort)) {
       session.reasoningEffort = next.reasoningEffort;
     }
     const message = {
@@ -1068,7 +1027,7 @@ function registerIpc({ mcp, getWindow }) {
     } else {
       if (input.model && catalog.findModel(input.model, config)) session.model = input.model;
       if (input.mode && ['agent', 'design', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
-      if (input.reasoningEffort && ['auto', 'low', 'medium', 'high'].includes(input.reasoningEffort)) {
+      if (input.reasoningEffort && reasoning.isEffort(input.reasoningEffort)) {
         session.reasoningEffort = input.reasoningEffort;
       }
       session.workspace = session.workspace || config.workspace;

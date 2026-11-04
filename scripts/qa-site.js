@@ -23,7 +23,7 @@ async function makeWindow(width, height) {
     if (level >= 2) errors.push(message);
   });
   const live = process.env.SITE_URL;
-  const url = live || `file:///${path.join(ROOT, 'docs', 'index.html').replace(/\\/g, '/')}?demo=1`;
+  const url = live || `file:///${path.join(ROOT, 'docs', 'index.html').replace(/\\/g, '/')}`;
   if (live) await win.webContents.session.clearCache();
   await win.loadURL(url);
   await sleep(live ? 3200 : 1400);

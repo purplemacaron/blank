@@ -218,6 +218,43 @@
     return (provider.models || []).find((m) => m.id === modelId) || null;
   }
 
+  const REASONING_LEVELS = {
+    none: { label: 'Non-reasoning', hint: 'Answers without a thinking pass' },
+    minimal: { label: 'Minimal', hint: 'Shortest thinking pass' },
+    low: { label: 'Low', hint: 'Fast, shallow' },
+    medium: { label: 'Medium', hint: 'Balanced' },
+    high: { label: 'High', hint: 'Deeper, slower' },
+    xhigh: { label: 'Max', hint: 'Very deep thinking' },
+    max: { label: 'Ultra', hint: 'Maximum effort and cost' },
+  };
+  const REASONING_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+  function reasoningProfile(catalog, fullId) {
+    const model = modelOf(catalog, fullId);
+    return model?.reasoning || null;
+  }
+
+  function normalizeReasoning(profile, value) {
+    if (!profile || !Array.isArray(profile.levels) || !profile.levels.length) return '';
+    const effort = String(value || '');
+    if (profile.levels.includes(effort)) return effort;
+    if (!effort || effort === 'auto') return profile.default || profile.levels[profile.levels.length - 1];
+    const wanted = REASONING_ORDER.indexOf(effort);
+    if (wanted < 0) return profile.default || profile.levels[profile.levels.length - 1];
+    let best = profile.levels[0];
+    let distance = Infinity;
+    for (const level of profile.levels) {
+      const delta = Math.abs(REASONING_ORDER.indexOf(level) - wanted);
+      if (delta < distance) { best = level; distance = delta; }
+    }
+    return best;
+  }
+
+  function reasoningLabel(profile, effort) {
+    if (!effort) return profile?.fixedLabel || '';
+    return REASONING_LEVELS[effort]?.label || effort;
+  }
+
   function parseTags(input) {
     return String(input || '')
       .split(/[,\n]/)
@@ -242,6 +279,7 @@
     $, $$, esc, attr, el, isMac, kbd, fmtTime, relativeTime, dayLabel, fmtNumber, fmtBytes,
     baseName, dirName, truncate, debounce, throttle, copyText, uid, autoGrow, scrollToBottom,
     isNearBottom, download, providerName, modelLabel, providerOf, modelOf, parseTags, linkifyPath,
-    typeBadge, prefersReducedMotion,
+    typeBadge, prefersReducedMotion, REASONING_LEVELS, REASONING_ORDER, reasoningProfile,
+    normalizeReasoning, reasoningLabel,
   };
 })();

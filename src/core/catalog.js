@@ -3,26 +3,14 @@
 /**
  * Blank's provider catalog.
  *
- * Only the offline sandbox and user-entered custom models are hard-coded.
+ * Only user-entered custom models are hard-coded.
  * Every hosted and local provider is populated from its own /models endpoint:
  * hosted providers with your saved key, local runtimes without one. This
  * keeps the picker honest — no demo models are ever shown as available.
  */
+const { profileFor } = require('./reasoning');
+
 const PROVIDERS = [
-  {
-    id: 'sandbox',
-    name: 'Blank Sandbox',
-    monogram: 'b',
-    protocol: 'sandbox',
-    kind: 'local',
-    description: 'An offline preview model. No network, no key, no data leaves your machine.',
-    baseUrl: '',
-    keyEnv: null,
-    docs: '',
-    models: [
-      { id: 'blank-1', name: 'Blank 1', context: 32000, tags: ['Offline', 'Preview'], note: 'Guided demo' },
-    ],
-  },
   {
     id: 'anthropic',
     name: 'Anthropic',
@@ -39,7 +27,7 @@ const PROVIDERS = [
     name: 'OpenAI',
     monogram: 'O',
     protocol: 'openai',
-    description: 'GPT and o-series models via the Responses-compatible chat API.',
+    description: 'GPT and o-series models through the OpenAI API.',
     baseUrl: 'https://api.openai.com/v1',
     keyEnv: 'OPENAI_API_KEY',
     docs: 'https://platform.openai.com/api-keys',
@@ -169,9 +157,9 @@ function getProvider(id, config = {}) {
 }
 
 function splitModel(fullId) {
-  const value = String(fullId || '');
+  const value = String(fullId || '').trim();
   const index = value.indexOf('/');
-  if (index === -1) return { providerId: 'sandbox', modelId: value || 'blank-1' };
+  if (index <= 0) return { providerId: '', modelId: value };
   return { providerId: value.slice(0, index), modelId: value.slice(index + 1) };
 }
 
@@ -193,6 +181,7 @@ function allModels(config = {}) {
     for (const model of providerModels(provider, config)) {
       out.push({
         ...model,
+        reasoning: profileFor(provider.id, model.id),
         providerId: provider.id,
         providerName: provider.name,
         monogram: provider.monogram,
@@ -215,6 +204,7 @@ function findModel(fullId, config = {}) {
     { id: modelId, name: modelId, context: 128000, tags: [], custom: true };
   return {
     ...model,
+    reasoning: profileFor(providerId, modelId),
     providerId,
     providerName: provider.name,
     protocol: provider.protocol,
@@ -226,7 +216,11 @@ function findModel(fullId, config = {}) {
 
 function publicProvider(provider, config = {}) {
   const { id, name, monogram, protocol, kind, description, baseUrl, keyEnv, docs } = provider;
-  return { id, name, monogram, protocol, kind, description, baseUrl, keyEnv, docs, models: providerModels(provider, config) };
+  const models = providerModels(provider, config).map((model) => ({
+    ...model,
+    reasoning: profileFor(id, model.id),
+  }));
+  return { id, name, monogram, protocol, kind, description, baseUrl, keyEnv, docs, models };
 }
 
 module.exports = { PROVIDERS, allProviders, getProvider, splitModel, allModels, findModel, publicProvider, providerModels };

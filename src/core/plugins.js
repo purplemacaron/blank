@@ -38,11 +38,11 @@ const CATALOG = [
   },
   {
     id: 'builtin-media',
-    name: 'Studio',
+    name: 'Media',
     category: 'Built in',
     icon: 'wand',
     tagline: 'Create and edit images, video, music and 3D.',
-    description: 'A media workspace for images, video, music, speech and 3D, connected to real providers.',
+    description: 'Create and edit images, video, music, speech and 3D in chat, connected to real providers.',
     kind: 'builtin',
     action: 'studio',
     tags: ['Local first'],

@@ -7,6 +7,8 @@
   <title>Blank</title>
   <link rel="icon" type="image/png" sizes="512x512" href="../assets/icon.png" />
   <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+  <style>html[data-i18n-pending] body { visibility: hidden; }</style>
+  <script src="js/i18n.js"></script>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="studio.css" />
 </head>
@@ -68,10 +70,6 @@
             <button class="nav-item" data-page="chat" type="button">
               <span class="nav-icon" data-icon="message"></span><span class="nav-label">Chat</span>
             </button>
-            <button class="nav-item" data-page="studio" type="button">
-              <span class="nav-icon" data-icon="wand"></span><span class="nav-label">Studio</span>
-              <span class="nav-badge accent" id="badge-studio" hidden></span>
-            </button>
             <button class="nav-item" data-page="paper" type="button">
               <span class="nav-icon" data-icon="book"></span><span class="nav-label">Paper</span>
               <span class="nav-count" id="badge-paper"></span>
@@ -120,8 +118,8 @@
           <button class="model-mini" id="sidebar-model" type="button" title="Default model">
             <span class="provider-mono" id="sidebar-model-mono">B</span>
             <span class="model-mini-copy">
-              <span class="model-mini-name" id="sidebar-model-name">Blank Sandbox</span>
-              <span class="model-mini-label" id="sidebar-model-label">Default model</span>
+              <span class="model-mini-name" id="sidebar-model-name">Choose a model</span>
+              <span class="model-mini-label" id="sidebar-model-label">Connect a provider</span>
             </span>
             <span class="ws-caret" data-icon="chevron-updown"></span>
           </button>
@@ -130,7 +128,6 @@
             <span class="nav-count" id="badge-updates" hidden></span>
           </button>
           <div class="sidebar-footnote">
-            <span class="preview-tag" id="preview-tag" hidden>Preview data</span>
             <span id="sidebar-version">Blank</span>
           </div>
         </div>
@@ -174,9 +171,7 @@
 
   <script src="js/icons.js"></script>
   <script src="js/util.js"></script>
-  <script src="js/i18n.js"></script>
   <script src="js/markdown.js"></script>
-  <script src="js/mock.js"></script>
   <script src="js/api.js"></script>
   <script src="js/logos.js"></script>
   <script src="js/components.js"></script>

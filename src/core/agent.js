@@ -35,11 +35,9 @@ function cleanAssistantMessage(message) {
 
 async function compactSession({ session, config, signal, modelId }) {
   const activeModel = modelId || session.model || config.defaultModel;
+  if (!activeModel) return { ok: false, error: 'No model is configured. Connect a provider in Models and choose a model.' };
   const resolved = findModel(activeModel, config);
   if (!resolved) return { ok: false, error: 'Unknown model.' };
-  if (resolved.protocol === 'sandbox') {
-    return { ok: false, error: 'Sandbox conversations are already compact. Connect a hosted model to compact long sessions.' };
-  }
   const messages = session.messages || [];
   if (messages.length < 6) return { ok: false, error: 'Nothing to compact yet.' };
   let cutoff = messages.length - 8;
@@ -146,6 +144,11 @@ async function runAgent({
   const runId = uid('run_');
   const sessionId = session.id;
   let activeModel = session.model || config.defaultModel;
+  if (activeModel === 'blank-1' || activeModel === 'sandbox' || activeModel.startsWith('sandbox/')) {
+    activeModel = config.defaultModel && !config.defaultModel.startsWith('sandbox/') ? config.defaultModel : '';
+    session.model = activeModel;
+  }
+  if (!activeModel) throw new Error('No model is configured. Connect a provider in Models and choose a model.');
   let mcpTools = [];
   let mcpError = '';
   const outcome = { ok: true, runId, usage: { input: 0, output: 0 }, steps: 0 };

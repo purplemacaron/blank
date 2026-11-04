@@ -1,8 +1,7 @@
 (function () {
   'use strict';
 
-  var cfg = Object.assign({ repo: '', version: '1.0.0', demo: false }, window.BLANK_SITE || {});
-  var demo = cfg.demo || new URLSearchParams(location.search).has('demo');
+  var cfg = Object.assign({ repo: '', version: '1.0.0' }, window.BLANK_SITE || {});
   var repo = String(cfg.repo || '').trim() || inferRepo();
   var repoUrl = repo ? 'https://github.com/' + repo : '';
   var state = { release: null, assets: [], os: detectOS(), arch: 'x64', repo: repo, releasesUrl: repoUrl ? repoUrl + '/releases' : '' };
@@ -71,23 +70,7 @@
     } catch (error) { /* private mode */ }
   }
 
-  function demoRelease() {
-    var version = versionLabel(null) || '1.0.0';
-    return {
-      tag_name: 'v' + version,
-      published_at: new Date().toISOString(),
-      html_url: '#install',
-      assets: [
-        { name: 'Blank-Setup-' + version + '.exe', size: 108.4 * 1024 * 1024, browser_download_url: '#install' },
-        { name: 'Blank-' + version + '-arm64.dmg', size: 114.2 * 1024 * 1024, browser_download_url: '#install' },
-        { name: 'Blank-' + version + '.dmg', size: 112.8 * 1024 * 1024, browser_download_url: '#install' },
-        { name: 'Blank-' + version + '.AppImage', size: 110.6 * 1024 * 1024, browser_download_url: '#install' }
-      ]
-    };
-  }
-
   function loadRelease() {
-    if (demo) return Promise.resolve(demoRelease());
     if (!repo) return Promise.resolve(null);
     var cached = cachedRelease();
     if (cached) return Promise.resolve(cached);
@@ -340,7 +323,7 @@
     var caption = document.getElementById('gallery-caption');
     if (!tabs.length || !image) return;
     var captions = {
-      '스튜디오': '미디어 라이브러리 · 로컬 자산 · 엔진 상태',
+      '미디어': '채팅 속 미디어 만들기 · 자산 라이브러리 · 엔진 상태',
       '프로바이더': '키 · 로테이션 · 모델 선택',
       '채팅': '플랜 레일 · 스트리밍 도구 · 승인'
     };
@@ -405,7 +388,7 @@
     setupPlatformJumps();
     setupMenu();
 
-    if (!demo && !repo) {
+    if (!repo) {
       setPill('다운로드가 설정되지 않았습니다', 'warn');
       resetPrimary();
       var primary = document.getElementById('primary-download');

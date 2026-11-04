@@ -19,13 +19,6 @@
     ask: { label: 'Ask', icon: 'message' },
   };
 
-  const REASONING = {
-    auto: { label: 'Auto', hint: 'Provider default' },
-    low: { label: 'Low', hint: 'Fast, shallow' },
-    medium: { label: 'Medium', hint: 'Balanced' },
-    high: { label: 'High', hint: 'Deeper, slower' },
-  };
-
   const Chat = {
     session: null,
     running: false,
@@ -34,7 +27,7 @@
     buffer: [],
     draftModel: '',
     draftMode: 'agent',
-    draftReasoning: 'auto',
+    draftReasoning: '',
     attachments: [],
     queue: [],
     pendingApprovals: new Map(),
@@ -47,14 +40,17 @@
   /* ------------------------------------------------------------------ markup */
 
   function currentModel() {
-    return Chat.session?.model || Chat.draftModel || App.state.config?.defaultModel || 'sandbox/blank-1';
+    return Chat.session?.model || Chat.draftModel || App.state.config?.defaultModel || '';
   }
   function currentMode() {
     return Chat.session?.mode || Chat.draftMode || 'agent';
   }
+  function reasoningProfile() {
+    return U.reasoningProfile(catalog(), currentModel());
+  }
   function currentReasoning() {
-    const value = Chat.session?.reasoningEffort || Chat.draftReasoning || App.state.config?.agent?.reasoningEffort || 'auto';
-    return REASONING[value] ? value : 'auto';
+    const value = Chat.session?.reasoningEffort || Chat.draftReasoning || App.state.config?.agent?.reasoningEffort || '';
+    return U.normalizeReasoning(reasoningProfile(), value);
   }
   function catalog() {
     return App.state.catalog || { providers: [], models: [] };
@@ -192,7 +188,7 @@
     const content = result?.content || '';
     let html = '';
     if (Array.isArray(meta.media) && meta.media.length) {
-      html += `<div class="tool-section-label">${meta.media.length} asset${meta.media.length === 1 ? '' : 's'} in Studio</div><div class="tool-media-grid">${meta.media.map(mediaThumb).join('')}</div>`;
+      html += `<div class="tool-section-label">${meta.media.length} asset${meta.media.length === 1 ? '' : 's'} in your media library</div><div class="tool-media-grid">${meta.media.map(mediaThumb).join('')}</div>`;
       if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div><pre class="tool-pre">${U.esc(clip(content, 3000))}</pre>`;
     } else if (meta.paper && meta.paper.id) {
       html += `<div class="tool-section-label">Paper</div>${paperToolCard(meta.paper)}`;
@@ -424,9 +420,9 @@
       </div>
       <div class="chat-sub"><span class="sub-item">${U.esc(subtitle)}</span></div>`;
     headActions.innerHTML = `
-      <button class="chip-button" type="button" data-action="pick-model" title="Switch model">
-        ${provider ? UI.providerMono(provider) : ''}
-        <span class="chip-model-name">${U.esc(modelName(modelId))}</span>
+      <button class="chip-button ${modelId ? '' : 'needs-model'}" type="button" data-action="pick-model" title="${modelId ? 'Switch model' : 'Choose a model'}">
+        ${provider ? UI.providerMono(provider) : `<span class="chip-empty-icon">${icon('cpu', 11)}</span>`}
+        <span class="chip-model-name">${U.esc(modelId ? modelName(modelId) : 'Choose a model')}</span>
         <span class="ws-caret">${icon('chevron-updown', 11)}</span>
       </button>
       <span class="head-sep"></span>
@@ -461,17 +457,26 @@
     const mode = currentMode();
     modeButton.innerHTML = `${icon(modeOf(mode).icon, 13)}<span>${U.esc(modeOf(mode).label)}</span><span class="ws-caret">${icon('chevron-updown', 10)}</span>`;
     if (reasoningButton) {
+      const profile = reasoningProfile();
       const effort = currentReasoning();
-      reasoningButton.innerHTML = `${icon('brain', 13)}<span>${U.esc(REASONING[effort].label)}</span><span class="ws-caret">${icon('chevron-updown', 10)}</span>`;
-      reasoningButton.title = `Reasoning · ${REASONING[effort].label}`;
-      reasoningButton.classList.toggle('active', effort !== 'auto');
+      const label = U.reasoningLabel(profile, effort);
+      const adjustable = Boolean(profile && profile.levels.length > 1);
+      reasoningButton.hidden = !profile;
+      reasoningButton.disabled = !adjustable;
+      reasoningButton.classList.toggle('is-fixed', Boolean(profile) && !adjustable);
+      reasoningButton.innerHTML = profile
+        ? `${icon('brain', 13)}<span>${U.esc(label)}</span>${adjustable ? `<span class="ws-caret">${icon('chevron-updown', 10)}</span>` : ''}`
+        : '';
+      reasoningButton.title = `Reasoning · ${label}`;
+      reasoningButton.classList.toggle('active', adjustable && effort !== 'none');
     }
     const modelButton = document.getElementById('composer-model');
     if (modelButton) {
       const modelId = currentModel();
       const provider = providerOf(modelId);
-      modelButton.innerHTML = `${provider ? UI.providerMono(provider) : icon('cpu', 12)}<span class="composer-tool-label">${U.esc(modelName(modelId))}</span><span class="ws-caret">${icon('chevron-updown', 10)}</span>`;
-      modelButton.title = `Model · ${modelName(modelId)}`;
+      modelButton.classList.toggle('needs-model', !modelId);
+      modelButton.innerHTML = `${provider ? UI.providerMono(provider) : icon('cpu', 12)}<span class="composer-tool-label">${U.esc(modelId ? modelName(modelId) : 'Choose a model')}</span><span class="ws-caret">${icon('chevron-updown', 10)}</span>`;
+      modelButton.title = modelId ? `Model · ${modelName(modelId)}` : 'Choose a model';
     }
     input.placeholder = mode === 'plan'
       ? 'Describe what you want planned. Reads only.'
@@ -560,6 +565,11 @@
     const modelId = currentModel();
     const provider = providerOf(modelId);
     scroll.innerHTML = `<div class="chat-empty">
+      ${modelId ? '' : `<div class="empty-model-banner">
+        <span class="empty-model-icon">${icon('cpu', 14)}</span>
+        <span class="empty-model-text">No model connected. Add a provider key in Models to start.</span>
+        <button class="btn btn-secondary btn-xs" type="button" data-action="open-models">Open Models</button>
+      </div>`}
       <div class="hero">
         <h1>What should we build?</h1>
         <div class="suggestion-grid">
@@ -585,11 +595,11 @@
           </button>
           <button class="suggestion" type="button" data-action="suggest" data-suggest="audio">
             <span class="suggestion-icon">${icon('music', 14)}</span>
-            <span class="suggestion-copy"><span class="suggestion-title">Compose audio</span><span class="suggestion-text">Make a track or voiceover in Studio.</span></span>
+            <span class="suggestion-copy"><span class="suggestion-title">Compose audio</span><span class="suggestion-text">Make a track or voiceover.</span></span>
           </button>
         </div>
         <div class="hero-foot">
-          <span>${U.esc(provider ? provider.name : 'Blank')} · ${U.esc(modelName(modelId))}</span>
+          <span>${modelId ? `${U.esc(provider ? provider.name : 'Blank')} · ${U.esc(modelName(modelId))}` : 'No model connected'}</span>
           <span>·</span>
           <span><kbd>${U.kbd('Ctrl K')}</kbd> commands</span>
         </div>
@@ -936,7 +946,7 @@
 
   const COMMANDS = [
     { name: 'new', description: 'Start a new session', icon: 'plus' },
-    { name: 'studio', description: 'Open Studio to create media', icon: 'wand' },
+    { name: 'media', description: 'Create images, video, audio or 3D', icon: 'wand' },
     { name: 'model', description: 'Switch the model for this session', icon: 'sparkles' },
     { name: 'mode', description: 'Agent, Plan, or Ask', icon: 'bot' },
     { name: 'compact', description: 'Summarize earlier context', icon: 'panel-bottom' },
@@ -984,7 +994,7 @@
     const command = COMMANDS.find((item) => item.name === name);
     if (!command) return;
     if (name === 'new') App.newSession();
-    else if (name === 'studio') App.openPage('studio');
+    else if (name === 'media') window.Views?.openStudio?.();
     else if (name === 'model') openModelPicker(document.querySelector('[data-action="pick-model"]') || input);
     else if (name === 'mode') openModePicker(document.getElementById('composer-mode') || input);
     else if (name === 'compact') compactSession();
@@ -1093,6 +1103,11 @@
     const text = String(prefill != null ? prefill : input?.value || '').trim();
     const attachments = Chat.attachments.slice();
     if (!text && !attachments.length) return;
+    if (!currentModel()) {
+      openModelPicker(document.getElementById('composer-model'));
+      UI.toast('Choose a model first.', 'warn', { title: 'No model' });
+      return;
+    }
     if (!Chat.session) {
       Chat.session = {
         id: null, title: 'New session', messages: [], tasks: [], files: [], allowTools: [],
@@ -1262,14 +1277,19 @@
 
   function openReasoningPicker(anchor) {
     if (!anchor) return;
+    const profile = reasoningProfile();
+    if (!profile || profile.levels.length <= 1) return;
     const current = currentReasoning();
     const content = document.createElement('div');
     content.className = 'mode-picker';
-    content.innerHTML = `<div class="mode-picker-head">Reasoning</div>${Object.entries(REASONING).map(([value, item]) => `<button class="mode-choice ${value === current ? 'selected' : ''}" type="button" data-reasoning="${value}">
-      <span class="mode-choice-icon">${icon(value === 'auto' ? 'sparkles' : 'brain', 15)}</span>
+    content.innerHTML = `<div class="mode-picker-head">Reasoning</div>${profile.levels.map((value) => {
+      const item = U.REASONING_LEVELS[value] || { label: value, hint: '' };
+      return `<button class="mode-choice ${value === current ? 'selected' : ''}" type="button" data-reasoning="${value}">
+      <span class="mode-choice-icon">${icon(value === 'none' ? 'sparkles' : 'brain', 15)}</span>
       <span class="mode-choice-name">${U.esc(item.label)}<span class="mode-choice-hint">${U.esc(item.hint)}</span></span>
       ${value === current ? `<span class="mode-choice-check">${icon('check', 13)}</span>` : ''}
-    </button>`).join('')}<div class="mode-picker-note">Thinking is shown when the model returns it.</div>`;
+    </button>`;
+    }).join('')}<div class="mode-picker-note">Only the stages this model supports.</div>`;
     const pop = UI.popover(anchor, content, { width: 232 });
     content.addEventListener('click', (event) => {
       const button = event.target.closest('[data-reasoning]');
@@ -1284,7 +1304,7 @@
       }
       updateComposer();
       renderHead();
-      UI.toast(`Reasoning: ${REASONING[value].label}`, 'success');
+      UI.toast(`Reasoning: ${U.reasoningLabel(profile, value)}`, 'success');
     });
   }
 
@@ -1635,7 +1655,7 @@
   Chat.mount = function mount() {
     const host = document.getElementById('chat-view');
     if (!host) return;
-    Chat.draftModel = Chat.draftModel || App.state.config?.defaultModel || 'sandbox/blank-1';
+    Chat.draftModel = Chat.draftModel || App.state.config?.defaultModel || '';
     host.innerHTML = `
       <div class="chat-shell" id="chat-shell">
         <div class="chat-head">
@@ -1653,7 +1673,7 @@
               </div>
               <div class="composer-tools">
                 <button class="composer-tool" type="button" data-action="attach-files" title="Attach text files">${icon('paperclip', 13)}<span>Attach</span></button>
-                <button class="composer-tool" type="button" data-action="open-studio" title="Open Studio">${icon('wand', 13)}<span>Studio</span></button>
+                <button class="composer-tool" type="button" data-action="open-media" title="Create media">${icon('wand', 13)}<span>Media</span></button>
                 <span class="composer-divider"></span>
                 <button class="composer-tool composer-model" id="composer-model" type="button" data-action="pick-model" title="Switch model"></button>
                 <button class="composer-tool" id="composer-reasoning" type="button" data-action="pick-reasoning" title="Reasoning effort"></button>
@@ -1753,7 +1773,8 @@
       if (action === 'open-file') { App.openFilePreview(actionNode.dataset.path); return; }
       if (action === 'open-media') { App.openMedia(actionNode.dataset.id); return; }
       if (action === 'open-paper') { if (window.Views?.openPaper) Views.openPaper(actionNode.dataset.id); return; }
-      if (action === 'open-studio') { App.openPage('studio'); return; }
+      if (action === 'open-media') { window.Views?.openStudio?.(); return; }
+      if (action === 'open-models') { App.openPage('models'); return; }
       if (action === 'toggle-reasoning') {
         actionNode.closest('.reasoning')?.classList.toggle('open');
         return;
@@ -1837,7 +1858,7 @@
       Chat.queue = result.queue || [];
       Chat.draftMode = Chat.session.mode || 'agent';
       Chat.draftModel = Chat.session.model || Chat.draftModel;
-      Chat.draftReasoning = Chat.session.reasoningEffort || 'auto';
+      Chat.draftReasoning = Chat.session.reasoningEffort || '';
       renderHead();
       updateComposer();
       renderThread({ smooth: false, keepScroll: Boolean(options.keepScroll) });
@@ -1860,9 +1881,9 @@
     Chat.pendingApprovals.clear();
     Chat.activeSessionId = null;
     Chat.attachments = [];
-    Chat.draftModel = App.state.config?.defaultModel || Chat.draftModel || 'sandbox/blank-1';
+    Chat.draftModel = App.state.config?.defaultModel || Chat.draftModel || '';
     Chat.draftMode = 'agent';
-    Chat.draftReasoning = App.state.config?.agent?.reasoningEffort || 'auto';
+    Chat.draftReasoning = '';
     const input = document.getElementById('composer-input');
     if (input) { input.value = ''; U.autoGrow(input, 224); }
     renderAttachments();

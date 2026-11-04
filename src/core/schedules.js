@@ -1,9 +1,9 @@
 'use strict';
 
 const { appPaths, readJSON, writeJSON, uid } = require('./paths');
+const { isEffort } = require('./reasoning');
 
 const CADENCES = ['hourly', 'daily', 'weekdays'];
-const EFFORTS = ['auto', 'low', 'medium', 'high'];
 const MODES = ['agent', 'design', 'plan', 'ask'];
 
 function schedulesFile() {
@@ -51,9 +51,9 @@ function sanitize(input, existing = {}, now = new Date()) {
     enabled: input.enabled === undefined ? existing.enabled !== false : Boolean(input.enabled),
     model: String(input.model ?? existing.model ?? '').trim().slice(0, 160),
     mode: MODES.includes(input.mode) ? input.mode : MODES.includes(existing.mode) ? existing.mode : 'agent',
-    reasoningEffort: EFFORTS.includes(input.reasoningEffort)
+    reasoningEffort: isEffort(input.reasoningEffort)
       ? input.reasoningEffort
-      : EFFORTS.includes(existing.reasoningEffort) ? existing.reasoningEffort : 'auto',
+      : isEffort(existing.reasoningEffort) ? existing.reasoningEffort : 'auto',
     allowTools: input.allowTools === undefined ? Boolean(existing.allowTools) : Boolean(input.allowTools),
     workspace: String(input.workspace ?? existing.workspace ?? '').trim().slice(0, 400),
     createdAt: existing.createdAt || now.toISOString(),

@@ -1,4 +1,4 @@
-/* Blank pages — Models, Skills, Memory, MCP, Learning, Settings and Studio. */
+/* Blank pages — Models, Skills, Memory, MCP, Learning and Settings. */
 (function () {
   'use strict';
 
@@ -199,11 +199,7 @@ Start writing, or ask the agent to draft it.
   function providerConnected(provider) {
     if (!provider) return false;
     if (provider.kind === 'local') return true;
-    return Boolean(providerConfig(provider.id).hasKey) || Boolean(subscriptionFor(provider.id)?.signedIn);
-  }
-
-  function subscriptionFor(providerId) {
-    return (currentConfig().subscriptions || {})[providerId] || null;
+    return Boolean(providerConfig(provider.id).hasKey);
   }
 
   function providerUsable(provider) {
@@ -211,7 +207,6 @@ Start writing, or ask the agent to draft it.
     if (provider.kind === 'local') return true;
     const config = providerConfig(provider.id);
     if (config.hasKey) return true;
-    if (subscriptionFor(provider.id)?.signedIn) return true;
     return provider.kind === 'custom' && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(config.baseUrl || '');
   }
 
@@ -234,7 +229,7 @@ Start writing, or ask the agent to draft it.
 
   function paintModels(host) {
     const config = currentConfig();
-    const defaultId = config.defaultModel || 'sandbox/blank-1';
+    const defaultId = config.defaultModel || '';
     const fallbackId = config.fallbackModel || '';
     const providers = vstate.models.providers;
     const connectedCount = providers.filter(providerConnected).length;
@@ -252,9 +247,9 @@ Start writing, or ask the agent to draft it.
           <div class="models-banner-title">Default model</div>
           <div class="models-banner-sub">${connectedCount} of ${providers.length} providers ready · ${usableModels} models available${fallbackId ? ` · fallback ${esc(U.modelLabel({ providers }, fallbackId))}` : ''}</div>
         </div>
-        <button class="default-model-button" type="button" data-pick-default title="Change the default model">
-          ${UI.providerMono(U.providerOf({ providers }, defaultId) || { id: 'sandbox', name: 'Blank', monogram: 'b' })}
-          <span class="copy"><span class="name">${esc(U.modelLabel({ providers }, defaultId))}</span><span class="label">${esc((U.providerOf({ providers }, defaultId) || {}).name || 'Sandbox')} · ${U.kbd('Ctrl M')}</span></span>
+        <button class="default-model-button ${defaultId ? '' : 'needs-model'}" type="button" data-pick-default title="${defaultId ? 'Change the default model' : 'Choose the default model'}">
+          ${defaultId ? UI.providerMono(U.providerOf({ providers }, defaultId)) : `<span class="default-model-icon">${icon('cpu', 15)}</span>`}
+          <span class="copy"><span class="name">${esc(defaultId ? U.modelLabel({ providers }, defaultId) : 'Choose a model')}</span><span class="label">${defaultId ? `${esc((U.providerOf({ providers }, defaultId) || {}).name || 'Model')} · ${U.kbd('Ctrl M')}` : `<span>No model connected</span> · ${U.kbd('Ctrl M')}`}</span></span>
           ${icon('chevron-updown', 13)}
         </button>
       </div>
@@ -377,14 +372,6 @@ Start writing, or ask the agent to draft it.
         </div>
         <span class="badge ${providerConnected(provider) ? 'green' : ''} dot" id="provider-badge">${providerConnected(provider) ? 'Connected' : 'Not connected'}</span>
       </div>
-      ${['anthropic', 'openai'].includes(provider.id) ? `<div class="subscription-card">
-        <span class="subscription-mark">${icon(provider.id === 'anthropic' ? 'sparkles' : 'zap', 14)}</span>
-        <div class="subscription-copy">
-          <div class="subscription-title">${provider.id === 'anthropic' ? 'Claude subscription' : 'ChatGPT subscription'}</div>
-          <div class="subscription-note" id="subscription-note">Not connected · experimental sign-in</div>
-        </div>
-        <button class="btn btn-secondary btn-sm" type="button" id="subscription-action">${icon('key', 11)} Sign in</button>
-      </div>` : ''}
       ${local
         ? `<div class="setting-note" style="margin-bottom:14px">${icon('monitor', 11)} This provider runs on your machine. No key is required.</div>`
         : `<div class="key-section">
@@ -523,12 +510,12 @@ Start writing, or ask the agent to draft it.
       if (rotate) rotate.innerHTML = UI.switchHtml(entry.autoRotate !== false, 'data-auto-rotate');
       const badge = body.querySelector('#provider-badge');
       if (badge) {
-        const ready = Boolean((entry.keys || []).length) || keys.length > 0 || Boolean(subscriptionFor(provider.id)?.signedIn);
+        const ready = Boolean((entry.keys || []).length) || keys.length > 0;
         badge.className = `badge ${ready ? 'green' : ''} dot`;
         badge.textContent = ready ? 'Connected' : 'Not connected';
       }
       const meta = modal?.element?.querySelector('.modal-head .modal-desc');
-      if (meta) meta.textContent = keys.length || subscriptionFor(provider.id)?.signedIn ? 'Ready to route requests.' : 'Add a key to start using this provider.';
+      if (meta) meta.textContent = keys.length ? 'Ready to route requests.' : 'Add a key to start using this provider.';
     }
 
     async function refreshEntry() {
@@ -536,110 +523,12 @@ Start writing, or ask the agent to draft it.
       applyConfig(config);
       entry = (config.providers || {})[provider.id] || {};
       paintKeys();
-      paintSubscription();
-    }
-
-    function paintSubscription() {
-      const button = body.querySelector('#subscription-action');
-      if (!button) return;
-      const sub = subscriptionFor(provider.id);
-      const note = body.querySelector('#subscription-note');
-      if (sub?.signedIn) {
-        const parts = ['Signed in'];
-        if (sub.email) parts.push(sub.email);
-        if (sub.plan) parts.push(sub.plan);
-        if (sub.expired) parts.push('expired');
-        note.textContent = `${parts.join(' · ')} · experimental`;
-        button.dataset.subscription = 'out';
-        button.innerHTML = `${icon('lock', 11)} Sign out`;
-        button.disabled = false;
-      } else {
-        note.textContent = 'Not connected · experimental sign-in';
-        button.dataset.subscription = 'in';
-        button.innerHTML = `${icon('key', 11)} Sign in`;
-        button.disabled = false;
-      }
-    }
-
-    function promptClaudeCode() {
-      return new Promise((resolve) => {
-        const pane = document.createElement('div');
-        pane.innerHTML = `<div class="subscription-dialog">
-          <p class="setting-note">Authorize Blank in the browser, then paste the code shown on the page (code#state).</p>
-          <input class="field-input" id="claude-code" placeholder="Paste the authorization code" spellcheck="false" autocomplete="off" />
-        </div>`;
-        const foot = document.createElement('div');
-        foot.className = 'modal-actions';
-        foot.innerHTML = '<button class="btn btn-ghost" type="button" data-cancel>Cancel</button><button class="btn btn-primary" type="button" data-confirm>Finish sign-in</button>';
-        const dialog = UI.modal({ title: 'Finish Claude sign-in', description: 'The browser tab waits for this code.', body: pane, footer: foot });
-        const input = pane.querySelector('#claude-code');
-        const confirm = foot.querySelector('[data-confirm]');
-        foot.querySelector('[data-cancel]').addEventListener('click', () => { dialog.close(); resolve(''); });
-        confirm.addEventListener('click', () => {
-          const value = input.value.trim();
-          if (!value) { input.focus(); return; }
-          dialog.close();
-          resolve(value);
-        });
-        input.addEventListener('keydown', (event) => {
-          if (event.key === 'Enter') { event.preventDefault(); confirm.click(); }
-        });
-        setTimeout(() => input.focus(), 40);
-      });
-    }
-
-    async function startSubscription() {
-      const button = body.querySelector('#subscription-action');
-      const sub = subscriptionFor(provider.id);
-      if (sub?.signedIn) {
-        const ok = await UI.confirm({ title: 'Sign out of this subscription?', message: 'The stored OAuth token is deleted. API keys are untouched.', confirmLabel: 'Sign out', detail: provider.name });
-        if (!ok) return;
-        button.disabled = true;
-        try {
-          await API.subscription.signOut(provider.id);
-          applyConfig(await API.config.get());
-          paintSubscription();
-          paintKeys();
-          onChanged?.();
-          UI.toast('Signed out.', 'success');
-        } catch (error) { UI.toast(error.message, 'error'); button.disabled = false; }
-        return;
-      }
-      button.disabled = true;
-      button.innerHTML = `${icon('refresh', 11)} ${provider.id === 'openai' ? 'Waiting for browser…' : 'Opening browser…'}`;
-      try {
-        const result = await API.subscription.start(provider.id);
-        if (result.needsCode) {
-          button.disabled = false;
-          paintSubscription();
-          const code = await promptClaudeCode();
-          if (!code) return;
-          button.disabled = true;
-          button.innerHTML = `${icon('refresh', 11)} Finishing…`;
-          const completed = await API.subscription.complete(provider.id, code);
-          applyConfig(completed.config);
-          UI.toast('Claude subscription connected.', 'success');
-        } else {
-          applyConfig(result.config);
-          UI.toast(provider.id === 'openai' ? 'ChatGPT subscription connected.' : 'Claude subscription connected.', 'success');
-        }
-        paintSubscription();
-        paintKeys();
-        await refreshEntry();
-        onChanged?.();
-        void loadModels({ quiet: true, loading: true });
-      } catch (error) {
-        UI.toast(error.message, 'error');
-        button.disabled = false;
-        paintSubscription();
-      }
     }
 
     paintModels();
     paintKeys();
-    paintSubscription();
 
-    if (provider.id !== 'sandbox' && providerUsable(provider) && !(provider.models || []).length) {
+    if (providerUsable(provider) && !(provider.models || []).length) {
       setTimeout(() => {
         if (modal.element?.isConnected) loadModels({ quiet: true, loading: true });
       }, 250);
@@ -648,7 +537,6 @@ Start writing, or ask the agent to draft it.
     const testBox = body.querySelector('#provider-test');
 
     body.addEventListener('click', async (event) => {
-      if (event.target.closest('#subscription-action')) { void startSubscription(); return; }
       if (event.target.closest('[data-add-key]')) {
         const button = event.target.closest('[data-add-key]');
         const input = body.querySelector('#provider-key');
@@ -1697,7 +1585,7 @@ Start writing, or ask the agent to draft it.
             <div class="reflection-card-title">${icon('sparkles', 13)} Reflection</div>
             <p>${pending.length || applied.length ? 'Reflection reads the last eight sessions and proposes at most three changes.' : 'Reflection is conservative. It often returns no changes, which is healthy.'}</p>
             <div class="reflection-meta">
-              <span>Model <b>${esc(modelLabel || 'Connect a hosted model')}</b></span>
+              <span>Model <b>${esc(modelLabel || 'Not connected')}</b></span>
               <span>Runs <b>${U.fmtNumber(data.reflections || 0)}</b></span>
               <span>Last <b>${data.lastReflectionAt ? esc(U.relativeTime(data.lastReflectionAt)) : 'never'}</b></span>
             </div>
@@ -1774,7 +1662,7 @@ Start writing, or ask the agent to draft it.
     const permissions = config.permissions || {};
     const providers = appState().catalog?.providers || vstate.models.providers;
     const runtime = appState().config?.runtime || info;
-    const defaultModel = config.defaultModel || 'sandbox/blank-1';
+    const defaultModel = config.defaultModel || '';
     const fallbackModel = config.fallbackModel || '';
     const rows = Object.keys(TOOL_LABELS).filter((key) => key in permissions || ['generate_media', 'edit_media'].includes(key));
     const searchCfg = config.search || {};
@@ -1792,6 +1680,8 @@ Start writing, or ask the agent to draft it.
     const teamCfg = config.team || { enabled: false, members: [] };
     const teamMembers = Array.isArray(teamCfg.members) ? teamCfg.members : [];
     const schedules = Array.isArray(vstate.settings.schedules) ? vstate.settings.schedules : [];
+    const defaultProfile = U.reasoningProfile({ providers }, defaultModel);
+    const defaultEffort = U.normalizeReasoning(defaultProfile, agent.reasoningEffort);
     const notificationsCfg = config.notifications || {};
     const language = config.language === 'en' ? 'en' : 'ko';
     host.innerHTML = `<div class="page-inner">
@@ -1865,8 +1755,10 @@ Start writing, or ask the agent to draft it.
                 <div class="setting-control"><input class="setting-inline-input" style="width:76px" id="agent-max-steps" type="number" min="1" max="64" value="${Number(agent.maxSteps) || 32}" /></div>
               </div>
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">Reasoning effort</div><div class="setting-desc">Starting effort for new chats. Passed to GPT-5, o-series, OpenRouter and Gemini 2.5 models.</div></div>
-                <div class="setting-control"><select class="setting-inline-input" id="agent-reasoning">${['auto', 'low', 'medium', 'high'].map((value) => `<option value="${value}" ${(agent.reasoningEffort || 'auto') === value ? 'selected' : ''}>${value[0].toUpperCase() + value.slice(1)}</option>`).join('')}</select></div>
+                <div class="setting-copy"><div class="setting-label">Reasoning effort</div><div class="setting-desc">Starting stage for new chats. Choices follow the default model's supported stages.</div></div>
+                <div class="setting-control">${defaultProfile && defaultProfile.levels.length > 1
+                  ? `<select class="setting-inline-input" id="agent-reasoning">${defaultProfile.levels.map((value) => `<option value="${value}" ${defaultEffort === value ? 'selected' : ''}>${esc(U.REASONING_LEVELS[value]?.label || value)}</option>`).join('')}</select>`
+                  : `<span class="setting-value">${esc(defaultProfile ? U.reasoningLabel(defaultProfile, defaultEffort) : 'Model decides')}</span>`}</div>
               </div>
               <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Auto-compact context</div><div class="setting-desc">Summarize older turns when the window fills.</div></div>
@@ -2114,7 +2006,7 @@ Start writing, or ask the agent to draft it.
               </div>
               <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Media storage</div><div class="setting-desc">Generated and imported assets, plus thumbnails and waveforms.</div><div class="setting-note" id="media-storage-note">${vstate.media.storage ? `${vstate.media.storage.count} assets · ${U.fmtBytes(vstate.media.storage.bytes)}` : 'Loading…'}</div></div>
-                <div class="setting-control"><button class="btn btn-secondary btn-sm" type="button" data-open-media-studio>${icon('image', 12)} Open Studio</button></div>
+                <div class="setting-control"><button class="btn btn-secondary btn-sm" type="button" data-open-media-studio>${icon('image', 12)} Create media</button></div>
               </div>
             </div>
           </section>
@@ -2129,11 +2021,11 @@ Start writing, or ask the agent to draft it.
                   <div class="about-versions">
                     <span class="badge">Electron ${esc(info.electron || runtime.electron || '—')}</span>
                     <span class="badge">Node ${esc(info.node || runtime.node || '—')}</span>
-                    <span class="badge">${esc(info.platform || runtime.platform || '')}</span>
+                    <span class="badge">${esc({ win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[info.platform || runtime.platform] || info.platform || runtime.platform || '')}</span>
                   </div>
                   <div class="about-link-row">
                     <button class="link-btn" type="button" data-open-data>${icon('folder-open', 12)} Data folder</button>
-                    <button class="link-btn" type="button" data-open-media-studio>${icon('image', 12)} Studio</button>
+                    <button class="link-btn" type="button" data-open-media-studio>${icon('image', 12)} Create media</button>
                     <button class="link-btn" type="button" data-open-shortcuts>${icon('keyboard', 12)} Keyboard shortcuts</button>
                   </div>
                 </div>
@@ -2273,9 +2165,10 @@ Start writing, or ask the agent to draft it.
       }
       if (event.target.closest('[data-save-agent]')) {
         try {
+          const reasoningSelect = host.querySelector('#agent-reasoning');
           const updated = await API.config.update({ agent: {
             maxSteps: Math.max(1, Math.min(64, Number(host.querySelector('#agent-max-steps').value) || 32)),
-            reasoningEffort: host.querySelector('#agent-reasoning').value,
+            reasoningEffort: reasoningSelect ? reasoningSelect.value : (agent.reasoningEffort || 'auto'),
             compactAt: Math.max(0.5, Math.min(0.95, (Number(host.querySelector('#agent-compact-at').value) || 82) / 100)),
           } });
           applyConfig(updated);
@@ -2532,7 +2425,7 @@ Start writing, or ask the agent to draft it.
         return;
       }
       if (event.target.closest('[data-open-media-studio]')) {
-        if (window.App?.openPage) App.openPage('studio');
+        openStudio();
         return;
       }
       if (event.target.closest('[data-open-shortcuts]')) { openShortcuts(); return; }
@@ -2687,9 +2580,10 @@ Start writing, or ask the agent to draft it.
   }
 
   async function mountStudio(host) {
+    if (!host || host.isConnected === false) return;
     vstate.page = 'studio';
     vstate.host = host;
-    if (!vstate.media.loaded) host.innerHTML = pageLoading('Studio', 'Generate and edit images, video, music and 3D objects.');
+    if (!vstate.media.loaded) host.innerHTML = pageLoading('Create media', 'Generate and edit images, video, audio and 3D.');
     try {
       const [assets, jobs, engines, storage] = await Promise.all([
         API.media.list({ limit: 200 }),
@@ -2730,7 +2624,7 @@ Start writing, or ask the agent to draft it.
         if (pending.voice) vstate.media.compose.voice = pending.voice;
       }
       paintStudio(host);
-    } catch (error) { if (alive(host, 'studio')) pageError(host, 'Studio', error); }
+    } catch (error) { if (alive(host, 'studio')) pageError(host, 'Create media', error); }
   }
 
   function paintStudio(host) {
@@ -2773,12 +2667,6 @@ Start writing, or ask the agent to draft it.
       <button class="btn btn-primary btn-sm" type="button" data-media-engines>Open Engines</button>
     </div>`;
     host.innerHTML = `<div class="page-inner">
-      ${UI.pageHeader({
-        title: 'Studio',
-        actions: `<button class="btn btn-secondary btn-sm" data-media-engines>${icon('sliders', 12)} Engines</button>
-          <button class="btn btn-secondary btn-sm" data-import-media>${icon('upload', 12)} Import</button>`,
-        meta: `<span class="badge blue">${totalCount}</span>`,
-      })}
       <div class="studio-layout">
         <aside class="studio-side">
           <div class="studio-compose">
@@ -3084,7 +2972,7 @@ Start writing, or ask the agent to draft it.
       return;
     }
     const engineInfoValue = engineInfo(compose.engine);
-    if (!engineInfoValue) { UI.toast('Connect an engine in Studio → Engines first.', 'warn'); openMediaEngines(() => mountStudio(host)); return; }
+    if (!engineInfoValue) { UI.toast('Connect an engine first.', 'warn'); openMediaEngines(() => mountStudio(host)); return; }
     const payload = {
       kind: compose.kind,
       prompt,
@@ -3147,7 +3035,7 @@ Start writing, or ask the agent to draft it.
     if (job.status === 'done') {
       const assetId = (job.assetIds || [])[0];
       UI.toast(`${KIND[job.kind]?.label || 'Media'} ready.`, 'success', {
-        title: 'Studio',
+        title: 'Media',
         actionLabel: assetId ? 'Open' : null,
         onAction: assetId ? () => openMediaDetail(assetId) : undefined,
         timeout: 7000,
@@ -3155,7 +3043,7 @@ Start writing, or ask the agent to draft it.
     } else if (job.status === 'cancelled') {
       UI.toast('Generation cancelled.', 'info');
     } else {
-      UI.toast(job.error || 'Generation failed.', 'error', { title: 'Studio', timeout: 8000 });
+      UI.toast(job.error || 'Generation failed.', 'error', { title: 'Media', timeout: 8000 });
     }
   }
 
@@ -3450,7 +3338,7 @@ Start writing, or ask the agent to draft it.
     body.className = 'media-detail-body';
     body.innerHTML = detailMarkup(current);
     const handle = UI.modal({
-      title: 'Studio asset',
+      title: 'Media asset',
       description: `${kindOf(current).label} · ${current.engineLabel || current.engine || 'Imported'}`,
       body,
       size: 'wide',
@@ -3539,7 +3427,7 @@ Start writing, or ask the agent to draft it.
         action.disabled = true;
         try {
           const result = await API.media.exportAsset(current.id);
-          if (result && !result.canceled) UI.toast(`Exported to ${result.path}`, 'success', { title: 'Studio', timeout: 7000 });
+          if (result && !result.canceled) UI.toast(`Exported to ${result.path}`, 'success', { title: 'Media', timeout: 7000 });
         } catch (error) { UI.toast(error.message, 'error'); }
         finally { action.disabled = false; }
         return;
@@ -3561,7 +3449,7 @@ Start writing, or ask the agent to draft it.
       if (name === 'delete') {
         const confirmed = await UI.confirm({
           title: 'Delete this asset?',
-          message: `“${current.title}” and its files will be removed from the studio library.`,
+          message: `“${current.title}” and its files will be removed from the media library.`,
           detail: 'Versions made from it stay in the library. This cannot be undone.',
           confirmLabel: 'Delete',
           danger: true,
@@ -3621,7 +3509,7 @@ Start writing, or ask the agent to draft it.
         if (latest.status === 'done' && (latest.assetIds || [])[0]) {
           await refreshLibrary();
           syncMediaBadge();
-          UI.toast('Edit saved as a new version.', 'success', { title: 'Studio', timeout: 5000 });
+          UI.toast('Edit saved as a new version.', 'success', { title: 'Media', timeout: 5000 });
           if (!closed) {
             handle.close();
             openMediaDetail(latest.assetIds[0]);
@@ -3630,7 +3518,7 @@ Start writing, or ask the agent to draft it.
         }
         if (progress) progress.hidden = true;
         if (latest.status === 'cancelled') UI.toast('Edit cancelled.', 'info');
-        else UI.toast(latest.error || 'Edit failed.', 'error', { title: 'Studio', timeout: 8000 });
+        else UI.toast(latest.error || 'Edit failed.', 'error', { title: 'Media', timeout: 8000 });
       };
       setTimeout(tick, 400);
     });
@@ -4001,8 +3889,14 @@ Start writing, or ask the agent to draft it.
     for (const provider of providers) total += (provider.models || []).length;
     const body = document.createElement('div');
     body.className = 'model-picker';
-    body.innerHTML = `<label class="search-field model-picker-search">${icon('search', 13)}<input type="search" data-model-search placeholder="Search ${U.fmtNumber(total)} models or providers" autocomplete="off" /></label>
+    body.innerHTML = `${total ? `<label class="search-field model-picker-search">${icon('search', 13)}<input type="search" data-model-search placeholder="Search ${U.fmtNumber(total)} models or providers" autocomplete="off" /></label>` : ''}
       <div class="model-picker-list" data-model-list>
+        ${total === 0 ? `<div class="model-picker-no-models">
+          <div class="model-picker-no-icon">${icon('cpu', 20)}</div>
+          <b>Connect a provider</b>
+          <p>Add an API key for a hosted provider, or start Ollama or LM Studio locally.</p>
+          <button class="btn btn-primary btn-sm" type="button" data-connect-provider>${icon('plus', 12)} Open Models</button>
+        </div>` : ''}
         ${allowNone ? `<div class="model-picker-group"><div class="model-picker-group-label">No fallback</div>
           <button class="model-picker-row ${!current ? 'selected' : ''}" type="button" data-model-id="" data-search="none no fallback">
             <span class="model-picker-icon">${icon('circle', 13)}</span>
@@ -4026,7 +3920,7 @@ Start writing, or ask the agent to draft it.
         <div class="model-picker-empty" hidden>No models match that search.</div>
       </div>
       <div class="model-picker-foot">
-        <span>${U.fmtNumber(total)} models · ${providers.length} providers</span>
+        <span>${total ? `${U.fmtNumber(total)} models · ${providers.length} providers` : 'No models yet'}</span>
         <span style="flex:1"></span>
         <button class="link-btn" type="button" data-manage-models>Manage models ${icon('arrow-right', 10)}</button>
       </div>`;
@@ -4080,6 +3974,11 @@ Start writing, or ask the agent to draft it.
     body.addEventListener('click', (event) => {
       const row = event.target.closest('[data-model-id]');
       if (row) { choose(row); return; }
+      if (event.target.closest('[data-connect-provider]')) {
+        modal.close();
+        if (window.App?.openPage) App.openPage('models');
+        return;
+      }
       if (event.target.closest('[data-manage-models]')) {
         modal.close();
         if (window.App?.openPage) App.openPage('models');
@@ -4113,7 +4012,7 @@ Start writing, or ask the agent to draft it.
       'settings-web': 'Open search settings',
       'settings-computer': 'Open computer settings',
       'settings-remote': 'Open remote settings',
-      studio: 'Open Studio',
+      studio: 'Create media',
     };
     return `<article class="plugin-card ${item.installed ? 'installed' : ''}">
       <div class="plugin-card-head">
@@ -4203,7 +4102,7 @@ Start writing, or ask the agent to draft it.
 
   function runPluginAction(action) {
     if (!window.App?.openPage) return;
-    if (action === 'studio') { App.openPage('studio'); return; }
+    if (action === 'studio') { openStudio(); return; }
     if (action === 'settings-web') { openSettingsSection('search'); return; }
     if (action === 'settings-computer') { openSettingsSection('computer'); return; }
     if (action === 'settings-remote') { openSettingsSection('remote'); return; }
@@ -4886,7 +4785,35 @@ Start writing, or ask the agent to draft it.
       engine: typeof options.engine === 'string' ? options.engine : '',
       voice: typeof options.voice === 'string' ? options.voice : '',
     };
-    if (window.App?.openPage) App.openPage('studio');
+    vstate.media.embedded = true;
+    const host = document.createElement('div');
+    host.className = 'studio-embed';
+    host.innerHTML = pageLoading('Create media', 'Generate and edit images, video, audio and 3D.');
+    const activePage = document.querySelector('[data-page].active')?.dataset.page || 'chat';
+    const underlying = { page: activePage, host: activePage === 'chat' ? null : vstate.host };
+    UI.modal({
+      title: 'Create media',
+      description: 'Generate and edit media without leaving the chat.',
+      size: 'wide',
+      className: 'studio-modal',
+      headerExtra: `<button class="btn btn-secondary btn-sm" type="button" data-studio-engines>${icon('sliders', 12)} Engines</button>
+        <button class="btn btn-secondary btn-sm" type="button" data-studio-import>${icon('upload', 12)} Import</button>`,
+      body: host,
+      onMount(node) {
+        node.querySelector('[data-studio-engines]')?.addEventListener('click', () => {
+          openMediaEngines(() => { if (host.isConnected) mountStudio(host); });
+        });
+        node.querySelector('[data-studio-import]')?.addEventListener('click', () => importMedia(host));
+      },
+      onClose: () => {
+        vstate.media.embedded = false;
+        if (vstate.page === 'studio' && vstate.host === host) {
+          vstate.page = underlying.page;
+          vstate.host = underlying.host;
+        }
+      },
+    });
+    mountStudio(host);
   }
 
   function render(page, host) {
@@ -4903,7 +4830,6 @@ Start writing, or ask the agent to draft it.
     if (page === 'plugins') { mountPlugins(host); return; }
     if (page === 'learning') { mountLearning(host); return; }
     if (page === 'settings') { mountSettings(host); return; }
-    if (page === 'studio') { mountStudio(host); return; }
     if (page === 'paper') { mountPaper(host); return; }
     host.innerHTML = `<div class="page-inner">${UI.emptyState({ iconName: 'alert-circle', title: 'Unknown page', description: 'This surface is not part of this build.' })}</div>`;
   }

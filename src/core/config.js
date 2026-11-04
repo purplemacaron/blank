@@ -5,7 +5,7 @@ const { appPaths, ensureHome, readJSON, writeJSON, uid } = require('./paths');
 
 const DEFAULTS = {
   version: 1,
-  defaultModel: 'sandbox/blank-1',
+  defaultModel: '',
   fallbackModel: '',
   workspace: '',
   theme: 'light',
@@ -128,7 +128,8 @@ function loadConfig() {
   const config = deepMerge(DEFAULTS, raw);
   const keysMigrated = normalizeProviderKeys(config);
   const mediaMigrated = normalizeMediaDefaults(config);
-  if (!fs.existsSync(file) || keysMigrated || mediaMigrated) writeJSON(file, config);
+  const modelsMigrated = normalizeModelDefaults(config);
+  if (!fs.existsSync(file) || keysMigrated || mediaMigrated || modelsMigrated) writeJSON(file, config);
   return config;
 }
 
@@ -143,6 +144,27 @@ function patchConfig(patch) {
   const next = deepMerge(config, patch);
   saveConfig(next);
   return next;
+}
+
+/**
+ * Earlier builds shipped an offline demo model. It is retired: a missing or
+ * sandbox model becomes "not configured" so the app asks for a real provider.
+ */
+function normalizeModelDefaults(config) {
+  let changed = false;
+  const retired = (value) => {
+    const id = String(value || '');
+    return id === 'blank-1' || id === 'sandbox' || id.startsWith('sandbox/');
+  };
+  if (retired(config.defaultModel)) {
+    config.defaultModel = '';
+    changed = true;
+  }
+  if (retired(config.fallbackModel)) {
+    config.fallbackModel = '';
+    changed = true;
+  }
+  return changed;
 }
 
 /**
@@ -460,6 +482,6 @@ function publicConfig(config, catalog) {
 
 module.exports = {
   DEFAULTS, loadConfig, saveConfig, patchConfig, resolveKey, setProvider, maskKey,
-  publicConfig, deepMerge, normalizeProviderKeys, normalizeMediaDefaults, keyCandidates, addProviderKey,
-  removeProviderKey, setActiveProviderKey, noteKeyUsage,
+  publicConfig, deepMerge, normalizeProviderKeys, normalizeMediaDefaults, normalizeModelDefaults,
+  keyCandidates, addProviderKey, removeProviderKey, setActiveProviderKey, noteKeyUsage,
 };

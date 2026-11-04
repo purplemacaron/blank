@@ -11,17 +11,16 @@ const { allModels, getProvider } = require('./catalog');
 function modelConnected(config, model) {
   const provider = getProvider(model.providerId, config);
   if (!provider) return false;
-  if (provider.protocol === 'sandbox') return false;
   if (provider.kind === 'local' && !provider.keyEnv) return true;
   return Boolean(resolveKey(config, provider.id, provider));
 }
 
 function pickReflectionModel(config) {
-  if (config.defaultModel && !config.defaultModel.startsWith('sandbox/')) {
+  if (config.defaultModel) {
     const model = allModels(config).find((entry) => entry.fullId === config.defaultModel);
     if (model && modelConnected(config, model)) return model.fullId;
   }
-  if (config.fallbackModel && !config.fallbackModel.startsWith('sandbox/')) {
+  if (config.fallbackModel) {
     const model = allModels(config).find((entry) => entry.fullId === config.fallbackModel);
     if (model && modelConnected(config, model)) return model.fullId;
   }
@@ -89,7 +88,7 @@ function validateInsights(payload) {
 async function reflectNow({ config, workspace, signal, modelId }) {
   const model = modelId || pickReflectionModel(config);
   if (!model) {
-    return { ok: false, error: 'Connect a hosted or local model first. Sandbox cannot reflect.' };
+    return { ok: false, error: 'Connect a hosted or local model first.' };
   }
   const summaries = listSessions(workspace).slice(0, 8);
   const sessions = summaries.map((summary) => getSession(summary.id)).filter((session) => session && (session.messages || []).length);

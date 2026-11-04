@@ -6,6 +6,7 @@ const os = require('os');
 const {
   appPaths, ensureHome, readJSON, writeJSON, uid, slugify, atomicWrite,
 } = require('./paths');
+const { isEffort } = require('./reasoning');
 
 const IGNORE_DIRS = new Set([
   'node_modules', '.git', '.hg', '.svn', '.idea', '.vscode', 'dist', 'build', 'out',
@@ -37,7 +38,7 @@ function createSession({ workspace = '', model = '', mode = 'agent', title = 'Ne
     workspace,
     model,
     mode,
-    reasoningEffort: ['auto', 'low', 'medium', 'high'].includes(reasoningEffort) ? reasoningEffort : 'auto',
+    reasoningEffort: isEffort(reasoningEffort) ? reasoningEffort : 'auto',
     messages: [],
     tasks: [],
     usage: { input: 0, output: 0 },

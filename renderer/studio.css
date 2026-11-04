@@ -1,5 +1,5 @@
-/* ================================================================== Studio */
-/* A first-class media workspace: compose, queue, library, detail, edit. */
+/* =================================================================== Media */
+/* Media creation in chat: compose, queue, library, detail and edit. */
 
 .titlebar-menu-btn { display: none; width: 28px; height: 28px; border-radius: 6px; place-items: center; color: var(--text-tertiary); }
 .titlebar-menu-btn:hover { background: var(--bg-hover); color: var(--text); }
@@ -19,6 +19,18 @@
   border-radius: 10px;
   background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
 }
+
+/* Embedded in chat: the same composer and library inside a wide modal. */
+.modal.studio-modal {
+  width: min(1120px, calc(100vw - 40px));
+  height: min(86vh, 880px);
+  max-height: calc(100vh - 40px);
+}
+.studio-modal .modal-head { padding-bottom: 6px; }
+.studio-modal .modal-body { padding: 6px 20px 20px; }
+.studio-embed .page-inner { max-width: none; margin: 0; padding: 0; }
+.studio-embed .studio-layout { gap: 16px; }
+.studio-embed .studio-side { position: static; }
 
 .studio-compose {
   border: 1px solid var(--border);
