@@ -115,6 +115,7 @@ const api = {
     list: () => invoke('mcp:list'),
     refresh: () => invoke('mcp:refresh'),
     add: (input) => invoke('mcp:add', input),
+    update: (input) => invoke('mcp:update', input),
     addExample: () => invoke('mcp:addExample'),
     remove: (id) => invoke('mcp:remove', id),
     toggle: (input) => invoke('mcp:toggle', input),

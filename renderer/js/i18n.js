@@ -786,6 +786,9 @@
     'Add a stdio command or an HTTP endpoint, or start with the bundled echo example.':
       'stdio 명령이나 HTTP 엔드포인트를 추가하거나, 내장 에코 예제로 시작하세요.',
     'Add MCP server': 'MCP 서버 추가',
+    'Edit MCP server': 'MCP 서버 편집',
+    'MCP server updated.': 'MCP 서버를 수정했습니다.',
+    'Leave blank to keep the saved values.': '비워 두면 저장된 값을 유지합니다.',
     'MCP server': 'MCP 서버',
     'MCP servers': 'MCP 서버',
     'MCP Servers': 'MCP 서버',
@@ -1447,6 +1450,7 @@
     [/^(\d+) models$/, '$1개 모델'],
     [/^(\d+) model$/, '$1개 모델'],
     [/^(\d+) connected$/, '$1개 연결됨'],
+    [/^Saved: (.+)\. Leave blank to keep the saved values\.$/, '저장됨: $1. 비워 두면 기존 값을 유지합니다.'],
     [/^(\d+) memories$/, '$1개 메모리'],
     [/^(\d+) pinned$/, '$1개 고정됨'],
     [/^(\d+) active$/, '$1개 활성'],
@@ -1603,6 +1607,7 @@
     'Send': '전송',
     'Stop run': '실행 중지',
     'Remove server': '서버 제거',
+    'Edit server': '서버 편집',
   };
 
   const ATTR_PATTERNS = [

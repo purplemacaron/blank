@@ -1263,6 +1263,23 @@ ${commands}
     return { server: mcp.statuses(config).find((status) => status.id === server.id) };
   });
 
+  require('electron').ipcMain.handle('mcp:update', async (_event, input = {}) => {
+    const config = configModule.loadConfig();
+    const index = (config.mcpServers || []).findIndex((entry) => entry.id === input.id);
+    if (index < 0) throw new Error('Server not found.');
+    const before = config.mcpServers[index];
+    const updated = mcp.updateServer(before, input);
+    const urlChanged = String(before.url || '') !== String(updated.url || '');
+    config.mcpServers[index] = updated;
+    configModule.saveConfig(config);
+    if (urlChanged) oauthModule.removeEntry('mcp', updated.id);
+    mcp.forget(updated.id);
+    await mcp.ensure(config, { force: true });
+    broadcast({ type: 'config:updated' });
+    const servers = mcp.statuses(config);
+    return { server: servers.find((status) => status.id === updated.id), servers };
+  });
+
   require('electron').ipcMain.handle('mcp:addExample', async () => {
     const config = configModule.loadConfig();
     const existing = (config.mcpServers || []).find((server) => server.example);

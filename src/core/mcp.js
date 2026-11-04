@@ -368,6 +368,8 @@ class MCPManager extends EventEmitter {
         transport: server.transport || 'stdio',
         command: server.command || '',
         url: server.url || '',
+        envKeys: Object.keys(server.env || {}),
+        headerKeys: Object.keys(server.headers || {}),
         enabled: server.enabled !== false,
         connected: Boolean(client?.connected),
         toolCount: client?.connected ? (client.tools || []).length : 0,
@@ -383,6 +385,46 @@ class MCPManager extends EventEmitter {
     for (const client of this.clients.values()) client.close();
     this.clients.clear();
     this.catalog.clear();
+  }
+
+  forget(serverId) {
+    const client = this.clients.get(serverId);
+    if (client) client.close();
+    this.clients.delete(serverId);
+    this.lastAttempt.delete(serverId);
+  }
+
+  updateServer(server, input = {}) {
+    if (!server || !server.id) throw new Error('Server not found.');
+    const previous = server.transport === 'http' ? 'http' : 'stdio';
+    const requested = input.transport === 'http' || input.transport === 'stdio' ? input.transport : previous;
+    const changedTransport = requested !== previous;
+    const next = {
+      ...server,
+      transport: requested,
+      name: String(input.name ?? server.name ?? '').trim() || server.name || 'MCP server',
+      enabled: input.enabled === undefined ? server.enabled !== false : Boolean(input.enabled),
+    };
+    if (requested === 'stdio') {
+      next.command = String(input.command ?? server.command ?? '').trim();
+      if (!next.command) throw new Error('A stdio MCP server needs a command.');
+      next.url = '';
+      next.headers = {};
+      if (input.env !== undefined) {
+        if (!input.env || typeof input.env !== 'object' || Array.isArray(input.env)) throw new Error('Environment must be key/value pairs.');
+        next.env = input.env;
+      } else if (changedTransport) next.env = {};
+    } else {
+      next.url = String(input.url ?? server.url ?? '').trim();
+      if (!/^https?:\/\//i.test(next.url)) throw new Error('HTTP MCP servers need an http(s) URL.');
+      next.command = '';
+      next.env = {};
+      if (input.headers !== undefined) {
+        if (!input.headers || typeof input.headers !== 'object' || Array.isArray(input.headers)) throw new Error('Headers must be key/value pairs.');
+        next.headers = input.headers;
+      } else if (changedTransport) next.headers = {};
+    }
+    return next;
   }
 
   makeServer(input) {

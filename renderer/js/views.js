@@ -1280,6 +1280,7 @@ Start writing, or ask the agent to draft it.
               ? `<button class="btn btn-ghost btn-sm" type="button" data-mcp-signout="${U.attr(server.id)}" title="OAuth token stored">${icon('lock', 11)} Sign out</button>`
               : `<button class="btn btn-secondary btn-sm" type="button" data-mcp-signin="${U.attr(server.id)}">${icon('key', 11)} Sign in</button>`) : ''}
             ${UI.switchHtml(server.enabled && server.connected, `data-mcp-toggle="${U.attr(server.id)}"`)}
+            <button class="mini-icon" type="button" data-mcp-edit="${U.attr(server.id)}" title="Edit server">${icon('edit', 13)}</button>
             <button class="mini-icon" type="button" data-mcp-remove="${U.attr(server.id)}" title="Remove server">${icon('trash', 13)}</button>
           </div>
         </div>`).join('') : `<div class="empty-state"><div class="empty-icon">${icon('plug', 22)}</div><h3>No external servers</h3><div class="empty-actions"><button class="btn btn-primary btn-sm" data-add-mcp>${icon('plus', 12)} Add server</button><button class="btn btn-secondary btn-sm" data-mcp-example>Add example</button></div></div>`}
@@ -1353,6 +1354,12 @@ Start writing, or ask the agent to draft it.
         } catch (error) { UI.toast(error.message, 'error'); }
         return;
       }
+      const edit = event.target.closest('[data-mcp-edit]');
+      if (edit) {
+        const server = vstate.mcp.servers.find((s) => s.id === edit.dataset.mcpEdit);
+        if (server) openMcpComposer(() => mountMcp(host), server);
+        return;
+      }
       const remove = event.target.closest('[data-mcp-remove]');      if (remove) {
         const server = vstate.mcp.servers.find((s) => s.id === remove.dataset.mcpRemove);
         if (!server) return;
@@ -1379,23 +1386,34 @@ Start writing, or ask the agent to draft it.
     return out;
   }
 
-  function openMcpComposer(onChanged) {
-    let transport = 'stdio';
+  function openMcpComposer(onChanged, existing = null) {
+    const editing = Boolean(existing && existing.id);
+    let transport = existing?.transport === 'http' ? 'http' : 'stdio';
+    let envDirty = false;
+    let headersDirty = false;
+    const savedEnv = (existing?.envKeys || []).join(', ');
+    const savedHeaders = (existing?.headerKeys || []).join(', ');
+    const envHint = editing
+      ? `${savedEnv ? `Saved: ${savedEnv}. ` : ''}Leave blank to keep the saved values.`
+      : 'KEY=value per line';
+    const headerHint = editing
+      ? `${savedHeaders ? `Saved: ${savedHeaders}. ` : ''}Leave blank to keep the saved values.`
+      : 'KEY=value per line';
     const body = document.createElement('div');
     body.innerHTML = `
       <div class="transport-tabs">
-        <button class="transport-tab active" type="button" data-transport="stdio">${icon('terminal', 12)} stdio</button>
-        <button class="transport-tab" type="button" data-transport="http">${icon('globe', 12)} HTTP</button>
-        <button class="transport-tab" type="button" data-transport="ssh">${icon('key', 12)} SSH</button>
+        <button class="transport-tab ${transport === 'stdio' ? 'active' : ''}" type="button" data-transport="stdio">${icon('terminal', 12)} stdio</button>
+        <button class="transport-tab ${transport === 'http' ? 'active' : ''}" type="button" data-transport="http">${icon('globe', 12)} HTTP</button>
+        ${editing ? '' : `<button class="transport-tab" type="button" data-transport="ssh">${icon('key', 12)} SSH</button>`}
       </div>
-      ${UI.field({ label: 'Name', control: '<input class="field-input" id="mcp-name" type="text" maxlength="60" placeholder="linear" />' })}
-      <div id="mcp-stdio-fields">
-        ${UI.field({ label: 'Command', control: '<input class="field-input" id="mcp-command" type="text" spellcheck="false" placeholder="npx -y @modelcontextprotocol/server-filesystem C:\\\\Projects" />' })}
-        ${UI.field({ label: 'Environment', hint: 'KEY=value per line', control: '<textarea class="field-textarea transport-secret" id="mcp-env" rows="3" placeholder="API_KEY=…"></textarea>' })}
+      ${UI.field({ label: 'Name', control: `<input class="field-input" id="mcp-name" type="text" maxlength="60" placeholder="linear" value="${U.attr(existing?.name || '')}" />` })}
+      <div id="mcp-stdio-fields" ${transport === 'stdio' ? '' : 'hidden'}>
+        ${UI.field({ label: 'Command', control: `<input class="field-input" id="mcp-command" type="text" spellcheck="false" placeholder="npx -y @modelcontextprotocol/server-filesystem C:\\\\Projects" value="${U.attr(existing?.command || '')}" />` })}
+        ${UI.field({ label: 'Environment', hint: envHint, control: '<textarea class="field-textarea transport-secret" id="mcp-env" rows="3" placeholder="API_KEY=…"></textarea>' })}
       </div>
-      <div id="mcp-http-fields" hidden>
-        ${UI.field({ label: 'Endpoint URL', control: '<input class="field-input" id="mcp-url" type="url" spellcheck="false" placeholder="https://mcp.example.com/sse" />' })}
-        ${UI.field({ label: 'Headers', hint: 'KEY=value per line', control: '<textarea class="field-textarea transport-secret" id="mcp-headers" rows="3" placeholder="Authorization=Bearer …"></textarea>' })}
+      <div id="mcp-http-fields" ${transport === 'http' ? '' : 'hidden'}>
+        ${UI.field({ label: 'Endpoint URL', control: `<input class="field-input" id="mcp-url" type="url" spellcheck="false" placeholder="https://mcp.example.com/sse" value="${U.attr(existing?.url || '')}" />` })}
+        ${UI.field({ label: 'Headers', hint: headerHint, control: '<textarea class="field-textarea transport-secret" id="mcp-headers" rows="3" placeholder="Authorization=Bearer …"></textarea>' })}
       </div>
       <div id="mcp-ssh-fields" hidden>
         <div class="field-grid">
@@ -1427,10 +1445,13 @@ Start writing, or ask the agent to draft it.
       body.querySelector('[data-mcp-ssh-key]').hidden = password;
       body.querySelector('[data-mcp-ssh-password]').hidden = !password;
     });
+    body.querySelector('#mcp-env')?.addEventListener('input', () => { envDirty = true; });
+    body.querySelector('#mcp-headers')?.addEventListener('input', () => { headersDirty = true; });
     const footer = document.createElement('div');
     footer.style.cssText = 'display:flex;justify-content:flex-end;gap:6px;width:100%';
-    footer.innerHTML = `<button class="btn btn-ghost btn-sm" data-cancel>Cancel</button><button class="btn btn-primary btn-sm" data-save>${icon('plug', 12)} Connect server</button>`;
-    const modal = UI.modal({ title: 'Add MCP server', size: 'large', body, footer });
+    const saveLabel = () => editing ? `${icon('check', 12)} Save changes` : `${icon('plug', 12)} Connect server`;
+    footer.innerHTML = `<button class="btn btn-ghost btn-sm" data-cancel>Cancel</button><button class="btn btn-primary btn-sm" data-save>${saveLabel()}</button>`;
+    const modal = UI.modal({ title: editing ? 'Edit MCP server' : 'Add MCP server', size: 'large', body, footer });
     footer.querySelector('[data-cancel]').addEventListener('click', () => modal.close());
     const save = footer.querySelector('[data-save]');
     body.querySelectorAll('[data-transport]').forEach((tab) => {
@@ -1441,7 +1462,7 @@ Start writing, or ask the agent to draft it.
         httpFields.hidden = transport !== 'http';
         sshFields.hidden = transport !== 'ssh';
         nameInput.placeholder = transport === 'ssh' ? 'Production' : 'linear';
-        save.innerHTML = transport === 'ssh' ? `${icon('key', 12)} Save host` : `${icon('plug', 12)} Connect server`;
+        save.innerHTML = transport === 'ssh' ? `${icon('key', 12)} Save host` : saveLabel();
       });
     });
     save.addEventListener('click', async () => {
@@ -1478,21 +1499,27 @@ Start writing, or ask the agent to draft it.
       const payload = { name, transport };
       if (transport === 'stdio') {
         payload.command = body.querySelector('#mcp-command').value.trim();
-        payload.env = parseKeyValue(body.querySelector('#mcp-env').value);
         if (!payload.command) { UI.toast('Enter the command to launch the server.', 'warn'); return; }
+        if (!editing || envDirty) payload.env = parseKeyValue(body.querySelector('#mcp-env').value);
       } else {
         payload.url = body.querySelector('#mcp-url').value.trim();
-        payload.headers = parseKeyValue(body.querySelector('#mcp-headers').value);
         if (!/^https?:\/\//i.test(payload.url)) { UI.toast('Enter a valid URL.', 'warn'); return; }
+        if (!editing || headersDirty) payload.headers = parseKeyValue(body.querySelector('#mcp-headers').value);
       }
       save.disabled = true;
-      save.innerHTML = `<span class="spinner" style="width:11px;height:11px"></span> Connecting…`;
+      save.innerHTML = `<span class="spinner" style="width:11px;height:11px"></span> ${editing ? 'Saving…' : 'Connecting…'}`;
       try {
-        await API.mcp.add(payload);
-        modal.close();
-        UI.toast(`${name} connected.`, 'success');
+        if (editing) {
+          await API.mcp.update({ ...payload, id: existing.id });
+          modal.close();
+          UI.toast('MCP server updated.', 'success');
+        } else {
+          await API.mcp.add(payload);
+          modal.close();
+          UI.toast(`${name} connected.`, 'success');
+        }
         onChanged?.();
-      } catch (error) { UI.toast(error.message, 'error'); save.disabled = false; save.innerHTML = `${icon('plug', 12)} Connect server`; }
+      } catch (error) { UI.toast(error.message, 'error'); save.disabled = false; save.innerHTML = saveLabel(); }
     });
   }
 
