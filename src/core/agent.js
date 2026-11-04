@@ -5,6 +5,8 @@ const { getToolDefinitions, executeTool, summarizeArgs, getToolDefinition } = re
 const { buildSystemPrompt, providerMessages, estimateConversationTokens } = require('./prompt');
 const { listSkills, searchMemory, saveSession, titleFrom } = require('./store');
 const { findModel } = require('./catalog');
+const { generateSessionTitle } = require('./title');
+const { grantSessionApproval } = require('./approvals');
 const { uid } = require('./paths');
 
 function lastUserText(session) {
@@ -181,8 +183,13 @@ async function runAgent({
     const decision = await requestApproval({ ...request, approvalId });
     approvals.delete(approvalId);
     if (decision === 'always') {
-      session.allowTools = [...new Set([...(session.allowTools || []), request.tool])];
-      emit({ type: 'notice', level: 'info', text: `“${request.label || request.tool}” allowed for this session.` });
+      const scope = grantSessionApproval(session, request);
+      const text = scope === 'command'
+        ? 'This exact command is allowed for the rest of the session.'
+        : scope === 'file'
+          ? 'This exact file is allowed for the rest of the session.'
+          : `“${request.label || request.tool}” allowed for this session.`;
+      emit({ type: 'notice', level: 'info', text });
     }
     return decision === 'deny' ? 'deny' : 'allow';
   }
@@ -485,6 +492,12 @@ async function runAgent({
   }
 
   if (!session.title || session.title === 'New session') session.title = titleFrom(lastUserText(session));
+  if (outcome.ok && !signal?.aborted) {
+    try {
+      const named = await generateSessionTitle({ session, config, modelId: activeModel, signal });
+      if (named.changed) emit({ type: 'title', title: named.title });
+    } catch {}
+  }
   saveSession(session);
   return outcome;
 }

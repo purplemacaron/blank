@@ -106,9 +106,9 @@ function xaiProfile(id) {
 }
 
 function openProfile(id) {
-  if (/^gpt-oss/.test(id)) return pick(['low', 'medium', 'high'], 'medium', 'openai-effort');
+  if (/gpt-oss|gpt_oss/.test(id)) return pick(['low', 'medium', 'high'], 'medium', 'openai-effort');
   if (/qwen3|qwq|deepseek-r1|reasoner|thinking/.test(id)) return fixed('Always on');
-  if (/^(llama|mixtral|gemma|qwen(?!3)|phi|deepseek-v)/.test(id)) return off();
+  if (/^(llama|mixtral|mistral|gemma|qwen(?!3)|phi|deepseek-v|yi|jamba|fuyu|nemotron)/.test(id)) return off();
   return null;
 }
 
@@ -178,9 +178,11 @@ function profileFor(providerId, modelId) {
   if (['groq', 'together', 'cerebras'].includes(pid)) return openProfile(id);
   if (pid === 'ollama') {
     if (/^gpt-oss/.test(id)) return pick(['low', 'medium', 'high'], 'medium', 'openai-effort');
-    return null;
+    if (/qwen3|qwq|deepseek-r1|reasoner|thinking/.test(id)) return fixed('Always on');
+    return off();
   }
-  if (pid === 'lmstudio') return null;
+  if (pid === 'lmstudio') return off();
+  if (pid.startsWith('custom_')) return openProfile(id);
   return null;
 }
 

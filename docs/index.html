@@ -4,20 +4,20 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Blank — 조용한 데스크톱 에이전트 하네스</title>
-  <meta name="description" content="Blank는 로컬 우선 데스크톱 에이전트 하네스입니다. 모든 모델, MCP 도구, 에이전트 팀, SSH, 컴퓨터 유즈, 원격 제어, 메모리, 채팅 속 미디어 생성, 페이퍼를 하나의 조용한 화면에 담았습니다. Windows, macOS, Linux용으로 다운로드하세요." />
+  <meta name="description" content="Blank는 로컬 우선 데스크톱 에이전트 하네스입니다. 모든 모델과 MCP 도구, 파일 카드, 부분 수정, 받아쓰기, 미디어, SSH, 에이전트 팀, 원격 제어, 메모리, 페이퍼를 하나의 조용한 화면에 담았습니다. Windows, macOS, Linux용으로 다운로드하세요." />
   <meta name="theme-color" content="#ffffff" />
   <link rel="icon" href="media/icon.svg" type="image/svg+xml" />
   <link rel="icon" type="image/png" sizes="64x64" href="media/favicon.png" />
   <link rel="apple-touch-icon" href="media/icon.png" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'; object-src 'none'" />
   <meta property="og:title" content="Blank — 조용한 데스크톱 에이전트 하네스" />
-  <meta property="og:description" content="모든 모델과 MCP 도구, 에이전트 팀, SSH, 컴퓨터 유즈, 원격 제어, 채팅 속 미디어 생성, 페이퍼. 한국어와 영어. 로컬 우선, 하나의 조용한 화면." />
+  <meta property="og:description" content="대화로 파일을 만들고, 필요한 줄만 고치고, 완성된 결과는 파일 카드로. 모든 모델과 MCP 도구, 받아쓰기, 미디어, SSH, 에이전트 팀, 페이퍼. 로컬 우선, 하나의 조용한 화면." />
   <meta property="og:type" content="website" />
   <meta property="og:locale" content="ko_KR" />
   <meta property="og:image" content="media/social.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Blank — 조용한 데스크톱 에이전트 하네스" />
-  <meta name="twitter:description" content="모든 모델과 MCP 도구, 컴퓨터 유즈, 원격 제어, 메모리, 채팅 속 미디어 생성, 페이퍼. 로컬 우선. 하나의 조용한 화면." />
+  <meta name="twitter:description" content="대화로 파일을 만들고, 필요한 줄만 고치고, 완성된 결과는 파일 카드로. 로컬 우선. 하나의 조용한 화면." />
   <meta name="twitter:image" content="media/social.png" />
   <link rel="stylesheet" href="styles.css" />
   <script src="config.js" defer></script>
@@ -29,19 +29,23 @@
       <a class="wordmark" href="#top" aria-label="Blank 홈"><img class="wordmark-mark" src="media/icon.svg" alt="" width="20" height="20" />blank</a>
       <nav class="nav" aria-label="주요 메뉴">
         <a href="#features">기능</a>
-        <a href="#tour">미리보기</a>
+        <a href="#files">파일</a>
+        <a href="#tour">화면</a>
         <a href="#install">설치</a>
         <a href="#faq">FAQ</a>
-        <a class="nav-repo" data-repo-link href="https://github.com" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
       </nav>
-      <a class="btn btn-primary btn-sm nav-cta" href="#install">다운로드</a>
-      <button class="menu-btn" type="button" aria-label="메뉴 열기" aria-expanded="false" data-menu>
-        <span></span><span></span>
-      </button>
+      <div class="head-actions">
+        <a class="nav-repo" data-repo-link href="https://github.com" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+        <a class="btn btn-primary btn-sm nav-cta" href="#install">다운로드</a>
+        <button class="menu-btn" type="button" aria-label="메뉴 열기" aria-expanded="false" data-menu>
+          <span></span><span></span>
+        </button>
+      </div>
     </div>
     <div class="mobile-nav" data-mobile-nav hidden>
       <a href="#features">기능</a>
-      <a href="#tour">미리보기</a>
+      <a href="#files">파일</a>
+      <a href="#tour">화면</a>
       <a href="#install">설치</a>
       <a href="#faq">FAQ</a>
       <a data-repo-link href="https://github.com" target="_blank" rel="noreferrer">GitHub ↗</a>
@@ -51,11 +55,12 @@
   <main id="top">
     <section class="hero shell">
       <div class="hero-copy">
-        <h1>더 조용한<br />작업 방식.</h1>
-        <p class="lead">모든 모델과 도구, 아이디어를 하나의 조용한 화면에. 채팅, 코드, MCP, SSH, 에이전트 팀, 컴퓨터 유즈, 원격 제어, 미디어 생성, 페이퍼까지. 키와 세션은 이 기기에 남습니다.</p>
+        <p class="eyebrow"><span class="pulse" aria-hidden="true"></span>LOCAL-FIRST AGENT HARNESS</p>
+        <h1>조용한 화면.<br /><span class="accent-line">진짜 작업.</span></h1>
+        <p class="lead">모든 모델과 도구를 한 화면에. 대화로 파일을 만들고, 필요한 줄만 고치고, 완성된 결과는 파일 카드로 받습니다. 받아쓰기와 미디어, SSH, 에이전트 팀, Paper까지. 키와 세션은 이 기기에 남습니다.</p>
         <div class="hero-actions">
           <a class="btn btn-primary btn-lg" id="primary-download" href="#install">
-            <span class="btn-label" id="primary-label">Blank 받기</span>
+            <span class="btn-label" id="primary-label">다운로드 선택</span>
             <span class="btn-sub" id="primary-sub">Windows · macOS · Linux</span>
           </a>
           <a class="btn btn-ghost btn-lg" id="all-releases" href="#install">모든 다운로드</a>
@@ -70,89 +75,202 @@
         </div>
       </div>
       <figure class="hero-shot">
-        <div class="shot-frame">
-          <img src="media/blank-chat.webp" width="1440" height="900" alt="흰 화면과 파란 포인트, 세션 사이드바와 플랜 레일이 있는 Blank 채팅 화면." fetchpriority="high" />
+        <div class="shot-shell">
+          <div class="shot-bar" aria-hidden="true">
+            <span class="shot-dots"><i></i><i></i><i></i></span>
+            <span class="shot-title">blank — 채팅</span>
+            <span class="shot-state">로컬</span>
+          </div>
+          <div class="shot-body">
+            <img src="media/blank-chat.webp" width="1440" height="900" alt="흰 화면과 파란 포인트, 세션 사이드바와 플랜 레일이 있는 Blank 채팅 화면." fetchpriority="high" />
+          </div>
         </div>
-        <figcaption><span>채팅 · 도구 · 플랜 레일</span></figcaption>
+        <figcaption><span>채팅 · 플랜 레일 · 도구 승인</span><span>하나의 조용한 화면</span></figcaption>
       </figure>
     </section>
 
     <section class="shell proof" aria-label="주요 특징">
-      <div><strong>13</strong><span>내장 프로바이더</span></div>
+      <div><strong>12</strong><span>내장 프로바이더</span></div>
       <div><strong>∞</strong><span>프로바이더당 키</span></div>
-      <div><strong>SSH</strong><span>에이전트 팀과 원격 실행</span></div>
-      <div><strong>4</strong><span>미디어 유형, 채팅에서 바로</span></div>
+      <div><strong>4</strong><span>미디어 유형, 채팅에서</span></div>
+      <div><strong>0</strong><span>가입과 계정</span></div>
     </section>
 
     <section class="section shell" id="features">
       <div class="section-head">
         <div>
-          <p class="kicker">모든 것을, 조용히</p>
-          <h2>한 세션을 위한 하나의 하네스.</h2>
+          <p class="kicker">하나의 화면</p>
+          <h2>대화가 곧 작업대.</h2>
         </div>
-        <p class="section-note">Blank는 작업하는 동안 비켜서 있습니다. 승인과 계획, 컨텍스트는 보이게. 불필요한 UI는 없게.</p>
+        <p class="section-note">모델과 도구, 파일과 미디어 사이를 오가지 않습니다. 필요한 것은 이미 대화 안에 있습니다.</p>
       </div>
-      <div class="feature-grid">
-        <article class="feature">
-          <span class="feature-index">01</span>
-          <h3>모델에 얽매이지 않기</h3>
-          <p>Anthropic, OpenAI, Google, OpenRouter, xAI, DeepSeek, Mistral, Groq, Together, Cerebras, Ollama, LM Studio를 기본 지원합니다. OpenAI, Anthropic, Gemini 호환 엔드포인트도 추가할 수 있습니다.</p>
+
+      <div class="feature-bento">
+        <article class="feature feature-wide">
+          <span class="feature-index">01 / FILES</span>
+          <h3>결과는 파일로 돌아옵니다.</h3>
+          <p>보고서, 스크립트, 데이터 내보내기를 만들면 채팅에 파일 카드가 나타납니다. 필요한 부분만 정확히 고치고, 완성된 파일은 저장 대화상자로 바로 꺼냅니다.</p>
+          <div class="mini-file" aria-hidden="true">
+            <span class="mini-file-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 3.5h6.5L18.5 8v12.5h-11z"/><path d="M13 3.8V8.5h4.8M9.5 12.5h6M9.5 15.5h4"/></svg>
+            </span>
+            <span class="mini-file-copy"><b>분기 보고서.md</b><small>q3-report.md · 8 KB · 파일로 전달</small></span>
+            <span class="mini-file-save">파일로 저장</span>
+          </div>
         </article>
+
         <article class="feature">
-          <span class="feature-index">02</span>
-          <h3>계속 작동하는 키</h3>
+          <span class="feature-index">02 / MODELS</span>
+          <h3>모델에 얽매이지 않기</h3>
+          <p>Anthropic, OpenAI, Google, OpenRouter, xAI, DeepSeek, Mistral, Groq, Together, Cerebras, Ollama, LM Studio. OpenAI·Anthropic·Gemini 호환 엔드포인트도 추가할 수 있습니다.</p>
+        </article>
+
+        <article class="feature">
+          <span class="feature-index">03 / KEYS</span>
+          <h3>끊기지 않는 키</h3>
           <p>프로바이더마다 여러 키를 이름과 함께 저장하세요. 인증 오류와 요청 한도에 자동으로 로테이션하고, 백업 모델로 전환합니다.</p>
         </article>
+
         <article class="feature">
-          <span class="feature-index">03</span>
+          <span class="feature-index">04 / TOOLS</span>
           <h3>실제로 움직이는 도구</h3>
-          <p>파일 읽기와 편집, 워크스페이스 탐색, 셸 명령, 승인 기반 SSH 원격 실행, 웹 검색, 커서가 보이는 데스크톱 제어까지. 승인 규칙은 직접 정합니다.</p>
+          <p>파일 읽기와 편집, 셸 명령, 승인 기반 SSH, 웹 검색, 커서가 보이는 데스크톱 제어까지. 위험한 작업만 확인하고, 규칙은 직접 정합니다.</p>
         </article>
+
         <article class="feature">
-          <span class="feature-index">04</span>
-          <h3>MCP, 에이전트 팀, 메모리</h3>
-          <p>stdio와 HTTP MCP 서버, 병렬로 조사하는 에이전트 팀, 원클릭 플러그인, 재사용 가능한 스킬, 영구 메모리, 체크포인트, 컨텍스트 압축. 인터페이스는 한국어와 영어를 지원합니다.</p>
+          <span class="feature-index">05 / VOICE</span>
+          <h3>말로 입력하고, 채팅에서 만듭니다</h3>
+          <p>입력창의 마이크를 누르고 말하면 OpenAI 호환 변환 엔드포인트가 텍스트로 옮깁니다. 같은 화면에서 이미지, 영상, 오디오, 3D 메시까지 만들고 고칩니다.</p>
         </article>
-        <article class="feature">
-          <span class="feature-index">05</span>
-          <h3>원하면, 폰으로</h3>
-          <p>설정에서 인증된 원격 세션을 시작하세요. 시작마다 새 페어링 토큰을 발급하고 기본은 루프백입니다. LAN과 원격 승인은 직접 허용할 때만 열립니다.</p>
-        </article>
-        <article class="feature">
-          <span class="feature-index">06</span>
-          <h3>채팅 속 미디어와 페이퍼</h3>
-          <p>채팅에서 미디어 버튼을 열면 ComfyUI나 OpenAI, Google, ElevenLabs, Replicate, fal, Higgsfield처럼 연결한 엔진으로 이미지, 영상, 오디오, 3D 메시를 만들고 편집합니다. 에이전트가 만든 페이지와 문서, 그래픽, 코드는 페이퍼 라이브러리에 모입니다. 모든 결과는 내보낼 수 있는 로컬 라이브러리에 저장됩니다.</p>
+
+        <article class="feature feature-strip">
+          <span class="feature-index">06 / HARNESS</span>
+          <div class="strip-copy">
+            <h3>MCP, 에이전트 팀, 메모리, Paper.</h3>
+            <p>stdio와 HTTP MCP 서버, 병렬로 조사하는 서브에이전트, 재사용 가능한 스킬, 영구 메모리, 체크포인트, 컨텍스트 압축. 에이전트가 만든 페이지와 문서는 Paper 라이브러리에 모입니다.</p>
+          </div>
+          <div class="tag-row" aria-label="하네스 구성">
+            <span>stdio · HTTP MCP</span>
+            <span>병렬 서브에이전트</span>
+            <span>영구 메모리</span>
+            <span>Paper 라이브러리</span>
+            <span>예약 실행</span>
+          </div>
         </article>
       </div>
+
       <div class="detail-row">
-        <span>응답 중에도 전송 — 입력창에서 대기</span>
-        <span>SSH · 에이전트 팀</span>
+        <span>SSH · 원격 제어</span>
+        <span>응답 중에도 전송</span>
         <span>한국어 / English</span>
-        <span>페이퍼 라이브러리</span>
-        <span>예약 실행 · 데스크톱 알림</span>
+        <span>세션 이름 자동 생성</span>
+        <span>데스크톱 알림</span>
         <span>체크포인트와 컨텍스트 압축</span>
         <span>CLI 포함</span>
-        <span>기본은 화이트</span>
       </div>
+    </section>
+
+    <section class="section shell files-section" id="files">
+      <div class="section-head">
+        <div>
+          <p class="kicker">파일 워크플로</p>
+          <h2>필요한 만큼만 고치고,<br />파일로 건넵니다.</h2>
+        </div>
+        <p class="section-note">전체를 다시 쓰지 않아도 됩니다. 정확한 문자열이나 줄 범위로 수정하고, 완성된 결과는 저장 가능한 파일 카드로 받습니다.</p>
+      </div>
+
+      <div class="flow-grid">
+        <article class="flow-card">
+          <span class="flow-step">01</span>
+          <h3>만들기</h3>
+          <p>새 문서나 스크립트를 작업 공간에 씁니다. 전체를 새로 쓸 때만 write_file을 사용합니다.</p>
+          <div class="flow-visual doc-visual" aria-hidden="true">
+            <div class="doc-line w-70"></div>
+            <div class="doc-line w-92"></div>
+            <div class="doc-line w-84"></div>
+            <div class="doc-line w-56"></div>
+            <span class="doc-caret"></span>
+          </div>
+        </article>
+        <article class="flow-card">
+          <span class="flow-step">02</span>
+          <h3>부분 수정</h3>
+          <p>old_string으로 정확히 바꾸거나, start_line과 end_line으로 필요한 줄만 교체합니다. 나머지 줄과 줄바꿈은 그대로 둡니다.</p>
+          <div class="flow-visual diff-visual" aria-hidden="true">
+            <div class="diff-row"><span class="diff-num">11</span><span class="diff-code old">## 초안 제목</span></div>
+            <div class="diff-row changed"><span class="diff-num">12</span><span class="diff-code">## 이번 분기 요약</span></div>
+            <div class="diff-row changed"><span class="diff-num">13</span><span class="diff-code">- 매출 18% 증가</span></div>
+            <div class="diff-row"><span class="diff-num">14</span><span class="diff-code dim">다음 단계는 아래와 같습니다.</span></div>
+          </div>
+        </article>
+        <article class="flow-card">
+          <span class="flow-step">03</span>
+          <h3>전달</h3>
+          <p>deliver_file이 채팅에 파일 카드를 띄웁니다. 카드에서 저장 대화상자를 열어 원하는 위치로 복사합니다.</p>
+          <div class="flow-visual card-visual" aria-hidden="true">
+            <div class="mini-file mini-file-flat">
+              <span class="mini-file-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 3.5h6.5L18.5 8v12.5h-11z"/><path d="M13 3.8V8.5h4.8M9.5 12.5h6M9.5 15.5h4"/></svg>
+              </span>
+              <span class="mini-file-copy"><b>분기 보고서.md</b><small>q3-report.md · 8 KB</small></span>
+              <span class="mini-file-save">저장</span>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <p class="file-note"><span>50 MB까지 전달</span><span>CRLF 그대로</span><span>폴더는 제외</span><span>저장 위치는 직접 선택</span></p>
     </section>
 
     <section class="section shell" id="tour">
       <div class="section-head">
         <div>
           <p class="kicker">앱 내부</p>
-          <h2>중요한 곳은 깊게. 나머지는 조용하게.</h2>
+          <h2>중요한 곳은 깊게.<br />나머지는 조용하게.</h2>
         </div>
         <p class="section-note">800px 읽기 폭, 조용한 플랜 레일, IDE처럼 움직이는 키보드. 빌드 단계도 숨은 번들도 없는 클래식 스크립트 인터페이스.</p>
       </div>
       <div class="gallery">
         <div class="gallery-bar" role="tablist" aria-label="스크린샷">
           <button class="gallery-tab active" type="button" role="tab" aria-selected="true" data-shot="media/blank-media.webp" data-shot-alt="채팅 위에 열린 Blank 미디어 만들기 창과 이미지, 영상, 오디오, 3D 자산 라이브러리.">미디어</button>
-          <button class="gallery-tab" type="button" role="tab" aria-selected="false" data-shot="media/blank-providers.webp" data-shot-alt="여러 API 키와 로테이션, 모델 선택이 보이는 Blank 프로바이더 화면.">프로바이더</button>
+          <button class="gallery-tab" type="button" role="tab" aria-selected="false" data-shot="media/blank-providers.webp" data-shot-alt="여러 API 키와 로테이션, 모델 선택이 보이는 Blank 프로바이더 화면.">모델</button>
           <button class="gallery-tab" type="button" role="tab" aria-selected="false" data-shot="media/blank-chat.webp" data-shot-alt="플랜 레일과 도구 승인이 보이는 Blank 채팅 화면.">채팅</button>
           <span class="gallery-caption" id="gallery-caption">채팅 속 미디어 만들기 · 자산 라이브러리 · 엔진 상태</span>
         </div>
         <div class="gallery-frame">
           <img id="gallery-image" src="media/blank-media.webp" width="1440" height="900" alt="채팅 위에 열린 Blank 미디어 만들기 창과 이미지, 영상, 오디오, 3D 자산 라이브러리." loading="lazy" />
+        </div>
+      </div>
+      <div class="tour-notes">
+        <div><strong>800px</strong><span>읽고 쓰는 데 집중하는 대화 폭</span></div>
+        <div><strong>플랜 레일</strong><span>계획과 파일, 컨텍스트를 옆에</span></div>
+        <div><strong>중요한 승인만</strong><span>일상 작업은 흐르고, 위험한 일은 멈춥니다</span></div>
+      </div>
+    </section>
+
+    <section class="local-band">
+      <div class="shell local-inner">
+        <div class="local-copy">
+          <p class="kicker">로컬 우선</p>
+          <h2>클라우드는 선택입니다.</h2>
+          <p>Blank는 계정 없이 열리고, 키 없이도 둘러볼 수 있습니다. 설정과 세션, 메모리와 파일은 이 기기의 일반 파일로 남습니다.</p>
+        </div>
+        <div class="local-list">
+          <div>
+            <span>01</span>
+            <strong>키는 기기에</strong>
+            <p>API 키는 <code>~/.blank</code>의 설정 파일에만 저장되며 화면에는 마스킹된 상태만 보입니다.</p>
+          </div>
+          <div>
+            <span>02</span>
+            <strong>요청은 직접</strong>
+            <p>모델 호출은 선택한 프로바이더로 이 컴퓨터에서 바로 나갑니다. 중간 서버가 없습니다.</p>
+          </div>
+          <div>
+            <span>03</span>
+            <strong>파일은 로컬</strong>
+            <p>세션, 미디어, Paper, 체크포인트는 로컬 라이브러리에 쌓이고 원하는 형식으로 내보냅니다.</p>
+          </div>
         </div>
       </div>
     </section>
@@ -161,7 +279,7 @@
       <div class="section-head">
         <div>
           <p class="kicker">설치</p>
-          <h2>한 번의 클릭. 그다음은 조용한 공간.</h2>
+          <h2>한 번의 클릭.<br />그다음은 조용한 공간.</h2>
         </div>
         <div class="release-pill" id="release-pill" aria-live="polite">
           <span class="pulse" aria-hidden="true"></span>
@@ -232,12 +350,20 @@
           <p>아니요. Blank는 키 없이도 열리고 채팅, 미디어, 페이퍼, 설정을 둘러볼 수 있습니다. 실제 모델 호출이 필요할 때 프로바이더를 연결하세요.</p>
         </details>
         <details>
-          <summary>데이터는 어디에 저장되나요?</summary>
-          <p>모든 것이 <code>~/.blank</code> 아래의 일반 파일입니다. 설정, 세션, 메모리, 스킬, 체크포인트, 미디어가 여기에 있습니다. <code>BLANK_HOME</code>으로 위치를 옮길 수 있습니다. 요청은 당신의 컴퓨터에서 선택한 프로바이더로 바로 전송됩니다.</p>
+          <summary>에이전트가 결과물을 파일로 줄 수 있나요?</summary>
+          <p>네. 모델이 작업 공간에 파일을 만들고 deliver_file을 호출하면 채팅에 파일 카드가 나타납니다. 카드의 저장 버튼으로 원하는 위치에 저장할 수 있습니다. 보고서, 스크립트, 데이터 내보내기에 모두 쓸 수 있습니다.</p>
         </details>
         <details>
-          <summary>에이전트가 제 컴퓨터와 파일을 쓸 수 있나요?</summary>
-          <p>허용한 도구 안에서만 가능합니다. 쓰기, 명령 실행, 컴퓨터 유즈, 미디어 생성은 기본적으로 승인을 요청합니다. 설정의 승인 매트릭스가 최종 기준입니다.</p>
+          <summary>파일 일부만 수정할 수 있나요?</summary>
+          <p>네. edit_file은 정확한 문자열 치환과 1부터 시작하는 줄 범위 교체를 모두 지원합니다. 지정한 줄만 바뀌고 나머지 내용과 CRLF 줄바꿈은 유지됩니다. 수정 전에 체크포인트가 생겨 되돌릴 수 있습니다.</p>
+        </details>
+        <details>
+          <summary>받아쓰기는 어떻게 동작하나요?</summary>
+          <p>입력창의 마이크를 누르면 그동안만 녹음합니다. 녹음을 멈추면 설정에서 고른 OpenAI 호환 프로바이더의 /audio/transcriptions 엔드포인트로 한 번 전송하고, 텍스트를 입력창에 넣습니다. 녹음은 디스크에 저장되지 않습니다.</p>
+        </details>
+        <details>
+          <summary>데이터는 어디에 저장되나요?</summary>
+          <p>모든 것이 <code>~/.blank</code> 아래의 일반 파일입니다. 설정, 세션, 메모리, 스킬, 체크포인트, 미디어가 여기에 있습니다. <code>BLANK_HOME</code>으로 위치를 옮길 수 있습니다. 요청은 당신의 컴퓨터에서 선택한 프로바이더로 바로 전송됩니다.</p>
         </details>
         <details>
           <summary>원격 제어는 항상 켜져 있나요?</summary>
@@ -261,7 +387,7 @@
         <p>Blank를 받고 세션 하나를 여세요. 나머지는 하네스가 처리합니다.</p>
         <div class="hero-actions">
           <a class="btn btn-primary btn-lg" id="closing-download" href="#install">
-            <span class="btn-label">Blank 받기</span>
+            <span class="btn-label">다운로드 선택</span>
             <span class="btn-sub">Windows · macOS · Linux</span>
           </a>
           <a class="btn btn-ghost btn-lg" data-repo-link href="https://github.com" target="_blank" rel="noreferrer">소스 보기</a>
@@ -272,13 +398,15 @@
 
   <footer class="site-foot">
     <div class="shell foot-inner">
-      <div>
+      <div class="foot-brand">
         <a class="wordmark" href="#top"><img class="wordmark-mark" src="media/icon.svg" alt="" width="20" height="20" />blank</a>
         <p>조용하고 로컬 우선인 에이전트 하네스.<br />MIT 라이선스. 당신의 것으로 남도록.</p>
+        <span class="foot-version" id="site-version">v1.1.5</span>
       </div>
       <div class="foot-links">
         <a data-repo-link href="https://github.com" target="_blank" rel="noreferrer">GitHub</a>
         <a href="#features">기능</a>
+        <a href="#files">파일</a>
         <a href="#install">설치</a>
         <a href="#faq">FAQ</a>
         <a id="foot-releases" href="#install" target="_blank" rel="noreferrer">릴리스</a>

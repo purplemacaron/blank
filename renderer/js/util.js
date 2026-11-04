@@ -229,9 +229,30 @@
   };
   const REASONING_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
+  function reasoningFallback(fullId) {
+    const value = String(fullId || '');
+    const slash = value.indexOf('/');
+    if (slash <= 0) return null;
+    const providerId = value.slice(0, slash).toLowerCase();
+    const id = value.slice(slash + 1).toLowerCase();
+    if (!id) return null;
+    if (/gpt-oss|gpt_oss/.test(id)) {
+      return { levels: ['low', 'medium', 'high'], default: 'medium', transport: 'openai-effort', fixed: false };
+    }
+    if (/qwen3|qwq|deepseek-r1|reasoner|thinking/.test(id)) {
+      return { levels: [], default: '', transport: 'none', fixed: true, fixedLabel: 'Always on' };
+    }
+    if (providerId === 'ollama' || providerId === 'lmstudio' || providerId.startsWith('custom_')) {
+      return { levels: ['none'], default: 'none', transport: 'none', fixed: true };
+    }
+    return null;
+  }
+
   function reasoningProfile(catalog, fullId) {
     const model = modelOf(catalog, fullId);
-    return model?.reasoning || null;
+    if (model?.reasoning) return model.reasoning;
+    if (model) return null;
+    return reasoningFallback(fullId);
   }
 
   function normalizeReasoning(profile, value) {

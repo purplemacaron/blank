@@ -60,7 +60,8 @@ button{cursor:pointer}
 .empty h2{font-size:17px;color:var(--ink);margin:12px 0 5px;letter-spacing:-.02em}
 .empty p{margin:0 auto;max-width:320px;line-height:1.55}
 .approve{border:1px solid #f1dcb7;background:#fffaf0;border-radius:11px;padding:11px 12px;margin:0 0 14px}
-.approve-title{font-size:11px;font-weight:650;color:var(--amber);display:flex;gap:5px;align-items:center}
+.approve-title{font-size:11px;font-weight:650;color:var(--amber);display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.approve-reason{font-size:9px;font-weight:600;padding:1px 5px;border:1px solid #f1dcb7;border-radius:4px;background:#fff;color:#8a6a24}
 .approve-desc{font-size:12px;color:#6d5629;margin-top:4px;overflow-wrap:anywhere}
 .approve-row{display:flex;gap:7px;margin-top:9px}
 .btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:550;display:inline-flex;align-items:center;justify-content:center;gap:6px}
@@ -123,7 +124,7 @@ button{cursor:pointer}
       <button class="send" id="send" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M5 12l14-7-6 14-2-6-6-1z"/><path d="M13 13l6-8"/></svg></button>
     </div>
     <div class="composer-foot">
-      <div class="mode" id="mode"><button data-mode="agent" class="active">Agent</button><button data-mode="design">Design</button><button data-mode="plan">Plan</button><button data-mode="ask">Ask</button></div>
+      <div class="mode" id="mode"><button data-mode="agent" class="active">Agent</button><button data-mode="coding">Coding</button><button data-mode="design">Design</button><button data-mode="plan">Plan</button><button data-mode="ask">Ask</button></div>
       <span id="model">—</span>
       <span class="foot-spacer"></span>
       <span id="hint">Paired over your network</span>
@@ -154,6 +155,7 @@ button{cursor:pointer}
   var state={sessions:[],sessionId:null,session:null,live:null,approvals:[],allowApprovals:false,running:false,mode:'agent',busy:false};
   var $=function(id){return document.getElementById(id)};
   var esc=function(value){return String(value==null?'':value).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})};
+  var approvalReasons={'sensitive-file':'Sensitive file','sensitive-data':'Secrets',destructive:'Destructive',external:'External',network:'Network',install:'Installs packages',privilege:'System access',system:'System change',write:'Outside workspace',unknown:'Unfamiliar command',remote:'Remote host',policy:'Policy'};
   var time=function(iso){ if(!iso)return ''; try{return new Date(iso).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}catch(e){return ''} };
 
   function api(path, options){
@@ -235,7 +237,7 @@ button{cursor:pointer}
     var stopBtn=$('stop'); if(stopBtn){ stopBtn.hidden=!state.running; stopBtn.disabled=false; }
     if(state.approvals.length){
       state.approvals.forEach(function(item){
-        html+='<div class="approve"><div class="approve-title">Approval needed · '+esc(item.tool)+'</div><div class="approve-desc">'+esc(item.summary||item.label||'The agent wants to use a tool.')+'</div><div class="approve-row">'+
+        html+='<div class="approve"><div class="approve-title">Approval needed · '+esc(item.tool)+(item.reason&&item.reason!=='policy'?'<span class="approve-reason">'+esc(approvalReasons[item.reason]||item.reason)+'</span>':'')+'</div><div class="approve-desc">'+esc(item.summary||item.label||'The agent wants to use a tool.')+'</div><div class="approve-row">'+
           (state.allowApprovals
             ? '<button class="btn primary grow" data-allow="'+esc(item.approvalId)+'">Allow once</button><button class="btn grow" data-always="'+esc(item.approvalId)+'">Always</button><button class="btn danger grow" data-deny="'+esc(item.approvalId)+'">Deny</button>'
             : '<div style="font-size:11px;color:#8a733f">Approve on the desktop app. Remote approvals are turned off.</div>')+

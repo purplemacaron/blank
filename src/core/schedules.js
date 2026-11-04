@@ -4,7 +4,7 @@ const { appPaths, readJSON, writeJSON, uid } = require('./paths');
 const { isEffort } = require('./reasoning');
 
 const CADENCES = ['hourly', 'daily', 'weekdays'];
-const MODES = ['agent', 'design', 'plan', 'ask'];
+const MODES = ['agent', 'coding', 'design', 'plan', 'ask'];
 
 function schedulesFile() {
   return appPaths().schedules;

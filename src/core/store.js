@@ -27,12 +27,14 @@ function sessionPath(id) {
   return path.join(appPaths().sessions, `${id}.json`);
 }
 
-function createSession({ workspace = '', model = '', mode = 'agent', title = 'New session', reasoningEffort = 'auto' } = {}) {
+function createSession({ workspace = '', model = '', mode = 'agent', title = 'New session', titleSource = 'auto', reasoningEffort = 'auto' } = {}) {
   ensureHome();
   const now = new Date().toISOString();
   const session = {
     id: uid('s_'),
     title,
+    titleSource,
+    titleGeneratedAt: '',
     createdAt: now,
     updatedAt: now,
     workspace,
@@ -43,6 +45,8 @@ function createSession({ workspace = '', model = '', mode = 'agent', title = 'Ne
     tasks: [],
     usage: { input: 0, output: 0 },
     allowTools: [],
+    allowCommands: [],
+    allowFiles: [],
     summary: '',
     compactedCount: 0,
     pinned: false,

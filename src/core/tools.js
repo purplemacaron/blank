@@ -7,6 +7,7 @@ const {
   safePath, readFileText, addMemory, searchMemory, getSkill, listSkills,
   createCheckpoint, isTextFile,
 } = require('./store');
+const { assessToolCall, hasExactApproval, REASONS } = require('./approvals');
 /* Heavy or platform-specific modules load on first use. Chat, planning and
    file edits never pay for sharp, ffmpeg or ssh2 in memory. */
 let mediaCache = null;
@@ -56,18 +57,35 @@ const TOOL_SPECS = [
   {
     name: 'edit_file',
     label: 'Edit file',
-    description: 'Replace an exact string in a workspace file. Read the file first. old_string must match exactly, including whitespace.',
+    description: 'Replace part of a workspace file. Give an exact old_string for a targeted change, or start_line/end_line (1-based, inclusive) to replace only those lines with new_string. Read the file first.',
     parameters: {
       type: 'object',
       properties: {
         path: { type: 'string' },
-        old_string: { type: 'string', description: 'Exact text to replace.' },
-        new_string: { type: 'string', description: 'Replacement text.' },
-        replace_all: { type: 'boolean', description: 'Replace every occurrence (default false).' },
+        old_string: { type: 'string', description: 'Exact text to replace. Required unless start_line is set.' },
+        new_string: { type: 'string', description: 'Replacement text. May be empty to delete the selected lines.' },
+        start_line: { type: 'integer', description: 'First line to replace (1-based).' },
+        end_line: { type: 'integer', description: 'Last line to replace (1-based, inclusive). Defaults to start_line.' },
+        replace_all: { type: 'boolean', description: 'Replace every occurrence of old_string (default false).' },
       },
-      required: ['path', 'old_string', 'new_string'],
+      required: ['path', 'new_string'],
     },
     mutating: true,
+  },
+  {
+    name: 'deliver_file',
+    label: 'Deliver file',
+    description: 'Present a finished workspace file to the user as a downloadable file card in chat. Create or edit the file first, then call this with its path. Use it whenever the user asked to receive a document, report, script, data export or other file.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Path relative to the workspace root.' },
+        title: { type: 'string', description: 'Short human title for the card. Defaults to the file name.' },
+        note: { type: 'string', description: 'One line describing what the file contains.' },
+      },
+      required: ['path'],
+    },
+    planSafe: true,
   },
   {
     name: 'list_dir',
@@ -582,28 +600,70 @@ async function toolWriteFile(args, ctx) {
 async function toolEditFile(args, ctx) {
   const full = safePath(ctx.workspace, args.path);
   if (!fs.existsSync(full)) return { content: `File not found: ${args.path}`, isError: true };
+  if (fs.statSync(full).isDirectory()) return { content: 'That is a directory. Use list_dir.', isError: true };
   const before = readFileText(full);
-  const oldString = String(args.old_string ?? '');
   const newString = String(args.new_string ?? '');
-  if (!oldString) return { content: 'old_string cannot be empty.', isError: true };
-  const count = before.split(oldString).length - 1;
-  if (count === 0) {
-    return {
-      content: `Could not find old_string in ${args.path}. Read the file and copy the exact text, including indentation.`,
-      isError: true,
-    };
-  }
+  const useRange = args.start_line != null || args.end_line != null;
   let after;
-  if (args.replace_all) after = before.split(oldString).join(newString);
-  else after = before.replace(oldString, newString);
+  let changeSummary;
+
+  if (useRange) {
+    const start = Number(args.start_line);
+    const end = args.end_line == null ? start : Number(args.end_line);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) {
+      return { content: 'start_line and end_line must be 1-based line numbers with start_line before or equal to end_line.', isError: true };
+    }
+    const eol = before.includes('\r\n') ? '\r\n' : '\n';
+    const lines = before.split(/\r?\n/);
+    if (end > lines.length) {
+      return { content: `end_line ${end} is past the end of ${args.path} (${lines.length} lines). Read the file again.`, isError: true };
+    }
+    const replacement = newString === '' ? [] : newString.split(/\r?\n/);
+    after = [...lines.slice(0, start - 1), ...replacement, ...lines.slice(end)].join(eol);
+    changeSummary = `Replaced lines ${start}–${end} with ${replacement.length} line${replacement.length === 1 ? '' : 's'}.`;
+  } else {
+    const oldString = String(args.old_string ?? '');
+    if (!oldString) return { content: 'Provide old_string for a text replacement, or start_line/end_line for a line range.', isError: true };
+    const count = before.split(oldString).length - 1;
+    if (count === 0) {
+      return {
+        content: `Could not find old_string in ${args.path}. Read the file and copy the exact text, including indentation. For a whole block, pass start_line/end_line instead.`,
+        isError: true,
+      };
+    }
+    if (args.replace_all) after = before.split(oldString).join(newString);
+    else after = before.replace(oldString, newString);
+    changeSummary = `Replaced ${args.replace_all ? count : 1} occurrence${!args.replace_all || count === 1 ? '' : 's'}.`;
+  }
+
   const checkpointId = createCheckpoint({ sessionId: ctx.session?.id || '', filePath: full, before });
   fs.writeFileSync(full, after, 'utf8');
   const stats = lineStats(before, after);
   const entry = { path: rel(ctx.workspace, full), bytes: Buffer.byteLength(after), ...stats };
   noteFile(ctx, entry, 'edit');
   return {
-    content: `Edited ${entry.path}. Replaced ${args.replace_all ? count : 1} occurrence${!args.replace_all || count === 1 ? '' : 's'}.${stats.added || stats.removed ? ` +${stats.added} / -${stats.removed} lines.` : ''}`,
-    meta: { ...entry, checkpointId },
+    content: `Edited ${entry.path}. ${changeSummary}${stats.added || stats.removed ? ` +${stats.added} / -${stats.removed} lines.` : ''}`,
+    meta: { ...entry, checkpointId, ...(useRange ? { startLine: Number(args.start_line), endLine: args.end_line == null ? Number(args.start_line) : Number(args.end_line) } : {}) },
+  };
+}
+
+async function toolDeliverFile(args, ctx) {
+  const full = safePath(ctx.workspace, args.path);
+  if (!fs.existsSync(full)) {
+    return { content: `File not found: ${args.path}. Create the file before delivering it.`, isError: true };
+  }
+  const stat = fs.statSync(full);
+  if (stat.isDirectory()) return { content: 'That is a directory. Deliver a file, not a folder.', isError: true };
+  if (stat.size > 50 * 1024 * 1024) return { content: 'That file is larger than 50 MB. Tell the user where it is instead of delivering it in chat.', isError: true };
+  const relative = rel(ctx.workspace, full);
+  const fileName = path.basename(full);
+  const title = String(args.title || fileName).trim().slice(0, 120) || fileName;
+  const note = String(args.note || '').trim().slice(0, 240);
+  const entry = { path: relative, bytes: stat.size, title, note, fileName };
+  noteFile(ctx, entry, 'deliver');
+  return {
+    content: `Delivered ${relative} (${humanSize(stat.size)}) as a file card. The user can save it anywhere from chat.`,
+    meta: { ...entry, deliverable: true },
   };
 }
 
@@ -1099,6 +1159,7 @@ const HANDLERS = {
   read_file: toolReadFile,
   write_file: toolWriteFile,
   edit_file: toolEditFile,
+  deliver_file: toolDeliverFile,
   list_dir: toolListDir,
   glob: toolGlob,
   grep: toolGrep,
@@ -1143,15 +1204,44 @@ function getToolDefinitions({ mode = 'agent', mcpTools = [], config = null } = {
   return [...local, ...remote];
 }
 
-function resolvePermission(name, ctx) {
-  if (ctx.session?.allowTools?.includes(name)) return 'allow';
-  if (name.startsWith('mcp__')) {
-    const server = name.split('__')[1];
-    if (ctx.session?.allowTools?.includes(`mcp:${server}`)) return 'allow';
-    if (ctx.session?.allowTools?.includes('mcp:*')) return 'allow';
-  }
+function configuredPermission(name, ctx) {
   if (name.startsWith('mcp__')) return ctx.config?.permissions?.mcp || 'ask';
   return ctx.config?.permissions?.[name] || 'ask';
+}
+
+function sessionAllows(name, ctx) {
+  const allow = ctx.session?.allowTools || [];
+  if (allow.includes(name)) return true;
+  if (name.startsWith('mcp__')) {
+    const server = name.split('__')[1];
+    return allow.includes(`mcp:${server}`) || allow.includes('mcp:*');
+  }
+  return false;
+}
+
+/**
+ * Combine the explicit policy with the risk heuristic. In "important" mode a
+ * tool configured as "ask" may still run when the call is routine; destructive,
+ * external, privileged, credential-touching and unknown calls still stop.
+ */
+function permissionFor(name, args, ctx) {
+  const configured = configuredPermission(name, ctx);
+  if (configured === 'deny') return { level: 'deny', reason: 'blocked' };
+  if (hasExactApproval(ctx.session, name, args)) return { level: 'allow', reason: '' };
+
+  const risk = assessToolCall(name, args);
+  const exactRisk = name === 'run_command' || name === 'ssh_run'
+    || risk?.reason === REASONS.sensitiveFile;
+  if (!exactRisk && sessionAllows(name, ctx)) return { level: 'allow', reason: '' };
+  if (configured === 'allow') return { level: 'allow', reason: '' };
+
+  const mode = ctx.config?.approvals?.mode === 'all' ? 'all' : 'important';
+  if (mode === 'important' && risk?.level === 'allow') return { level: 'allow', reason: '' };
+  return { level: 'ask', reason: risk?.reason || REASONS.policy };
+}
+
+function resolvePermission(name, ctx) {
+  return permissionFor(name, {}, ctx).level;
 }
 
 async function executeTool(call, ctx) {
@@ -1165,13 +1255,18 @@ async function executeTool(call, ctx) {
     return { content: 'Plan mode is read-only. Describe the change in your plan; the user can switch to Agent mode to apply it.', isError: true };
   }
 
-  const permission = resolvePermission(name, ctx);
-  if (permission === 'deny') {
+  const permission = permissionFor(name, args, ctx);
+  if (permission.level === 'deny') {
     return { content: `Tool "${name}" is blocked in Settings.`, isError: true };
   }
-  if (permission === 'ask' && name !== 'delegate') {
+  if (permission.level === 'ask' && name !== 'delegate') {
     if (!ctx.requestApproval) return { content: 'Approval is required but unavailable.', isError: true };
-    const decision = await ctx.requestApproval({ tool: name, args, label: spec?.label || name });
+    const decision = await ctx.requestApproval({
+      tool: name,
+      args,
+      label: spec?.label || name,
+      reason: permission.reason,
+    });
     if (decision === 'deny') {
       return { content: 'The user denied this tool call. Stop and ask how they would like to proceed.', isError: true };
     }
@@ -1232,6 +1327,7 @@ function summarizeArgs(name, args = {}) {
   if (name === 'team_delegate') return `${(args.members || []).length || 'all'} agents · ${args.task || ''}`;
   if (name === 'ssh_run') return `${args.host || ''} · ${args.command || ''}`;
   if (name === 'generate_media') return `${args.kind || 'image'} · ${args.prompt || ''}`;
+  if (name === 'deliver_file') return args.title || args.path || '';
   if (name === 'edit_media') return `${args.id || ''}${args.prompt ? ` · ${args.prompt}` : ''}`;
   if (name === 'list_media') return [args.kind, args.query].filter(Boolean).join(' · ');
   if (name === 'create_paper') return `${args.kind || 'html'} · ${args.title || args.description || String(args.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70)}`;
@@ -1242,6 +1338,6 @@ function summarizeArgs(name, args = {}) {
 }
 
 module.exports = {
-  TOOL_SPECS, getToolDefinitions, getToolDefinition, executeTool, resolvePermission,
+  TOOL_SPECS, getToolDefinitions, getToolDefinition, executeTool, resolvePermission, permissionFor,
   summarizeArgs, compileGlob, htmlToText,
 };

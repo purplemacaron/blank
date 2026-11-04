@@ -170,12 +170,19 @@ function engineAvailability() {
       models: ['auto'],
     },
   ];
-  const remote = cloud.cloudProviderList().map((provider) => ({
-    ...provider,
-    available: hasKey(provider.keyId),
-    hasKey: hasKey(provider.keyId),
-    vendor: 'cloud',
-  }));
+  const remote = cloud.cloudProviderList(config).map((provider) => {
+    const providerKey = cloud.resolveCloudKey(config, { ...provider, keyProvider: provider.keyId });
+    const keyPresent = Boolean(providerKey) || hasKey(provider.keyId);
+    const endpoint = provider.id === 'openai-compatible' ? (provider.baseUrl || '') : '';
+    const available = provider.id === 'openai-compatible' ? Boolean(keyPresent && endpoint) : keyPresent;
+    return {
+      ...provider,
+      available,
+      hasKey: keyPresent,
+      vendor: 'cloud',
+      endpoint,
+    };
+  });
   return { local, cloud: remote };
 }
 
@@ -661,10 +668,14 @@ async function generateCloudAsset(job, prompt, options, producedKinds) {
   if (!provider) throw new Error(`Unknown cloud media engine: ${options.engine}`);
   if (!provider.kinds.includes(options.kind)) throw new Error(`${provider.label} cannot generate ${KIND_LABEL[options.kind]}`);
   const config = readConfig();
-  const apiKey = cloud.resolveCloudKey(config, provider);
-  if (!apiKey) throw new Error(`Add a ${provider.keyLabel} in Studio → Engines to use ${provider.label}`);
-  const models = typeof cloud.modelsForKind === 'function' ? cloud.modelsForKind(provider, options.kind) : provider.models;
-  const model = options.model || models[0] || provider.models[0];
+  const hydrated = cloud.cloudProviderList(config).find((entry) => entry.id === provider.id) || provider;
+  const apiKey = cloud.resolveCloudKey(config, { ...hydrated, keyProvider: provider.keyProvider || hydrated.keyId });
+  if (!apiKey) throw new Error(`Add a ${hydrated.keyLabel} in Create media → Engines to use ${hydrated.label}`);
+  if (hydrated.id === 'openai-compatible' && !cloud.compatEndpoint(config)) {
+    throw new Error('Add the OpenAI-compatible base URL in Create media → Engines first');
+  }
+  const models = typeof cloud.modelsForKind === 'function' ? cloud.modelsForKind(hydrated, options.kind) : hydrated.models;
+  const model = options.model || models[0] || hydrated.models[0];
   const paths = libraryPaths();
   const tmpBase = path.join(paths.temp, `${job.id}-${provider.id}`);
   await fs.promises.mkdir(paths.temp, { recursive: true });
@@ -674,6 +685,7 @@ async function generateCloudAsset(job, prompt, options, producedKinds) {
     kind: options.kind,
     prompt,
     model,
+    baseUrl: provider.id === 'openai-compatible' ? cloud.compatEndpoint(config) : '',
     options,
     tmpFile: tmpBase,
     signal: job.signal,
@@ -1438,6 +1450,13 @@ module.exports = {
   engineAvailability,
   listVoices: () => voice.listVoices(),
   testEndpoint: (endpoint) => comfy.ping(endpoint),
+  discoverCompatModels: (input) => cloud.discoverCompatModels(input),
+  classifyCompatModels: cloud.classifyCompatModels,
+  compatEndpoint: (config) => cloud.compatEndpoint(config),
+  resolveCloudKey: (config, providerId) => cloud.resolveCloudKey(
+    config,
+    cloud.providerFor(String(providerId || '').replace(/^cloud:/, '')),
+  ),
   publicItem,
   mediaUrl,
 };

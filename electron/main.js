@@ -189,7 +189,18 @@ function createWindow() {
     if (/^https?:/i.test(url)) shell.openExternal(url);
   });
 
-  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  const allowMediaRequest = (permission, requestingUrl, mediaTypes) => {
+    if (permission !== 'media') return false;
+    if (!String(requestingUrl || '').startsWith('file://')) return false;
+    if (Array.isArray(mediaTypes) && mediaTypes.includes('video')) return false;
+    return true;
+  };
+  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    callback(allowMediaRequest(permission, details?.requestingUrl || webContents.getURL(), details?.mediaTypes));
+  });
+  mainWindow.webContents.session.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => (
+    allowMediaRequest(permission, requestingOrigin)
+  ));
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;

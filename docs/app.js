@@ -52,6 +52,11 @@
     return String(release && release.tag_name || cfg.version || '').replace(/^v/i, '');
   }
 
+  function setVersion(release) {
+    var el = document.getElementById('site-version');
+    if (el) el.textContent = 'v' + versionLabel(release);
+  }
+
   function cachedRelease() {
     if (!repo) return null;
     try {
@@ -267,6 +272,7 @@
 
   function renderRelease(release) {
     state.release = release;
+    setVersion(release);
     setPill(release ? '최신 릴리스' : '아직 릴리스가 없습니다', release ? 'live' : 'warn');
     state.assets = release ? pickAssets(release) : { windows: null, mac: null, macIntel: null, linux: null, all: [] };
     var recommendedAsset = state.assets[state.os] || null;
@@ -324,7 +330,7 @@
     if (!tabs.length || !image) return;
     var captions = {
       '미디어': '채팅 속 미디어 만들기 · 자산 라이브러리 · 엔진 상태',
-      '프로바이더': '키 · 로테이션 · 모델 선택',
+      '모델': '키 · 로테이션 · 모델 선택',
       '채팅': '플랜 레일 · 스트리밍 도구 · 승인'
     };
     tabs.forEach(function (tab) {
@@ -382,6 +388,7 @@
   function boot() {
     var year = document.getElementById('year');
     if (year) year.textContent = String(new Date().getFullYear());
+    setVersion(null);
     setRepoLinks();
     setRecommended();
     setupGallery();

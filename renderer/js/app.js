@@ -646,6 +646,7 @@
     if (next === 'chat') {
       if (chatView) chatView.hidden = false;
       if (pageView) pageView.hidden = true;
+      window.Views?.activateChat?.();
     } else {
       if (chatView) chatView.hidden = true;
       if (pageView) {
@@ -1096,18 +1097,19 @@
     });
   }
 
-  async function setDefaultModel(modelId) {
+  async function setDefaultModel(modelId, options = {}) {
     if (!modelId) return;
     try {
       const config = await API.config.update({ defaultModel: modelId });
       if (config) setConfig(config);
       refreshSidebarModel();
       if (window.ChatView?.onConfigChanged) ChatView.onConfigChanged();
-      UI.toast(`Default model: ${modelName(modelId)}`, 'success');
-    } catch (error) { UI.toast(error.message, 'error'); }
+      if (!options.quiet) UI.toast(`Default model: ${modelName(modelId)}`, 'success');
+    } catch (error) { if (!options.quiet) UI.toast(error.message, 'error'); }
   }
 
   App.openModelPicker = openModelPicker;
+  App.setDefaultModel = setDefaultModel;
 
   /* ---------------------------------------------------------------------- CLI */
 
@@ -1219,7 +1221,7 @@
         </div>
         ${stepsMarkup()}
         <div class="onboard-workspace">${icon('folder', 16)}<span>${U.esc(chosenWorkspace || 'Blank Workspace will be created automatically')}</span><button class="btn btn-secondary btn-sm" type="button" data-onboard-choose>Change</button></div>
-        <div class="onboard-note">${icon('shield', 12)}<span>Writes and shell commands ask for approval by default. Sessions, memory and media live in <code>~/.blank</code>, never in your repository.</span></div>
+        <div class="onboard-note">${icon('shield', 12)}<span>Blank asks only for important actions; routine local edits and safe commands run on their own. Sessions, memory and media live in <code>~/.blank</code>, never in your repository.</span></div>
         <div class="onboard-actions">
           <button class="btn btn-ghost" type="button" data-onboard-back>Back</button>
           <button class="btn btn-primary" type="button" data-onboard-finish ${saving ? 'disabled' : ''}>${saving ? '<span class="spinner" style="width:11px;height:11px"></span> Setting up…' : 'Start using Blank'}</button>
@@ -1333,6 +1335,9 @@
         break;
       case 'session:updated':
         if (event.session) upsertSession(event.session);
+        break;
+      case 'title':
+        if (event.sessionId && event.title) upsertSession({ id: event.sessionId, title: event.title });
         break;
       case 'workspace:changed':
         refreshWorkspaceTree();
@@ -1552,6 +1557,7 @@
         theme: 'light',
         onboarded: true,
         permissions: {},
+        approvals: { mode: 'important' },
         agent: {},
         ui: { railOpen: true },
         providers: {},

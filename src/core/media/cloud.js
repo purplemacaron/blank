@@ -128,12 +128,74 @@ const CLOUD_PROVIDERS = [
     },
     note: 'Fast hosted image, video, audio and 3D models.',
   },
+  {
+    id: 'openai-compatible',
+    label: 'OpenAI compatible',
+    vendor: 'openai-compatible',
+    keyProvider: 'openaiCompatible',
+    keyLabel: 'OpenAI-compatible API key',
+    kinds: ['image', 'video'],
+    models: [],
+    modelsByKind: { image: [], video: [] },
+    note: 'Any server that follows the OpenAI image and video APIs — NVIDIA NIM, local NIM, vLLM media servers.',
+    dynamic: true,
+  },
 ];
 
 const PROVIDER_MAP = Object.fromEntries(CLOUD_PROVIDERS.map((p) => [p.id, p]));
 
-function cloudProviderList() {
-  return CLOUD_PROVIDERS.map(({ keyProvider, ...rest }) => ({ ...rest, keyId: keyProvider }));
+function normalizeCompatBase(raw) {
+  let value = String(raw || '').trim().replace(/\/+$/, '');
+  if (!value) return '';
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return '';
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+  if (!/\/v1$/i.test(parsed.pathname)) value += '/v1';
+  return value;
+}
+
+/** The media endpoint: the saved value, or a NVIDIA custom provider already in use. */
+function compatEndpoint(config) {
+  const saved = normalizeCompatBase(config?.media?.endpoints?.openaiCompatible);
+  if (saved) return saved;
+  const candidates = [];
+  for (const provider of config?.customProviders || []) {
+    const base = config?.providers?.[provider.id]?.baseUrl || provider.baseUrl || '';
+    if (/integrate\.api\.nvidia\.com/i.test(base)) candidates.push(base);
+  }
+  for (const [id, stored] of Object.entries(config?.providers || {})) {
+    if (/nvidia/i.test(id) && stored?.baseUrl && /integrate\.api\.nvidia\.com/i.test(stored.baseUrl)) {
+      candidates.push(stored.baseUrl);
+    }
+  }
+  return normalizeCompatBase(candidates[0] || '');
+}
+
+/** Models saved for the compatible engine, falling back to an NVIDIA media guess. */
+function compatModels(config, kind) {
+  const models = config?.media?.openaiModels;
+  const list = Array.isArray(models?.[kind]) ? models[kind] : [];
+  return list.map((model) => String(model || '').trim()).filter(Boolean);
+}
+
+function cloudProviderList(config) {
+  return CLOUD_PROVIDERS.map(({ keyProvider, ...rest }) => {
+    if (rest.id !== 'openai-compatible') return { ...rest, keyId: keyProvider };
+    const image = compatModels(config, 'image');
+    const video = compatModels(config, 'video');
+    return {
+      ...rest,
+      keyId: keyProvider,
+      models: [...image, ...video],
+      modelsByKind: { image, video },
+      endpoint: compatEndpoint(config),
+      baseUrl: compatEndpoint(config),
+    };
+  });
 }
 
 function providerFor(id) {
@@ -146,13 +208,44 @@ function modelsForKind(provider, kind) {
   return provider?.models || [];
 }
 
+function storedProviderKey(entry) {
+  if (!entry) return '';
+  if (entry.apiKey) return entry.apiKey;
+  const keys = Array.isArray(entry.keys) ? entry.keys.filter((item) => item && (item.key || item.apiKey)) : [];
+  if (!keys.length) return '';
+  const active = keys.find((item) => item.id === entry.activeKeyId)
+    || keys.find((item) => item.active)
+    || keys[0];
+  return active.key || active.apiKey || '';
+}
+
 function resolveCloudKey(config, provider) {
   if (!provider) return '';
   const mediaKeys = (config.media && config.media.keys) || {};
   if (mediaKeys[provider.keyProvider]) return mediaKeys[provider.keyProvider];
   const stored = config.providers && config.providers[provider.keyProvider];
-  if (stored && stored.apiKey) return stored.apiKey;
-  if (provider.keyProvider === 'fal' && stored && stored.apiKey) return stored.apiKey;
+  const storedKey = storedProviderKey(stored);
+  if (storedKey) return storedKey;
+  if (provider.keyProvider === 'openaiCompatible') {
+    const base = compatEndpoint(config);
+    if (!base) return '';
+    const host = (() => { try { return new URL(base).host; } catch { return ''; } })();
+    for (const [id, entry] of Object.entries(config.providers || {})) {
+      if (!host) continue;
+      const custom = (config.customProviders || []).find((item) => item.id === id);
+      const baseUrl = entry?.baseUrl || custom?.baseUrl || '';
+      if (!baseUrl) continue;
+      try {
+        if (new URL(baseUrl).host === host) return storedProviderKey(entry);
+      } catch {}
+    }
+    if (host === 'integrate.api.nvidia.com' && config.providers?.['custom_nvidia-nim']) {
+      return storedProviderKey(config.providers['custom_nvidia-nim']);
+    }
+    if (host === 'api.openai.com' && config.providers?.openai) {
+      return storedProviderKey(config.providers.openai);
+    }
+  }
   return '';
 }
 
@@ -825,6 +918,333 @@ async function generateHiggsfield(ctx) {
   return { file: saved.file, mime, meta: { requestId: status.request_id || created.request_id || '', model } };
 }
 
+/* --------------------------------------------------- OpenAI compatible */
+
+const COMPAT_DONE = new Set(['completed', 'complete', 'succeeded', 'success', 'done', 'ready', 'finished']);
+const COMPAT_FAILED = new Set(['failed', 'error', 'cancelled', 'canceled', 'rejected']);
+const NVIDIA_IMAGE_SIZES = [768, 832, 896, 960, 1024, 1088, 1152, 1216, 1280, 1344];
+
+function isHostedNvidia(base) {
+  try {
+    const host = new URL(base).host.toLowerCase();
+    return host === 'integrate.api.nvidia.com' || host === 'ai.api.nvidia.com';
+  } catch {
+    return false;
+  }
+}
+
+/** NVIDIA's hosted genai API only accepts these widths and heights. */
+function nvidiaImageSize(options = {}) {
+  let width = 1024;
+  let height = 1024;
+  const match = String(options.size || '').match(/^(\d{3,4})\s*[x×]\s*(\d{3,4})$/i);
+  if (match) {
+    width = Number(match[1]);
+    height = Number(match[2]);
+  } else if (options.aspect === '16:9') {
+    width = 1344;
+    height = 768;
+  } else if (options.aspect === '9:16') {
+    width = 768;
+    height = 1344;
+  }
+  const snap = (value) => NVIDIA_IMAGE_SIZES.reduce((best, size) => (
+    Math.abs(size - value) < Math.abs(best - value) ? size : best
+  ), 1024);
+  return { width: snap(width), height: snap(height) };
+}
+
+function compatStatus(json) {
+  return String(json?.status || json?.state || json?.data?.[0]?.status || '').toLowerCase();
+}
+
+function b64Buffer(value) {
+  const clean = String(value || '').replace(/^data:[^,]*,/, '').trim();
+  if (!clean) return null;
+  const buffer = Buffer.from(clean, 'base64');
+  return buffer.length ? buffer : null;
+}
+
+/** Walk common response shapes (OpenAI data[], NVIDIA artifacts[], raw jobs). */
+function compatMedia(json) {
+  const seen = new Set();
+  const queue = [json];
+  let guard = 0;
+  while (queue.length && guard < 40) {
+    guard += 1;
+    const node = queue.shift();
+    if (!node || seen.has(node)) continue;
+    if (typeof node === 'string') {
+      if (/^https?:\/\//i.test(node)) return { url: node };
+      if (node.length > 200 && /^[A-Za-z0-9+/=\r\n]+$/.test(node)) {
+        const buffer = b64Buffer(node);
+        if (buffer) return { buffer };
+      }
+      continue;
+    }
+    if (typeof node !== 'object') continue;
+    seen.add(node);
+    const b64 = node.b64_json || node.base64 || node.b64 || node.image_base64 || node.video_base64
+      || (typeof node.image === 'string' && !/^https?:/i.test(node.image) ? node.image : '');
+    if (b64) {
+      const buffer = b64Buffer(b64);
+      if (buffer) return { buffer };
+    }
+    const url = node.url || node.video_url || node.videoUrl || node.content_url || node.download_url
+      || node.output_url || (typeof node.image === 'string' && /^https?:/i.test(node.image) ? node.image : '')
+      || (typeof node.video === 'string' && /^https?:/i.test(node.video) ? node.video : '')
+      || (typeof node.content === 'string' && /^https?:/i.test(node.content) ? node.content : '');
+    if (url) return { url };
+    for (const key of ['data', 'artifacts', 'images', 'videos', 'output', 'outputs', 'result', 'results', 'response', 'video', 'image', 'generated_images', 'predictions']) {
+      const value = node[key];
+      if (!value) continue;
+      if (Array.isArray(value)) queue.push(...value.slice(0, 4));
+      else queue.push(value);
+    }
+  }
+  return {};
+}
+
+async function fetchBinary(url, apiKey, signal, maxBytes) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 300000);
+  const onAbort = () => controller.abort();
+  if (signal) signal.addEventListener('abort', onAbort, { once: true });
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { authorization: `Bearer ${apiKey}`, accept: '*/*' },
+      signal: controller.signal,
+      redirect: 'follow',
+    });
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onAbort);
+  }
+  if (!response.ok) throw new Error(`Video download failed (${response.status})`);
+  const declared = Number(response.headers.get('content-length') || 0);
+  if (declared && declared > maxBytes) throw new Error('Video exceeded the size limit');
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!buffer.length) throw new Error('Video download was empty');
+  if (buffer.length > maxBytes) throw new Error('Video exceeded the size limit');
+  return { buffer, mime: response.headers.get('content-type') || 'video/mp4' };
+}
+
+async function discoverCompatModels({ baseUrl, apiKey, signal }) {
+  const base = normalizeCompatBase(baseUrl);
+  if (!base) throw new Error('Enter a valid OpenAI-compatible base URL.');
+  if (!apiKey) throw new Error('Add an API key for this endpoint first.');
+  const json = await fetchJson(`${base}/models`, {
+    headers: { authorization: `Bearer ${apiKey}`, accept: 'application/json' },
+    signal,
+    timeout: 60000,
+  });
+  const rows = Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : [];
+  const ids = rows.map((row) => (typeof row === 'string' ? row : row?.id || row?.name || '')).filter(Boolean);
+  return [...new Set(ids)];
+}
+
+function classifyCompatModels(ids) {
+  const image = [];
+  const video = [];
+  for (const id of ids) {
+    if (/(wan2|wan-ai|veo|kling|sora|cosmos-predict|luma|pika|runway|mochi|animate|i2v|t2v|text-to-video)/i.test(id)) {
+      video.push(id);
+    } else if (/(flux|stable-diffusion|sdxl|dall-e|\bimagen\b|qwen-image|seedream|playground|ernie-image|diffusion(?!gemma))/i.test(id)) {
+      image.push(id);
+    }
+  }
+  return { image, video };
+}
+
+async function generateOpenAICompatible(ctx) {
+  const { apiKey, kind, prompt, model, tmpFile, options, onProgress, signal } = ctx;
+  const base = normalizeCompatBase(ctx.baseUrl);
+  if (!base) throw new Error('Set an OpenAI-compatible base URL in Engines first.');
+  if (!model) throw new Error('Choose an OpenAI-compatible model in the media composer.');
+  const headers = {
+    authorization: `Bearer ${apiKey}`,
+    'content-type': 'application/json',
+    accept: 'application/json',
+  };
+
+  if (kind === 'image' && isHostedNvidia(base)) {
+    const { width, height } = nvidiaImageSize(options);
+    const hostedUrl = `https://ai.api.nvidia.com/v1/genai/${String(model).split('/').map(encodeURIComponent).join('/')}`;
+    onProgress(0.2, 'rendering');
+    const json = await fetchJson(hostedUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        prompt,
+        width,
+        height,
+        seed: Math.max(0, Math.round(Number(options.seed) || 0)),
+        steps: 4,
+      }),
+      signal,
+      timeout: 590000,
+    });
+    onProgress(0.75, 'downloading');
+    const media = compatMedia(json);
+    if (!media.url && !media.buffer) throw new Error('NVIDIA returned no image. Check the model name and API access.');
+    const saved = await saveInlineOrFetch({
+      url: media.url,
+      buffer: media.buffer,
+      tmpFile: tmpFile + extForMime(media.mime, '.png'),
+      kind: 'image',
+      onProgress,
+      signal,
+    });
+    return { file: saved.file, mime: media.mime || 'image/png', meta: { model, size: `${width}x${height}`, endpoint: hostedUrl } };
+  }
+
+  if (kind === 'image') {
+    const size = options.size || '1024x1024';
+    const baseBody = { model, prompt, n: 1, size };
+    if (options.negativePrompt) baseBody.negative_prompt = String(options.negativePrompt).slice(0, 2000);
+    onProgress(0.2, 'rendering');
+    let json;
+    try {
+      json = await fetchJson(`${base}/images/generations`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...baseBody, response_format: 'b64_json' }),
+        signal,
+        timeout: 240000,
+      });
+    } catch (error) {
+      if (!/response_format|unknown|unrecognized|invalid|extra/i.test(String(error.message))) throw error;
+      json = await fetchJson(`${base}/images/generations`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(baseBody),
+        signal,
+        timeout: 240000,
+      });
+    }
+    onProgress(0.75, 'downloading');
+    const media = compatMedia(json);
+    if (!media.url && !media.buffer) throw new Error('The endpoint returned no image. Check the model name and API path.');
+    const saved = await saveInlineOrFetch({
+      url: media.url,
+      buffer: media.buffer,
+      tmpFile: tmpFile + extForMime(media.mime, '.png'),
+      kind: 'image',
+      onProgress,
+      signal,
+    });
+    return { file: saved.file, mime: media.mime || 'image/png', meta: { model, size, endpoint: base } };
+  }
+
+  if (kind !== 'video') throw new Error('OpenAI compatible supports images and video only');
+  if (isHostedNvidia(base)) {
+    throw new Error('NVIDIA hosted video is not available on this endpoint. Use a self-hosted NVIDIA NIM base URL for Wan2.2 video.');
+  }
+  const seconds = Math.max(1, Math.min(30, Math.round(Number(options.duration) || 4)));
+  const body = { model, prompt, seconds };
+  const aspectSize = { '16:9': '832x480', '9:16': '480x832', '1:1': '624x624' }[options.aspect];
+  if (options.size) body.size = String(options.size).slice(0, 20);
+  else if (aspectSize) body.size = aspectSize;
+  if (options.negativePrompt) body.negative_prompt = String(options.negativePrompt).slice(0, 2000);
+  onProgress(0.1, 'queued');
+  let endpoint = `${base}/videos/generations`;
+  const post = async (url, payload) => fetchJson(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+    signal,
+    timeout: 590000,
+  });
+  let json;
+  try {
+    json = await post(endpoint, body);
+  } catch (error) {
+    const message = String(error.message || '');
+    if (/404|not found/i.test(message)) {
+      endpoint = `${base}/videos`;
+      try {
+        json = await post(endpoint, body);
+      } catch (retryError) {
+        if (!/unknown|unsupported|invalid|extra|unexpected/i.test(String(retryError.message))) throw retryError;
+        json = await post(endpoint, { model, prompt });
+      }
+    } else if (/unknown|unsupported|invalid|extra|unexpected/i.test(message)) {
+      json = await post(endpoint, { model, prompt });
+    } else {
+      throw error;
+    }
+  }
+  let media = compatMedia(json);
+  let statusValue = compatStatus(json);
+  let lastPayload = json;
+  let id = json?.id || json?.request_id || json?.video_id || json?.task_id
+    || json?.data?.[0]?.id || json?.data?.[0]?.request_id || '';
+  const deadline = Date.now() + 12 * 60 * 1000;
+  let attempt = 0;
+  while (!media.url && !media.buffer && id && Date.now() < deadline) {
+    if (signal && signal.aborted) throw new Error('Cancelled');
+    if (COMPAT_FAILED.has(statusValue)) {
+      throw new Error(lastPayload?.error?.message || lastPayload?.error || lastPayload?.message || 'Video generation failed');
+    }
+    if (COMPAT_DONE.has(statusValue)) break;
+    attempt += 1;
+    onProgress(Math.min(0.8, 0.28 + attempt * 0.03), statusValue || 'rendering video');
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    const pollUrls = [];
+    if (lastPayload?.status_url) pollUrls.push(String(lastPayload.status_url));
+    pollUrls.push(`${endpoint}/${encodeURIComponent(id)}`);
+    if (endpoint.endsWith('/generations')) pollUrls.push(`${base}/videos/${encodeURIComponent(id)}`);
+    let latest = null;
+    let lastError = null;
+    for (const url of pollUrls) {
+      try {
+        latest = await fetchJson(url, {
+          headers: { authorization: `Bearer ${apiKey}`, accept: 'application/json' },
+          signal,
+          timeout: 60000,
+        });
+        break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (!latest) throw lastError || new Error('Video status could not be read.');
+    lastPayload = latest;
+    statusValue = compatStatus(latest);
+    media = compatMedia(latest);
+    id = latest?.id || latest?.request_id || latest?.video_id || latest?.task_id || id;
+  }
+  if (!media.url && !media.buffer && id && COMPAT_DONE.has(statusValue)) {
+    for (const url of [`${endpoint}/${encodeURIComponent(id)}/content`, `${base}/videos/${encodeURIComponent(id)}/content`]) {
+      try {
+        const binary = await fetchBinary(url, apiKey, signal, MAX_VIDEO);
+        media = { buffer: binary.buffer, mime: binary.mime };
+        break;
+      } catch {}
+    }
+  }
+  if (!media.url && !media.buffer) {
+    if (Date.now() >= deadline) throw new Error('Video generation timed out');
+    throw new Error('The endpoint returned no video. Check the model name and API path.');
+  }
+  onProgress(0.86, 'downloading');
+  const ext = extForMime(media.mime, '.mp4');
+  const saved = await saveInlineOrFetch({
+    url: media.url,
+    buffer: media.buffer,
+    tmpFile: tmpFile + (ext === '.bin' ? '.mp4' : ext),
+    kind: 'video',
+    onProgress,
+    signal,
+  });
+  return {
+    file: saved.file,
+    mime: media.mime || 'video/mp4',
+    meta: { model, endpoint: base, seconds, jobId: id || '' },
+  };
+}
+
 const VENDORS = {
   openai: generateOpenAI,
   'google': generateImagen,
@@ -834,6 +1254,7 @@ const VENDORS = {
   replicate: generateReplicate,
   fal: generateFal,
   higgsfield: generateHiggsfield,
+  'openai-compatible': generateOpenAICompatible,
 };
 
 async function generateCloud(ctx) {
@@ -866,4 +1287,10 @@ module.exports = {
   aspectRatioOf,
   extForMime,
   dataUrlToBuffer,
+  normalizeCompatBase,
+  compatEndpoint,
+  compatModels,
+  discoverCompatModels,
+  classifyCompatModels,
+  nvidiaImageSize,
 };

@@ -37,10 +37,19 @@ const DEFAULTS = {
     computer_use: 'ask',
     write_file: 'ask',
     edit_file: 'ask',
+    deliver_file: 'allow',
     run_command: 'ask',
     ssh_run: 'ask',
     team_delegate: 'allow',
     mcp: 'ask',
+  },
+  approvals: {
+    mode: 'important',
+  },
+  dictation: {
+    providerId: '',
+    model: 'whisper-1',
+    language: '',
   },
   agent: {
     maxSteps: 32,
@@ -62,7 +71,8 @@ const DEFAULTS = {
   },
   media: {
     keys: {},
-    endpoints: { comfyui: '' },
+    endpoints: { comfyui: '', openaiCompatible: '' },
+    openaiModels: { image: [], video: [] },
     defaults: {
       image: { engine: '', aspect: '1:1' },
       video: { engine: '', aspect: '16:9', duration: 4 },
@@ -447,7 +457,15 @@ function publicConfig(config, catalog) {
     customProviders: config.customProviders,
     discoveredModels: config.discoveredModels,
     permissions: config.permissions,
+    approvals: {
+      mode: config.approvals?.mode === 'all' ? 'all' : 'important',
+    },
     agent: config.agent,
+    dictation: {
+      providerId: config.dictation?.providerId || '',
+      model: config.dictation?.model || 'whisper-1',
+      language: config.dictation?.language || '',
+    },
     customInstructions: config.customInstructions,
     mcpServers: config.mcpServers.map(({ env, headers, ...rest }) => ({
       ...rest,

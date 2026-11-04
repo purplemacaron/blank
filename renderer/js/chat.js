@@ -3,7 +3,7 @@
   'use strict';
 
   const TOOL_LABELS = {
-    read_file: 'Read file', write_file: 'Write file', edit_file: 'Edit file', list_dir: 'List folder',
+    read_file: 'Read file', write_file: 'Write file', edit_file: 'Edit file', deliver_file: 'Deliver file', list_dir: 'List folder',
     glob: 'Find files', grep: 'Search code', run_command: 'Run command', web_fetch: 'Fetch URL',
     web_search: 'Web search', computer_screenshot: 'Screenshot', computer_use: 'Computer',
     todo_write: 'Update plan', remember: 'Save memory', memory_search: 'Search memory',
@@ -14,6 +14,7 @@
 
   const MODES = {
     agent: { label: 'Agent', icon: 'bot' },
+    coding: { label: 'Coding', icon: 'code' },
     design: { label: 'Design', icon: 'palette' },
     plan: { label: 'Plan', icon: 'checklist' },
     ask: { label: 'Ask', icon: 'message' },
@@ -114,6 +115,7 @@
     if (name === 'update_paper') return value.title || value.id || '';
     if (name === 'read_paper') return value.id || '';
     if (name === 'list_papers') return value.query || value.kind || 'recent papers';
+    if (name === 'deliver_file') return value.title || value.path || '';
     if (name === 'todo_write') return `${(value.todos || []).length} items`;
     if (name.startsWith('mcp__')) {
       const entries = Object.entries(value).slice(0, 2).map(([key, val]) => `${key}: ${typeof val === 'object' ? JSON.stringify(val) : String(val)}`);
@@ -132,7 +134,13 @@
     if (!args || !Object.keys(args).length) return '';
     if (name === 'run_command') return `$ ${args.command || ''}`;
     if (name === 'write_file') return `Path: ${args.path}\n\n${clip(args.content, 1200)}`;
+    if (name === 'deliver_file') return `Path: ${args.path}${args.title ? `\nTitle: ${args.title}` : ''}${args.note ? `\n${args.note}` : ''}`;
     if (name === 'edit_file') {
+      if (args.start_line != null || args.end_line != null) {
+        const start = args.start_line ?? args.end_line;
+        const end = args.end_line ?? args.start_line;
+        return `Path: ${args.path}\n\nLines ${start}–${end}\n\n${clip(args.new_string || '(delete lines)', 1200)}`;
+      }
       return `Path: ${args.path}\n\n- ${clip(args.old_string || '', 700)}\n\n+ ${clip(args.new_string || '', 1200)}`;
     }
     try { return JSON.stringify(args, null, 2); } catch { return String(args); }
@@ -168,8 +176,36 @@
     </button>`;
   }
 
-  function paperToolCard(paper) {
-    if (!paper || !paper.id) return '';
+  function generatedMediaMarkup(asset) {
+    const meta = [asset.engineLabel || asset.engine, asset.width && asset.height ? `${asset.width}×${asset.height}` : '', asset.duration ? `${Math.round(asset.duration)}s` : '']
+      .filter(Boolean).join(' · ');
+    return `<div class="msg msg-assistant generated-media-msg" data-media-asset="${U.attr(asset.id)}">
+      <div class="assistant-main">
+        <div class="generated-media-head">
+          <span class="generated-media-label">${icon('sparkles', 13)}<span>${U.esc(asset.kindLabel || 'Media')} created</span></span>
+          <span class="generated-media-meta">${U.esc(meta)}</span>
+        </div>
+        ${mediaThumb(asset)}
+        <div class="generated-media-prompt">${U.esc(asset.prompt || asset.title || '')}</div>
+        <div class="generated-media-actions">
+          <button class="btn btn-secondary btn-xs" type="button" data-action="save-media" data-id="${U.attr(asset.id)}">${icon('download', 12)} Save file</button>
+          <button class="btn btn-ghost btn-xs" type="button" data-action="save-media-workspace" data-id="${U.attr(asset.id)}">${icon('folder-open', 12)} To workspace</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function deliverableMarkup(meta) {
+    const fileName = meta.fileName || String(meta.path || '').split(/[\\/]/).pop();
+    const details = [fileName, meta.bytes != null ? U.fmtBytes(meta.bytes) : '', meta.note || ''].filter(Boolean).join(' · ');
+    return `<div class="tool-deliverable">
+      <span class="tool-deliverable-mark">${icon('file-text', 16)}</span>
+      <span class="tool-deliverable-copy"><b>${U.esc(meta.title || fileName)}</b><small>${U.esc(details)}</small></span>
+      <button class="btn btn-secondary btn-xs" type="button" data-action="save-workspace-file" data-path="${U.attr(meta.path)}" data-name="${U.attr(fileName)}">${icon('download', 12)} Save file</button>
+    </div>`;
+  }
+
+  function paperToolCard(paper) {    if (!paper || !paper.id) return '';
     const meta = {
       html: { label: 'Page', icon: 'book' },
       markdown: { label: 'Document', icon: 'file-text' },
@@ -195,6 +231,9 @@
       if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div><pre class="tool-pre">${U.esc(clip(content, 2400))}</pre>`;
     } else if (Array.isArray(meta.papers) && meta.papers.length) {
       html += `<div class="tool-section-label">${meta.papers.length} paper${meta.papers.length === 1 ? '' : 's'} in the library</div><div class="tool-paper-list">${meta.papers.slice(0, 6).map(paperToolCard).join('')}</div>`;
+      if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div><pre class="tool-pre">${U.esc(clip(content, 2400))}</pre>`;
+    } else if (meta.deliverable && meta.path) {
+      html += `<div class="tool-section-label">File</div>${deliverableMarkup(meta)}`;
       if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div><pre class="tool-pre">${U.esc(clip(content, 2400))}</pre>`;
     } else if (name === 'todo_write') {
       const tasks = meta.tasks || args?.todos || [];
@@ -225,6 +264,10 @@
     if (meta.path) {
       badges.push(`<button class="tool-undo" type="button" data-action="open-file" data-path="${U.attr(meta.path)}">${icon('file-text', 11)} Open</button>`);
     }
+    if ((name === 'write_file' || name === 'edit_file') && meta.path) {
+      const fileName = String(meta.path).split(/[\\/]/).pop();
+      badges.push(`<button class="tool-undo" type="button" data-action="save-workspace-file" data-path="${U.attr(meta.path)}" data-name="${U.attr(fileName)}">${icon('download', 11)} Save file</button>`);
+    }
     if (name.startsWith('mcp__')) {
       const [, server] = name.split('__');
       badges.push(`<span class="tool-badge">MCP · ${U.esc(server)}</span>`);
@@ -250,7 +293,8 @@
     const statusClass = running ? 'run' : isError ? 'bad' : 'ok';
     const duration = options.duration ? `<span>${U.esc(options.duration)}</span>` : '';
     const card = document.createElement('div');
-    card.className = `tool-card${running ? ' running' : ''}${isError ? ' error open' : ''}`;
+    const delivered = name === 'deliver_file' && result && !result.isError;
+    card.className = `tool-card${running ? ' running' : ''}${isError ? ' error open' : delivered ? ' open' : ''}`;
     card.dataset.callId = call.id || '';
     card.innerHTML = `
       <button class="tool-head" type="button" data-action="toggle-tool">
@@ -278,6 +322,21 @@
     try { return JSON.stringify(args, null, 2); } catch { return String(args); }
   }
 
+  const APPROVAL_REASONS = {
+    'sensitive-file': 'Sensitive file',
+    'sensitive-data': 'Secrets',
+    destructive: 'Destructive',
+    external: 'External',
+    network: 'Network',
+    install: 'Installs packages',
+    privilege: 'System access',
+    system: 'System change',
+    write: 'Outside workspace',
+    unknown: 'Unfamiliar command',
+    remote: 'Remote host',
+    policy: 'Your policy',
+  };
+
   function buildApproval(payload) {
     const card = document.createElement('div');
     card.className = 'approval-card';
@@ -286,11 +345,18 @@
     const tool = payload.tool || 'tool';
     const friendly = payload.label || toolLabel(tool);
     const details = approvalArgs(payload.args);
+    const reason = APPROVAL_REASONS[payload.reason] || APPROVAL_REASONS.policy;
+    const scope = tool === 'run_command' || tool === 'ssh_run'
+      ? 'command'
+      : payload.reason === 'sensitive-file' ? 'file' : 'tool';
+    card.dataset.approvalScope = scope;
+    const alwaysLabel = scope === 'command' ? 'Always allow this command' : scope === 'file' ? 'Always allow this file' : 'Always allow';
+    const policy = scope === 'command' ? 'This exact command · this session' : scope === 'file' ? 'This exact file · this session' : 'Approval required by your policy';
     card.innerHTML = `
       <div class="approval-head">
         <span class="approval-icon">${icon('shield-alert', 14)}</span>
         <div class="approval-copy">
-          <div class="approval-title">Blank wants to <b>${U.esc(friendly.toLowerCase())}</b></div>
+          <div class="approval-title">Blank wants to <b>${U.esc(friendly.toLowerCase())}</b><span class="approval-reason">${U.esc(reason)}</span></div>
           <div class="approval-sub">${U.esc(payload.summary || summarizeTool(tool, payload.args) || tool)}</div>
         </div>
       </div>
@@ -298,9 +364,9 @@
         ${details ? `<div class="approval-args">${U.esc(clip(details, 4000))}</div>` : ''}
       </div>
       <div class="approval-foot">
-        <span class="approval-policy">Approval required by your policy</span>
+        <span class="approval-policy">${U.esc(policy)}</span>
         <button class="btn btn-ghost btn-sm" type="button" data-action="approval" data-decision="deny">Deny</button>
-        <button class="btn btn-secondary btn-sm" type="button" data-action="approval" data-decision="always">Always allow</button>
+        <button class="btn btn-secondary btn-sm" type="button" data-action="approval" data-decision="always">${alwaysLabel}</button>
         <button class="btn btn-primary btn-sm" type="button" data-action="approval" data-decision="allow">Allow once</button>
       </div>`;
     return card;
@@ -311,7 +377,9 @@
     card.dataset.resolved = decision;
     const foot = card.querySelector('.approval-foot');
     if (foot) foot.remove();
-    const labels = { allow: ['ok', 'Allowed once'], always: ['ok', 'Allowed for this session'], deny: ['no', 'Denied'], expired: ['no', 'Request expired'] };
+    const scope = card.dataset.approvalScope || 'tool';
+    const alwaysText = scope === 'command' ? 'Command allowed for this session' : scope === 'file' ? 'File allowed for this session' : 'Allowed for this session';
+    const labels = { allow: ['ok', 'Allowed once'], always: ['ok', alwaysText], deny: ['no', 'Denied'], expired: ['no', 'Request expired'] };
     const [tone, text] = labels[decision] || labels.expired;
     const note = document.createElement('div');
     note.className = `approval-resolved ${tone}`;
@@ -459,15 +527,13 @@
     if (reasoningButton) {
       const profile = reasoningProfile();
       const effort = currentReasoning();
-      const label = U.reasoningLabel(profile, effort);
+      const label = profile ? U.reasoningLabel(profile, effort) : 'Model decides';
       const adjustable = Boolean(profile && profile.levels.length > 1);
-      reasoningButton.hidden = !profile;
+      reasoningButton.hidden = false;
       reasoningButton.disabled = !adjustable;
-      reasoningButton.classList.toggle('is-fixed', Boolean(profile) && !adjustable);
-      reasoningButton.innerHTML = profile
-        ? `${icon('brain', 13)}<span>${U.esc(label)}</span>${adjustable ? `<span class="ws-caret">${icon('chevron-updown', 10)}</span>` : ''}`
-        : '';
-      reasoningButton.title = `Reasoning · ${label}`;
+      reasoningButton.classList.toggle('is-fixed', !adjustable);
+      reasoningButton.innerHTML = `${icon('brain', 13)}<span>${U.esc(label)}</span>${adjustable ? `<span class="ws-caret">${icon('chevron-updown', 10)}</span>` : ''}`;
+      reasoningButton.title = profile ? `Reasoning · ${label}` : 'Reasoning · this model does not expose stages';
       reasoningButton.classList.toggle('active', adjustable && effort !== 'none');
     }
     const modelButton = document.getElementById('composer-model');
@@ -484,15 +550,21 @@
         ? 'Ask a question about your codebase…'
         : mode === 'design'
           ? 'Describe the interface you want to design…'
-          : 'Ask Blank to build, debug, or explain…';
+          : mode === 'coding'
+            ? 'Describe the code change. Blank will read, edit, and run checks…'
+            : 'Ask Blank to build, debug, or explain…';
     if (context) context.innerHTML = contextRing();
     if (hint) {
       const perms = App.state.config?.permissions || {};
-      const asks = ['write_file', 'edit_file', 'run_command', 'mcp'].filter((tool) => perms[tool] === 'ask');
-      hint.innerHTML = asks.length
-        ? `${icon('shield', 11)}<span>Asks before ${asks.length > 2 ? 'writes & commands' : asks.map((tool) => tool.replace('_file', '')).join(', ')}</span>`
-        : `${icon('shield', 11)}<span>Auto-approved by your policy</span>`;
-      hint.classList.toggle('warn', asks.length > 0);
+      const guarded = ['write_file', 'edit_file', 'run_command', 'ssh_run', 'mcp', 'computer_use', 'generate_media', 'edit_media']
+        .filter((tool) => (perms[tool] || 'ask') !== 'allow');
+      const mode = App.state.config?.approvals?.mode === 'all' ? 'all' : 'important';
+      hint.innerHTML = !guarded.length
+        ? `${icon('shield', 11)}<span>Auto-approved by your policy</span>`
+        : mode === 'all'
+          ? `${icon('shield', 11)}<span>Asks before every guarded action</span>`
+          : `${icon('shield', 11)}<span>Asks only for important actions</span>`;
+      hint.classList.toggle('warn', guarded.length > 0 && mode === 'all');
     }
     if (send) {
       if (Chat.running) {
@@ -549,6 +621,202 @@
       </div>`).join('')}</div>`;
     window.__blankI18n?.translate?.(tray);
   }
+
+  function generatedMediaFor() {
+    const key = Chat.session?.id || 'draft';
+    return (Chat.generatedMedia && Chat.generatedMedia[key]) || [];
+  }
+
+  function toggleMediaPanel() {
+    const panel = document.getElementById('chat-media-panel');
+    if (!panel) return;
+    if (!panel.hidden) { window.Views?.closeStudio?.(); return; }
+    window.Views?.openStudio?.({ container: panel });
+  }
+
+  async function saveMediaFile(id, button) {
+    if (!id) return;
+    if (button) button.disabled = true;
+    try {
+      const result = await API.media.exportAsset(id);
+      if (result && !result.canceled) {
+        UI.toast(`Saved to ${result.path}`, 'success', {
+          title: 'Media file',
+          actionLabel: 'Reveal',
+          onAction: () => API.media.reveal(id).catch(() => {}),
+          timeout: 9000,
+        });
+      }
+    } catch (error) { UI.toast(error.message, 'error'); }
+    finally { if (button) button.disabled = false; }
+  }
+
+  async function saveWorkspaceFile(relativePath, name, button) {
+    if (!relativePath) return;
+    if (button) button.disabled = true;
+    try {
+      const result = await API.workspace.saveAs({ path: relativePath, name });
+      if (result && !result.canceled) UI.toast(`Saved to ${result.path}`, 'success', { title: 'File saved', timeout: 9000 });
+    } catch (error) { UI.toast(error.message, 'error'); }
+    finally { if (button) button.disabled = false; }
+  }
+
+  async function saveMediaToWorkspace(id, button) {
+    if (!id) return;
+    if (button) button.disabled = true;
+    try {
+      const result = await API.media.saveToWorkspace({ id, folder: 'media' });
+      UI.toast(`Saved as ${result.relative}`, 'success', {
+        title: 'Copied into workspace',
+        actionLabel: 'Reveal',
+        onAction: () => API.workspace.reveal(result.relative).catch(() => {}),
+        timeout: 9000,
+      });
+    } catch (error) { UI.toast(error.message, 'error'); }
+    finally { if (button) button.disabled = false; }
+  }
+
+  /* --------------------------------------------------------------- dictation */
+
+  function dictationButtonLabel(button, label) {
+    const text = button?.querySelector('span');
+    if (text) text.textContent = label;
+  }
+
+  function resetDictationButton(state) {
+    const button = state?.button;
+    if (!button) return;
+    button.classList.remove('recording', 'transcribing');
+    button.disabled = false;
+    dictationButtonLabel(button, 'Dictate');
+  }
+
+  function insertDictation(text) {
+    const input = document.getElementById('composer-input');
+    const clean = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!input || !clean) return;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? start;
+    const before = input.value.slice(0, start);
+    const after = input.value.slice(end);
+    const pad = before && !/\s$/.test(before) ? ' ' : '';
+    const tail = after && !/^\s/.test(after) ? ' ' : '';
+    input.value = `${before}${pad}${clean}${tail}${after}`;
+    const caret = before.length + pad.length + clean.length + tail.length;
+    input.setSelectionRange(caret, caret);
+    input.focus();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const value = String(reader.result || '');
+        resolve(value.slice(value.indexOf(',') + 1));
+      };
+      reader.onerror = () => reject(new Error('Could not read the recording.'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function finishDictation(state) {
+    if (Chat.dictation !== state) return;
+    Chat.dictation = null;
+    clearTimeout(state.timer);
+    try { state.stream.getTracks().forEach((track) => track.stop()); } catch {}
+    if (state.cancelled) { resetDictationButton(state); return; }
+    const blob = new Blob(state.chunks, { type: state.recorder.mimeType || 'audio/webm' });
+    if (!blob.size) { resetDictationButton(state); UI.toast('No audio was captured.', 'warn'); return; }
+    const button = state.button;
+    if (button) {
+      button.classList.remove('recording');
+      button.classList.add('transcribing');
+      button.disabled = true;
+      dictationButtonLabel(button, 'Transcribing…');
+    }
+    blobToBase64(blob)
+      .then((audio) => API.dictation.transcribe({ audio, mime: blob.type }))
+      .then((result) => {
+        if (!result?.text) throw new Error('No speech was detected.');
+        insertDictation(result.text);
+      })
+      .catch((error) => UI.toast(error.message, 'error', { title: 'Dictation' }))
+      .finally(() => resetDictationButton(state));
+  }
+
+  function stopDictation(cancel = false) {
+    const state = Chat.dictation;
+    if (!state) return;
+    state.cancelled = cancel;
+    clearTimeout(state.timer);
+    if (state.recorder.state !== 'inactive') {
+      try { state.recorder.stop(); } catch { finishDictation(state); }
+    } else {
+      finishDictation(state);
+    }
+  }
+
+  async function startDictation(button) {
+    if (Chat.dictation) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      UI.toast('This build cannot record audio.', 'error');
+      return;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    } catch (error) {
+      UI.toast(error?.name === 'NotAllowedError' ? 'Microphone access was denied. Allow it in your system settings and try again.' : error.message, 'error', { title: 'Dictation' });
+      return;
+    }
+    const mime = typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : 'audio/webm';
+    let recorder;
+    try { recorder = new MediaRecorder(stream, { mimeType: mime }); }
+    catch { recorder = new MediaRecorder(stream); }
+    const state = { stream, recorder, chunks: [], button, timer: null, cancelled: false };
+    Chat.dictation = state;
+    recorder.addEventListener('dataavailable', (event) => { if (event.data?.size) state.chunks.push(event.data); });
+    recorder.addEventListener('stop', () => finishDictation(state));
+    recorder.addEventListener('error', () => {
+      UI.toast('Recording failed. Try again.', 'error', { title: 'Dictation' });
+      state.cancelled = true;
+      stopDictation(true);
+    });
+    try {
+      recorder.start();
+    } catch (error) {
+      Chat.dictation = null;
+      try { stream.getTracks().forEach((track) => track.stop()); } catch {}
+      UI.toast(error.message, 'error', { title: 'Dictation' });
+      return;
+    }
+    if (button) {
+      button.classList.add('recording');
+      dictationButtonLabel(button, 'Listening…');
+    }
+    state.timer = setTimeout(() => stopDictation(false), 60000);
+    UI.toast('Listening. Click the mic again to stop and transcribe.', 'info', { timeout: 4000 });
+  }
+
+  function toggleDictation(button) {
+    if (Chat.dictation) stopDictation(false);
+    else startDictation(button);
+  }
+
+  Chat.showGeneratedMedia = function showGeneratedMedia(asset) {
+    if (!asset || !asset.id) return;
+    Chat.generatedMedia = Chat.generatedMedia || {};
+    const key = Chat.session?.id || 'draft';
+    const list = Chat.generatedMedia[key] || (Chat.generatedMedia[key] = []);
+    if (!list.some((item) => item.id === asset.id)) list.push(asset);
+    const thread = ensureThread();
+    if (!thread) return;
+    thread.insertAdjacentHTML('beforeend', generatedMediaMarkup(asset));
+    U.scrollToBottom(document.getElementById('chat-scroll'), true);
+  };
 
   function renderAttachments() {
     const host = document.getElementById('composer-attachments');
@@ -630,7 +898,7 @@
   function renderThread(options = {}) {
     const scroll = document.getElementById('chat-scroll');
     if (!scroll) return;
-    if (!Chat.session || !(Chat.session.messages || []).length) {
+    if ((!Chat.session || !(Chat.session.messages || []).length) && !generatedMediaFor().length) {
       showEmpty();
       return;
     }
@@ -656,6 +924,7 @@
         thread.appendChild(buildAssistantMessage(message, results));
       }
     }
+    for (const asset of generatedMediaFor()) thread.insertAdjacentHTML('beforeend', generatedMediaMarkup(asset));
     if (Chat.running) {
       const status = document.createElement('div');
       status.className = 'notice-inline';
@@ -851,7 +1120,7 @@
       Chat.session.tasks = payload.meta.tasks;
       App.refreshRail();
     }
-    if ((payload.name === 'write_file' || payload.name === 'edit_file') && payload.meta?.path) {
+    if ((payload.name === 'write_file' || payload.name === 'edit_file' || payload.name === 'deliver_file') && payload.meta?.path) {
       Chat.session.files = [...new Set([...(Chat.session.files || []), payload.meta.path])];
       App.refreshRail();
     }
@@ -1211,26 +1480,22 @@
         updateComposer();
         if (!Chat.session?.messages?.length) showEmpty();
         App.refreshSessions();
+        App.setDefaultModel?.(fullId, { quiet: true });
       },
     });
   }
 
-  const GUARDED_TOOLS = ['write_file', 'edit_file', 'run_command', 'ssh_run', 'mcp'];
-
   function approvalPreset() {
-    const perms = App.state.config?.permissions || {};
-    return GUARDED_TOOLS.some((tool) => perms[tool] === 'ask') ? 'ask' : 'auto';
+    return App.state.config?.approvals?.mode === 'all' ? 'all' : 'important';
   }
 
   async function setApprovalPreset(preset) {
-    const level = preset === 'ask' ? 'ask' : 'allow';
-    const permissions = {};
-    for (const tool of GUARDED_TOOLS) permissions[tool] = level;
+    const mode = preset === 'all' ? 'all' : 'important';
     try {
-      await API.config.update({ permissions });
-      if (App.state.config) App.state.config.permissions = { ...(App.state.config.permissions || {}), ...permissions };
+      await API.config.update({ approvals: { mode } });
+      if (App.state.config) App.state.config.approvals = { ...(App.state.config.approvals || {}), mode };
       updateComposer();
-      UI.toast(preset === 'ask' ? 'Blank will ask before writes and commands.' : 'Writes and commands run without prompts.', 'success');
+      UI.toast(mode === 'all' ? 'Blank will ask before every guarded action.' : 'Blank will ask only for important actions.', 'success');
     } catch (error) { UI.toast(error.message, 'error'); }
   }
 
@@ -1248,8 +1513,8 @@
     <div class="mode-picker-sep"></div>
     <div class="mode-picker-head">Approvals</div>
     <div class="approval-preset">
-      <button class="approval-choice ${approvals === 'auto' ? 'selected' : ''}" type="button" data-approval="auto">${icon('check-circle', 13)}<span>Auto</span></button>
-      <button class="approval-choice ${approvals === 'ask' ? 'selected' : ''}" type="button" data-approval="ask">${icon('shield-alert', 13)}<span>Ask first</span></button>
+      <button class="approval-choice ${approvals === 'important' ? 'selected' : ''}" type="button" data-approval="important">${icon('check-circle', 13)}<span>Important only</span></button>
+      <button class="approval-choice ${approvals === 'all' ? 'selected' : ''}" type="button" data-approval="all">${icon('shield-alert', 13)}<span>Ask for all</span></button>
     </div>`;
     const pop = UI.popover(anchor, content, { width: 208 });
     content.addEventListener('click', (event) => {
@@ -1278,7 +1543,18 @@
   function openReasoningPicker(anchor) {
     if (!anchor) return;
     const profile = reasoningProfile();
-    if (!profile || profile.levels.length <= 1) return;
+    if (!profile || profile.levels.length <= 1) {
+      const reason = !currentModel()
+        ? 'Choose a model first.'
+        : profile?.fixedLabel
+          ? 'This model always reasons; the stage is fixed.'
+          : 'This model does not expose reasoning stages.';
+      const note = document.createElement('div');
+      note.className = 'mode-picker';
+      note.innerHTML = `<div class="mode-picker-head">Reasoning</div><div class="mode-picker-note">${U.esc(reason)}</div>`;
+      UI.popover(anchor, note, { width: 232 });
+      return;
+    }
     const current = currentReasoning();
     const content = document.createElement('div');
     content.className = 'mode-picker';
@@ -1484,6 +1760,12 @@
         updateComposer();
         document.getElementById('chat-scroll')?.querySelector('[data-run-notice]')?.remove();
         break;
+      case 'title':
+        if (Chat.session && payload.title) {
+          Chat.session.title = payload.title;
+          renderHead();
+        }
+        break;
       case 'assistant:start':
         handleAssistantStart(payload);
         break;
@@ -1655,6 +1937,7 @@
   Chat.mount = function mount() {
     const host = document.getElementById('chat-view');
     if (!host) return;
+    window.Views?.closeStudio?.({ silent: true });
     Chat.draftModel = Chat.draftModel || App.state.config?.defaultModel || '';
     host.innerHTML = `
       <div class="chat-shell" id="chat-shell">
@@ -1663,6 +1946,7 @@
           <div class="chat-head-actions" id="chat-head-actions"></div>
         </div>
         <div class="chat-scroll" id="chat-scroll"></div>
+        <div class="chat-media-panel" id="chat-media-panel" hidden></div>
         <div class="composer-wrap">
           <div class="composer-shell">
             <div class="queue-tray" id="queue-tray" hidden></div>
@@ -1673,6 +1957,7 @@
               </div>
               <div class="composer-tools">
                 <button class="composer-tool" type="button" data-action="attach-files" title="Attach text files">${icon('paperclip', 13)}<span>Attach</span></button>
+                <button class="composer-tool" id="composer-dictate" type="button" data-action="dictate" title="Dictate with your voice">${icon('mic', 13)}<span>Dictate</span></button>
                 <button class="composer-tool" type="button" data-action="open-media" title="Create media">${icon('wand', 13)}<span>Media</span></button>
                 <span class="composer-divider"></span>
                 <button class="composer-tool composer-model" id="composer-model" type="button" data-action="pick-model" title="Switch model"></button>
@@ -1742,6 +2027,7 @@
         return;
       }
       if (action === 'attach-files') { document.getElementById('chat-file-input')?.click(); return; }
+      if (action === 'dictate') { toggleDictation(actionNode); return; }
       if (action === 'remove-attachment') {
         Chat.attachments.splice(Number(actionNode.dataset.index), 1);
         renderAttachments();
@@ -1771,9 +2057,15 @@
       if (action === 'approval') { decideApproval(actionNode); return; }
       if (action === 'undo-checkpoint') { undoCheckpoint(actionNode); return; }
       if (action === 'open-file') { App.openFilePreview(actionNode.dataset.path); return; }
-      if (action === 'open-media') { App.openMedia(actionNode.dataset.id); return; }
+      if (action === 'open-media') {
+        if (actionNode.dataset.id) { App.openMedia(actionNode.dataset.id); return; }
+        toggleMediaPanel();
+        return;
+      }
+      if (action === 'save-media') { saveMediaFile(actionNode.dataset.id, actionNode); return; }
+      if (action === 'save-media-workspace') { saveMediaToWorkspace(actionNode.dataset.id, actionNode); return; }
+      if (action === 'save-workspace-file') { saveWorkspaceFile(actionNode.dataset.path, actionNode.dataset.name, actionNode); return; }
       if (action === 'open-paper') { if (window.Views?.openPaper) Views.openPaper(actionNode.dataset.id); return; }
-      if (action === 'open-media') { window.Views?.openStudio?.(); return; }
       if (action === 'open-models') { App.openPage('models'); return; }
       if (action === 'toggle-reasoning') {
         actionNode.closest('.reasoning')?.classList.toggle('open');

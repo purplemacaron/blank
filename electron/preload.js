@@ -79,6 +79,10 @@ const api = {
     setKey: (input) => invoke('search:setKey', input),
   },
 
+  dictation: {
+    transcribe: (input) => invoke('dictation:transcribe', input),
+  },
+
   computer: {
     testScreenshot: () => invoke('computer:testScreenshot'),
   },
@@ -96,6 +100,7 @@ const api = {
     read: (relativePath) => invoke('workspace:read', relativePath),
     openPath: (relativePath) => invoke('workspace:openPath', relativePath),
     reveal: (relativePath) => invoke('workspace:reveal', relativePath),
+    saveAs: (input) => invoke('workspace:saveAs', input),
     openEditor: () => invoke('workspace:openEditor'),
     writeAgents: (input) => invoke('workspace:writeAgents', input || {}),
   },
@@ -186,6 +191,8 @@ const api = {
     readText: (id) => invoke('media:readText', id),
     setKey: (input) => invoke('media:setKey', input),
     setEndpoint: (input) => invoke('media:setEndpoint', input),
+    setModels: (input) => invoke('media:setModels', input),
+    discoverModels: (input) => invoke('media:discoverModels', input),
     testEndpoint: (input) => invoke('media:testEndpoint', input),
     voices: () => invoke('media:voices'),
     setDefaults: (input) => invoke('media:setDefaults', input),

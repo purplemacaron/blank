@@ -107,7 +107,8 @@ Start writing, or ask the agent to draft it.
   const TOOL_LABELS = {
     read_file: ['Read files', 'Read text files inside the workspace'],
     write_file: ['Create files', 'Create new files inside the workspace'],
-    edit_file: ['Edit files', 'Modify existing files with exact replacements'],
+    edit_file: ['Edit files', 'Modify existing files with exact replacements or line ranges'],
+    deliver_file: ['Deliver files', 'Show a workspace file as a downloadable card in chat'],
     list_dir: ['List folders', 'Explore the workspace tree'],
     glob: ['Find files', 'Match file names with glob patterns'],
     grep: ['Search contents', 'Search text across the workspace'],
@@ -1660,6 +1661,7 @@ Start writing, or ask the agent to draft it.
     const info = appState().info || {};
     const agent = config.agent || {};
     const permissions = config.permissions || {};
+    const approvalMode = config.approvals?.mode === 'all' ? 'all' : 'important';
     const providers = appState().catalog?.providers || vstate.models.providers;
     const runtime = appState().config?.runtime || info;
     const defaultModel = config.defaultModel || '';
@@ -1683,6 +1685,12 @@ Start writing, or ask the agent to draft it.
     const defaultProfile = U.reasoningProfile({ providers }, defaultModel);
     const defaultEffort = U.normalizeReasoning(defaultProfile, agent.reasoningEffort);
     const notificationsCfg = config.notifications || {};
+    const dictationCfg = config.dictation || {};
+    const dictationChoices = (providers || []).filter((provider) => provider.protocol === 'openai' && config.providers?.[provider.id]?.hasKey);
+    const dictationLanguages = [
+      ['', 'Auto detect'], ['ko', 'Korean'], ['en', 'English'], ['ja', 'Japanese'], ['zh', 'Chinese'],
+      ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['pt', 'Portuguese'], ['ru', 'Russian'],
+    ];
     const language = config.language === 'en' ? 'en' : 'ko';
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
@@ -1694,6 +1702,7 @@ Start writing, or ask the agent to draft it.
         <nav class="settings-nav">
           <button class="settings-nav-item active" type="button" data-settings-go="general">${icon('settings', 13)} General</button>
           <button class="settings-nav-item" type="button" data-settings-go="agent">${icon('bot', 13)} Agent</button>
+          <button class="settings-nav-item" type="button" data-settings-go="dictation">${icon('mic', 13)} Dictation</button>
           <button class="settings-nav-item" type="button" data-settings-go="team">${icon('bot', 13)} Agent team</button>
           <button class="settings-nav-item" type="button" data-settings-go="schedules">${icon('clock', 13)} Schedules</button>
           <button class="settings-nav-item" type="button" data-settings-go="notifications">${icon('bell', 13)} Notifications</button>
@@ -1778,6 +1787,41 @@ Start writing, or ask the agent to draft it.
               </div>
             </div>
             <div class="provider-actions"><button class="btn btn-primary btn-sm" type="button" data-save-agent>Save agent settings</button></div>
+          </section>
+
+          <section class="settings-section" id="settings-dictation">
+            <h2>Dictation</h2>
+            <p>Speech-to-text in the chat composer. Blank records only while the mic is active, then sends the clip to the provider you choose. The API key comes from Models and never appears here.</p>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Transcription provider</div><div class="setting-desc">Any OpenAI-compatible provider with a saved key and a /audio/transcriptions endpoint. Audio is sent only when you stop a recording.</div></div>
+                <div class="setting-control">
+                  ${dictationChoices.length
+                    ? `<select class="settings-select" id="dictation-provider">
+                        <option value="" ${dictationCfg.providerId ? '' : 'selected'}>Auto — first connected</option>
+                        ${dictationChoices.map((provider) => `<option value="${U.attr(provider.id)}" ${dictationCfg.providerId === provider.id ? 'selected' : ''}>${esc(provider.name)}</option>`).join('')}
+                      </select>`
+                    : '<span class="setting-value">No compatible key yet</span>'}
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Transcription model</div><div class="setting-desc">For example whisper-1, gpt-4o-mini-transcribe or whisper-large-v3.</div></div>
+                <div class="setting-control"><input class="setting-inline-input" id="dictation-model" type="text" spellcheck="false" value="${U.attr(dictationCfg.model || 'whisper-1')}" placeholder="whisper-1" /></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Spoken language</div><div class="setting-desc">Auto detect works for mixed speech. Naming a language usually improves accuracy.</div></div>
+                <div class="setting-control">
+                  <select class="settings-select" id="dictation-language">
+                    ${dictationLanguages.map(([code, label]) => `<option value="${code}" ${String(dictationCfg.language || '') === code ? 'selected' : ''}>${label}</option>`).join('')}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="provider-actions">
+              <button class="btn btn-primary btn-sm" type="button" data-save-dictation>Save dictation settings</button>
+              <span class="setting-note">${dictationChoices.length ? 'Ready' : 'Add an OpenAI-compatible key in Models first'}</span>
+            </div>
+            <div class="settings-permission-note">${icon('mic', 12)} The microphone is allowed only for this app. Recordings stay in memory, are sent once for transcription, and are never written to disk by Blank.</div>
           </section>
 
           <section class="settings-section" id="settings-team">
@@ -1872,7 +1916,28 @@ Start writing, or ask the agent to draft it.
 
           <section class="settings-section" id="settings-approvals">
             <h2>Approvals</h2>
-            <p>Choose what the agent may do on its own. Writes, shell commands and media generation ask by default.</p>
+            <p>Routine file edits, reads, builds and tests run on their own. Destructive, external, credential-touching and unfamiliar actions stop for your approval.</p>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <div class="setting-label">Confirmation level</div>
+                  <div class="setting-desc">Important only lets safe local work proceed. Every guarded action asks for each write, command, SSH call, MCP tool, screenshot and media job.</div>
+                </div>
+                <div class="setting-control">
+                  <select class="settings-select" id="approval-mode">
+                    <option value="important" ${approvalMode === 'important' ? 'selected' : ''}>Important actions only</option>
+                    <option value="all" ${approvalMode === 'all' ? 'selected' : ''}>Every guarded action</option>
+                  </select>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <div class="setting-label">Reuse a decision</div>
+                  <div class="setting-desc">“Always allow” repeats the exact command or sensitive file for this session. It never grants a blanket permission for every command or file.</div>
+                </div>
+                <div class="setting-control"><span class="setting-note">Commands and credentials stay scoped</span></div>
+              </div>
+            </div>
             <div class="settings-group approval-matrix">
               ${rows.map((tool) => {
                 const level = permissions[tool] || 'ask';
@@ -1885,7 +1950,7 @@ Start writing, or ask the agent to draft it.
                 </div>`;
               }).join('')}
             </div>
-            <div class="settings-permission-note">${icon('shield', 12)} Denied tools are removed from the model's tool list entirely. Approvals are per session and expire when the run ends.</div>
+            <div class="settings-permission-note">${icon('shield', 12)} In Important only, “Ask first” still lets routine local work through. Blocked tools are removed from the model's tool list. Session approvals expire when the run ends.</div>
           </section>
 
           <section class="settings-section" id="settings-search">
@@ -2177,6 +2242,19 @@ Start writing, or ask the agent to draft it.
         } catch (error) { UI.toast(error.message, 'error'); }
         return;
       }
+      if (event.target.closest('[data-save-dictation]')) {
+        try {
+          const updated = await API.config.update({ dictation: {
+            providerId: host.querySelector('#dictation-provider')?.value || '',
+            model: (host.querySelector('#dictation-model')?.value || '').trim() || 'whisper-1',
+            language: host.querySelector('#dictation-language')?.value || '',
+          } });
+          applyConfig(updated);
+          paintSettings(host);
+          UI.toast('Dictation settings saved.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
       if (event.target.closest('[data-save-schedule]')) {
         const prompt = host.querySelector('#schedule-prompt').value.trim();
         if (!prompt) { UI.toast('Write the prompt this schedule should run.', 'error'); return; }
@@ -2448,6 +2526,15 @@ Start writing, or ask the agent to draft it.
       }
     };
     host.onchange = async (event) => {
+      if (event.target && event.target.id === 'approval-mode') {
+        try {
+          const mode = event.target.value === 'all' ? 'all' : 'important';
+          const updated = await API.config.update({ approvals: { mode } });
+          applyConfig(updated);
+          UI.toast(mode === 'all' ? 'Blank will ask before every guarded action.' : 'Blank will ask only for important actions.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
       if (event.target && event.target.id === 'search-provider') {
         try {
           const updated = await API.config.update({ search: { provider: event.target.value } });
@@ -2704,7 +2791,7 @@ Start writing, or ask the agent to draft it.
                   ${kind === 'image' && (vstate.media.engines?.local || []).some((e) => e.id === 'comfyui' && !e.available) ? '<option value="add-comfy">Set up ComfyUI…</option>' : ''}
                 </select>
               </label>` : ''}
-              ${engines.length && modelChoices.length > 1 ? `<label class="studio-field"><span>Model</span><select class="studio-select" id="compose-model">${modelChoices.map((model) => `<option value="${U.attr(model)}" ${compose.model === model ? 'selected' : ''}>${esc(model)}</option>`).join('')}</select></label>` : ''}
+              ${engines.length && modelChoices.length ? `<label class="studio-field"><span>Model</span><select class="studio-select" id="compose-model">${modelChoices.map((model) => `<option value="${U.attr(model)}" ${compose.model === model ? 'selected' : ''}>${esc(model)}</option>`).join('')}</select></label>` : ''}
               <button class="studio-generate" type="button" data-generate ${engines.length ? '' : 'disabled'}>
                 ${activeJobs.length ? `<span class="spinner" style="width:12px;height:12px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>` : icon('sparkles', 14)}
                 Generate ${noun} <span class="kbd">${U.kbd('Ctrl ↵')}</span>
@@ -3029,11 +3116,19 @@ Start writing, or ask the agent to draft it.
     setTimeout(tick, 600);
   }
 
-  function handleJobFinished(job) {
+  async function handleJobFinished(job) {
     if (notifiedJobs.has(job.id)) return;
     notifiedJobs.add(job.id);
     if (job.status === 'done') {
       const assetId = (job.assetIds || [])[0];
+      let asset = assetId ? vstate.media.assets.find((item) => item.id === assetId) || null : null;
+      if (assetId && !asset) {
+        try { asset = await API.media.get(assetId); } catch {}
+        if (asset) vstate.media.assets.unshift(asset);
+      }
+      if (asset && typeof window.ChatView?.showGeneratedMedia === 'function') {
+        window.ChatView.showGeneratedMedia(asset);
+      }
       UI.toast(`${KIND[job.kind]?.label || 'Media'} ready.`, 'success', {
         title: 'Media',
         actionLabel: assetId ? 'Open' : null,
@@ -3107,6 +3202,7 @@ Start writing, or ask the agent to draft it.
   const CLOUD_GROUP_LABELS = {
     openai: 'OpenAI', google: 'Google AI', stability: 'Stability AI',
     elevenlabs: 'ElevenLabs', replicate: 'Replicate', fal: 'fal.ai', higgsfield: 'Higgsfield',
+    openaiCompatible: 'OpenAI compatible',
   };
 
   function detailMetaItem(label, value, mono) {
@@ -3571,6 +3667,77 @@ Start writing, or ask the agent to draft it.
 
   /* ------------------------------------------------------------- media engines */
 
+  function compatEngineMarkup(group) {
+    const engine = group.engines[0] || {};
+    const compat = vstate.media.engines?.compat || {};
+    const endpoint = compat.endpoint || engine.endpoint || engine.baseUrl || '';
+    const models = compat.models || engine.modelsByKind || { image: [], video: [] };
+    const imageModels = models.image || [];
+    const videoModels = models.video || [];
+    const autoDetected = Boolean(compat.autoDetected);
+    const ready = Boolean(group.hasKey && endpoint);
+    const isNvidia = /integrate\.api\.nvidia\.com/i.test(endpoint);
+    const chips = [
+      `<span class="engine-chip">Image</span><span class="engine-chip">Video</span>`,
+      ...imageModels.slice(0, 3).map((model) => `<span class="engine-chip mono">${esc(model)}</span>`),
+      ...videoModels.slice(0, 3).map((model) => `<span class="engine-chip mono">${esc(model)}</span>`),
+    ].join('');
+    return `<div class="engine-row compat-engine ${ready ? 'available' : ''}" data-key-group="openaiCompatible">
+      <div class="engine-head">
+        <span class="engine-glyph">${icon('sparkles', 13)}</span>
+        <div class="engine-copy">
+          <div class="engine-name">${esc(group.label)} <span class="badge ${group.hasKey ? 'green' : ''}">${group.hasKey ? 'Key stored' : 'No key'}</span>${autoDetected ? ' <span class="badge blue">NVIDIA NIM detected</span>' : ''}</div>
+          <div class="engine-kinds">${chips}</div>
+        </div>
+        <span class="engine-status ${ready ? 'on' : ''}">${icon(ready ? 'check-circle' : 'alert-circle', 11)} ${ready ? 'Ready' : 'Needs setup'}</span>
+      </div>
+      <div class="compat-grid">
+        <div class="studio-field full"><span>Base URL</span>
+          <div class="engine-key-row compact">
+            <input class="studio-input" type="text" spellcheck="false" data-compat-endpoint placeholder="https://integrate.api.nvidia.com/v1" value="${U.attr(endpoint)}" />
+            <button class="btn btn-secondary btn-sm" type="button" data-compat-save-endpoint>Save</button>
+          </div>
+        </div>
+        <div class="studio-field full"><span>API key</span>
+          <div class="engine-key-row compact">
+            <input class="studio-input" type="password" autocomplete="off" spellcheck="false" data-key-input="openaiCompatible" placeholder="${group.hasKey ? '•••••••• stored — enter a new key' : 'Paste the API key for this endpoint'}" />
+            <button class="btn btn-secondary btn-sm" type="button" data-key-save="openaiCompatible">${group.hasKey ? 'Replace' : 'Save'}</button>
+            ${group.hasKey ? `<button class="btn btn-ghost btn-sm" type="button" data-key-clear="openaiCompatible">Clear</button>` : ''}
+          </div>
+        </div>
+        <div class="studio-field"><span>Image models</span><input class="studio-input" type="text" spellcheck="false" data-compat-image placeholder="qwen/qwen-image" value="${U.attr(imageModels.join(', '))}" /></div>
+        <div class="studio-field"><span>Video models</span><input class="studio-input" type="text" spellcheck="false" data-compat-video placeholder="wan-ai/wan2.2" value="${U.attr(videoModels.join(', '))}" /></div>
+      </div>
+      <div class="compat-actions">
+        <button class="btn btn-secondary btn-sm" type="button" data-compat-discover>${icon('refresh', 11)} Discover models</button>${isNvidia ? `
+        <button class="btn btn-secondary btn-sm" type="button" data-compat-nvidia>${icon('wand', 11)} Use NVIDIA NIM models</button>` : ''}
+        <button class="btn btn-primary btn-sm" type="button" data-compat-save-models>Save models</button>
+        <span class="hint">${isNvidia ? 'NVIDIA hosted serves FLUX images through /v1/genai. Video needs a self-hosted NIM base URL.' : 'Comma-separated model IDs. Discover reads /v1/models from this endpoint with the saved key.'}</span>
+      </div>
+    </div>`;
+  }
+
+  function readCompatModels(body) {
+    const parse = (selector) => [...new Set(String(body.querySelector(selector)?.value || '')
+      .split(/[\n,]+/)
+      .map((model) => model.trim())
+      .filter(Boolean))];
+    return { image: parse('[data-compat-image]'), video: parse('[data-compat-video]') };
+  }
+
+  function applyCompatResult(result) {
+    if (!vstate.media.engines) return;
+    const next = { ...vstate.media.engines };
+    if (result?.engines) {
+      next.local = result.engines.local || next.local;
+      next.cloud = result.engines.cloud || next.cloud;
+    }
+    if (result?.endpoints) next.endpoints = result.endpoints;
+    if (result?.compat) next.compat = result.compat;
+    if (result?.models) next.compat = { ...(next.compat || {}), models: result.models };
+    vstate.media.engines = next;
+  }
+
   function enginesMarkup() {
     const engines = vstate.media.engines || { local: [], cloud: [] };
     const groups = new Map();
@@ -3588,7 +3755,10 @@ Start writing, or ask the agent to draft it.
       if (!group.note && engine.note) group.note = engine.note;
       groups.set(engine.keyId, group);
     }
-    const ready = [...groups.values()].filter((group) => group.hasKey).length;
+    const compatEndpoint = engines.compat?.endpoint
+      || (groups.get('openaiCompatible')?.engines || []).find((engine) => engine.endpoint)?.endpoint
+      || '';
+    const ready = [...groups.values()].filter((group) => group.hasKey && (group.keyId !== 'openaiCompatible' || compatEndpoint)).length;
     const comfyEndpoint = engines.endpoints?.comfyui || (engines.local || []).find((engine) => engine.id === 'comfyui')?.endpoint || '';
     const localRows = (engines.local || []).filter((engine) => engine.id !== 'comfyui').map((engine) => `<div class="engine-row ${engine.available ? 'available' : ''}">
       <div class="engine-head">
@@ -3600,7 +3770,7 @@ Start writing, or ask the agent to draft it.
         <span class="engine-status ${engine.available ? 'on' : ''}">${icon(engine.available ? 'check-circle' : 'alert-circle', 11)} ${engine.available ? 'Ready' : 'Unavailable'}</span>
       </div>
     </div>`).join('');
-    const cloudRows = [...groups.values()].map((group) => `<div class="engine-row ${group.hasKey ? 'available' : ''}" data-key-group="${U.attr(group.keyId)}">
+    const cloudRows = [...groups.values()].map((group) => group.keyId === 'openaiCompatible' ? compatEngineMarkup(group) : `<div class="engine-row ${group.hasKey ? 'available' : ''}" data-key-group="${U.attr(group.keyId)}">
       <div class="engine-head">
         <span class="engine-glyph">${icon('globe', 13)}</span>
         <div class="engine-copy">
@@ -3667,7 +3837,14 @@ Start writing, or ask the agent to draft it.
       buttons.forEach((button) => { button.disabled = true; });
       try {
         const result = await API.media.setKey({ id: keyId, key: value });
-        if (result && result.engines) vstate.media.engines = result.engines;
+        if (result?.engines) {
+          vstate.media.engines = {
+            ...(vstate.media.engines || {}),
+            local: result.engines.local || [],
+            cloud: result.engines.cloud || [],
+          };
+        }
+        applyCompatResult(result);
         changed = true;
         API.media.storage().then((storage) => { vstate.media.storage = storage; }).catch(() => {});
         paint();
@@ -3714,6 +3891,94 @@ Start writing, or ask the agent to draft it.
         }
         comfyTest.disabled = false;
         comfyTest.textContent = 'Test';
+        return;
+      }
+      const compatEndpointSave = event.target.closest('[data-compat-save-endpoint]');
+      if (compatEndpointSave) {
+        const endpoint = String(body.querySelector('[data-compat-endpoint]')?.value || '').trim();
+        compatEndpointSave.disabled = true;
+        try {
+          const result = await API.media.setEndpoint({ id: 'openaiCompatible', endpoint });
+          applyCompatResult(result);
+          changed = true;
+          paint();
+          const found = (result?.compat?.models?.image || []).length + (result?.compat?.models?.video || []).length;
+          UI.toast(endpoint
+            ? `OpenAI-compatible endpoint saved${found ? ` · ${found} media models found` : ''}.`
+            : 'OpenAI-compatible endpoint cleared.', 'success');
+        } catch (error) {
+          UI.toast(error.message, 'error');
+          compatEndpointSave.disabled = false;
+        }
+        return;
+      }
+      const compatModelsSave = event.target.closest('[data-compat-save-models]');
+      if (compatModelsSave) {
+        const models = readCompatModels(body);
+        compatModelsSave.disabled = true;
+        try {
+          const result = await API.media.setModels(models);
+          applyCompatResult(result);
+          changed = true;
+          paint();
+          const count = models.image.length + models.video.length;
+          UI.toast(`${count} media model${count === 1 ? '' : 's'} saved.`, 'success');
+        } catch (error) {
+          UI.toast(error.message, 'error');
+          compatModelsSave.disabled = false;
+        }
+        return;
+      }
+      const compatNvidia = event.target.closest('[data-compat-nvidia]');
+      if (compatNvidia) {
+        compatNvidia.disabled = true;
+        try {
+          const result = await API.media.setModels({
+            image: ['black-forest-labs/flux.1-schnell', 'qwen/qwen-image-2512'],
+            video: ['wan-ai/wan2.2'],
+          });
+          applyCompatResult(result);
+          changed = true;
+          paint();
+          UI.toast('NVIDIA NIM model IDs saved. Adjust them if your server uses other names.', 'success', { timeout: 8000 });
+        } catch (error) {
+          UI.toast(error.message, 'error');
+          compatNvidia.disabled = false;
+        }
+        return;
+      }
+      const compatDiscover = event.target.closest('[data-compat-discover]');
+      if (compatDiscover) {
+        const endpoint = String(body.querySelector('[data-compat-endpoint]')?.value || '').trim();
+        if (!endpoint) {
+          UI.toast('Enter the OpenAI-compatible base URL first.', 'warn');
+          body.querySelector('[data-compat-endpoint]')?.focus();
+          return;
+        }
+        const original = compatDiscover.innerHTML;
+        compatDiscover.disabled = true;
+        compatDiscover.textContent = 'Discovering…';
+        try {
+          const result = await API.media.discoverModels({ endpoint });
+          if (!result?.total) throw new Error('This endpoint returned no models.');
+          const image = result.image || [];
+          const video = result.video || [];
+          if (!image.length && !video.length) {
+            UI.toast(`Found ${result.total} models but none look like image or video. Add model IDs manually.`, 'warn', { timeout: 8000 });
+            compatDiscover.disabled = false;
+            compatDiscover.innerHTML = original;
+            return;
+          }
+          const saved = await API.media.setModels({ image, video });
+          applyCompatResult(saved);
+          changed = true;
+          paint();
+          UI.toast(`Found ${result.total} models · ${image.length} image, ${video.length} video.`, 'success', { timeout: 7000 });
+        } catch (error) {
+          UI.toast(error.message, 'error');
+          compatDiscover.disabled = false;
+          compatDiscover.innerHTML = original;
+        }
         return;
       }
       const save = event.target.closest('[data-key-save]');
@@ -4769,6 +5034,17 @@ Start writing, or ask the agent to draft it.
     }
   }
 
+  function activateChat() {
+    const inline = vstate.media.inline;
+    if (inline && inline.host.isConnected) {
+      vstate.page = 'studio';
+      vstate.host = inline.host;
+    } else {
+      vstate.page = 'chat';
+      vstate.host = null;
+    }
+  }
+
   function mediaCount() {
     if (!vstate.media.loaded) return null;
     const counts = vstate.media.storage?.counts || vstate.media.counts || {};
@@ -4785,12 +5061,44 @@ Start writing, or ask the agent to draft it.
       engine: typeof options.engine === 'string' ? options.engine : '',
       voice: typeof options.voice === 'string' ? options.voice : '',
     };
-    vstate.media.embedded = true;
-    const host = document.createElement('div');
-    host.className = 'studio-embed';
-    host.innerHTML = pageLoading('Create media', 'Generate and edit images, video, audio and 3D.');
     const activePage = document.querySelector('[data-page].active')?.dataset.page || 'chat';
     const underlying = { page: activePage, host: activePage === 'chat' ? null : vstate.host };
+    const host = document.createElement('div');
+    host.className = 'studio-embed';
+
+    const onChat = (document.querySelector('[data-page].active')?.dataset.page || 'chat') === 'chat';
+    const inline = options.container || (onChat ? document.getElementById('chat-media-panel') : null);
+    if (inline) {
+      if (vstate.media.inline) closeStudio({ silent: true });
+      inline.hidden = false;
+      inline.classList.add('is-open');
+      document.getElementById('chat-shell')?.classList.add('media-open');
+      const trigger = document.querySelector('.composer-tool[data-action="open-media"]');
+      if (trigger) trigger.classList.add('active');
+      inline.innerHTML = `
+        <div class="chat-media-head">
+          <div class="chat-media-title">${icon('wand', 14)}<span>Create media</span></div>
+          <div class="chat-media-actions">
+            <button class="btn btn-secondary btn-xs" type="button" data-studio-engines>${icon('sliders', 12)} Engines</button>
+            <button class="btn btn-secondary btn-xs" type="button" data-studio-import>${icon('upload', 12)} Import</button>
+            <button class="icon-btn" type="button" data-studio-close title="Close media" aria-label="Close media">${icon('x', 13)}</button>
+          </div>
+        </div>`;
+      host.innerHTML = pageLoading('Create media', 'Generate images, video, audio and 3D here in the chat.');
+      inline.appendChild(host);
+      inline.querySelector('[data-studio-engines]')?.addEventListener('click', () => {
+        openMediaEngines(() => { if (host.isConnected) mountStudio(host); });
+      });
+      inline.querySelector('[data-studio-import]')?.addEventListener('click', () => importMedia(host));
+      inline.querySelector('[data-studio-close]')?.addEventListener('click', () => closeStudio());
+      vstate.media.embedded = true;
+      vstate.media.inline = { container: inline, host, underlying };
+      mountStudio(host);
+      return;
+    }
+
+    host.innerHTML = pageLoading('Create media', 'Generate and edit images, video, audio and 3D.');
+    vstate.media.embedded = true;
     UI.modal({
       title: 'Create media',
       description: 'Generate and edit media without leaving the chat.',
@@ -4814,6 +5122,24 @@ Start writing, or ask the agent to draft it.
       },
     });
     mountStudio(host);
+  }
+
+  function closeStudio(options = {}) {
+    const inline = vstate.media.inline;
+    if (!inline) return;
+    if (vstate.host === inline.host) {
+      vstate.page = inline.underlying.page;
+      vstate.host = inline.underlying.host;
+    }
+    inline.host.remove();
+    inline.container.innerHTML = '';
+    inline.container.hidden = true;
+    inline.container.classList.remove('is-open');
+    document.getElementById('chat-shell')?.classList.remove('media-open');
+    document.querySelector('.composer-tool[data-action="open-media"]')?.classList.remove('active');
+    vstate.media.inline = null;
+    vstate.media.embedded = false;
+    if (!options.silent) window.ChatView?.focusComposer?.();
   }
 
   function render(page, host) {
@@ -4841,6 +5167,8 @@ Start writing, or ask the agent to draft it.
     openMediaDetail,
     openMediaEngines,
     openStudio,
+    closeStudio,
+    activateChat,
     openPaper,
     openPaperComposer,
     openModelPicker,

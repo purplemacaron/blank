@@ -22,6 +22,7 @@ const schedulesModule = require('../src/core/schedules');
 const oauthModule = require('../src/core/oauth');
 const paperStore = require('../src/core/paper');
 const notifications = require('./notifications');
+const dictation = require('../src/core/dictation');
 
 const APP_ROOT = path.join(__dirname, '..');
 const isWin = process.platform === 'win32';
@@ -131,6 +132,7 @@ function registerIpc({ mcp, getWindow }) {
       tool: approval.tool,
       label: approval.label,
       summary: approval.summary,
+      reason: approval.reason,
     }));
   }
 
@@ -264,7 +266,7 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('config:get', async () => configWithRuntime(configModule.loadConfig()));
 
   require('electron').ipcMain.handle('config:update', async (_event, patch = {}) => {
-    const allowed = ['defaultModel', 'fallbackModel', 'theme', 'language', 'onboarded', 'agent', 'ui', 'customInstructions', 'disabledSkills', 'media', 'permissions', 'search', 'computer', 'team', 'notifications'];
+    const allowed = ['defaultModel', 'fallbackModel', 'theme', 'language', 'onboarded', 'agent', 'ui', 'customInstructions', 'disabledSkills', 'media', 'permissions', 'approvals', 'search', 'computer', 'team', 'notifications', 'dictation'];
     const clean = {};
     for (const key of allowed) {
       if (patch[key] === undefined) continue;
@@ -283,6 +285,9 @@ function registerIpc({ mcp, getWindow }) {
     }
     if (clean.computer) {
       clean.computer = { showCursor: clean.computer.showCursor !== false };
+    }
+    if (clean.approvals) {
+      clean.approvals = { mode: clean.approvals.mode === 'all' ? 'all' : 'important' };
     }
     if (clean.defaultModel) {
       if (!catalog.findModel(clean.defaultModel, configModule.loadConfig())) throw new Error('Unknown model.');
@@ -313,6 +318,15 @@ function registerIpc({ mcp, getWindow }) {
       clean.team = next;
     }
     if (clean.customInstructions) clean.customInstructions = String(clean.customInstructions).slice(0, 20000);
+    if (clean.dictation) {
+      const incoming = clean.dictation && typeof clean.dictation === 'object' ? clean.dictation : {};
+      const current = configModule.loadConfig().dictation || {};
+      clean.dictation = {
+        providerId: String(incoming.providerId ?? current.providerId ?? '').trim().slice(0, 80),
+        model: String(incoming.model ?? current.model ?? 'whisper-1').trim().slice(0, 120) || 'whisper-1',
+        language: String(incoming.language ?? current.language ?? '').trim().slice(0, 20),
+      };
+    }
     if (clean.agent) {
       clean.agent = {
         ...clean.agent,
@@ -625,6 +639,8 @@ function registerIpc({ mcp, getWindow }) {
 
   /* ------------------------------------------------------- search & computer */
 
+  ipcMainHandle('dictation:transcribe', async (_event, input = {}) => dictation.transcribeAudio(input));
+
   require('electron').ipcMain.handle('search:test', async (_event, input = {}) => {
     const config = configModule.loadConfig();
     try {
@@ -744,12 +760,14 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('sessions:create', async (_event, input = {}) => {
     const config = configModule.loadConfig();
     const model = input.model && catalog.findModel(input.model, config) ? input.model : config.defaultModel;
-    const mode = ['agent', 'design', 'plan', 'ask'].includes(input.mode) ? input.mode : 'agent';
+    const mode = ['agent', 'coding', 'design', 'plan', 'ask'].includes(input.mode) ? input.mode : 'agent';
+    const customTitle = String(input.title || '').trim();
     const session = store.createSession({
       workspace: config.workspace,
       model,
       mode,
-      title: String(input.title || 'New session').slice(0, 120),
+      title: (customTitle || 'New session').slice(0, 120),
+      titleSource: customTitle ? 'manual' : 'auto',
       reasoningEffort: input.reasoningEffort,
     });
     notifySession(session);
@@ -759,14 +777,17 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('sessions:update', async (_event, input = {}) => {
     const session = store.getSession(input.id);
     if (!session) throw new Error('Session not found.');
-    if (input.title !== undefined) session.title = String(input.title).trim().slice(0, 120) || 'New session';
+    if (input.title !== undefined) {
+      session.title = String(input.title).trim().slice(0, 120) || 'New session';
+      session.titleSource = 'manual';
+    }
     if (input.pinned !== undefined) session.pinned = Boolean(input.pinned);
     if (input.model !== undefined) {
       const config = configModule.loadConfig();
       if (!catalog.findModel(input.model, config)) throw new Error('Unknown model.');
       session.model = input.model;
     }
-    if (input.mode !== undefined && ['agent', 'design', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
+    if (input.mode !== undefined && ['agent', 'coding', 'design', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
     if (input.reasoningEffort !== undefined && reasoning.isEffort(input.reasoningEffort)) {
       session.reasoningEffort = input.reasoningEffort;
     }
@@ -862,6 +883,7 @@ function registerIpc({ mcp, getWindow }) {
         tool: request.tool,
         label: request.label || request.tool,
         summary: summarizeArgs(request.tool, request.args),
+        reason: request.reason || 'policy',
       });
       const payload = {
         type: 'approval',
@@ -872,6 +894,7 @@ function registerIpc({ mcp, getWindow }) {
         label: request.label || request.tool,
         args: request.args,
         summary: summarizeArgs(request.tool, request.args),
+        reason: request.reason || 'policy',
       };
       sendEvent(win, payload);
       const main = getWindow();
@@ -934,7 +957,7 @@ function registerIpc({ mcp, getWindow }) {
     }
     const config = configModule.loadConfig();
     if (next.model && catalog.findModel(next.model, config)) session.model = next.model;
-    if (next.mode && ['agent', 'design', 'plan', 'ask'].includes(next.mode)) session.mode = next.mode;
+    if (next.mode && ['agent', 'coding', 'design', 'plan', 'ask'].includes(next.mode)) session.mode = next.mode;
     if (next.reasoningEffort && reasoning.isEffort(next.reasoningEffort)) {
       session.reasoningEffort = next.reasoningEffort;
     }
@@ -1022,11 +1045,11 @@ function registerIpc({ mcp, getWindow }) {
 
     if (!session) {
       const model = input.model && catalog.findModel(input.model, config) ? input.model : config.defaultModel;
-      const mode = ['agent', 'design', 'plan', 'ask'].includes(input.mode) ? input.mode : 'agent';
+      const mode = ['agent', 'coding', 'design', 'plan', 'ask'].includes(input.mode) ? input.mode : 'agent';
       session = store.createSession({ workspace: config.workspace, model, mode, reasoningEffort: input.reasoningEffort });
     } else {
       if (input.model && catalog.findModel(input.model, config)) session.model = input.model;
-      if (input.mode && ['agent', 'design', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
+      if (input.mode && ['agent', 'coding', 'design', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
       if (input.reasoningEffort && reasoning.isEffort(input.reasoningEffort)) {
         session.reasoningEffort = input.reasoningEffort;
       }
@@ -1137,6 +1160,24 @@ function registerIpc({ mcp, getWindow }) {
     const config = configModule.loadConfig();
     shell.showItemInFolder(store.safePath(config.workspace, relativePath));
     return true;
+  });
+
+  require('electron').ipcMain.handle('workspace:saveAs', async (event, input = {}) => {
+    const config = configModule.loadConfig();
+    if (!config.workspace) throw new Error('No workspace open.');
+    const relativePath = String(input.path || '');
+    const full = store.safePath(config.workspace, relativePath);
+    const stat = fs.statSync(full);
+    if (stat.isDirectory()) throw new Error('That is a directory.');
+    const fileName = String(input.name || path.basename(full)).replace(/[\\/:*?"<>|]+/g, '-').slice(0, 140) || path.basename(full);
+    const win = winFromEvent(event);
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Save file',
+      defaultPath: path.join(app.getPath('downloads'), fileName),
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    fs.copyFileSync(full, result.filePath);
+    return { canceled: false, path: result.filePath, bytes: stat.size };
   });
 
   require('electron').ipcMain.handle('workspace:openEditor', async () => {
@@ -1595,11 +1636,45 @@ ${commands}
 
   /* -------------------------------------------------------------------- media */
 
-  const MEDIA_KEY_IDS = new Set(['openai', 'google', 'stability', 'elevenlabs', 'replicate', 'fal', 'higgsfield']);
+  const MEDIA_KEY_IDS = new Set(['openai', 'google', 'stability', 'elevenlabs', 'replicate', 'fal', 'higgsfield', 'openaiCompatible']);
   const MEDIA_KEY_LABELS = {
     openai: 'OpenAI', google: 'Google AI', stability: 'Stability AI',
     elevenlabs: 'ElevenLabs', replicate: 'Replicate', fal: 'fal.ai', higgsfield: 'Higgsfield',
+    openaiCompatible: 'OpenAI compatible',
   };
+
+  function compatMediaConfig(config) {
+    const endpoints = config.media?.endpoints || {};
+    const savedEndpoint = String(endpoints.openaiCompatible || '').trim();
+    const endpoint = getMedia().compatEndpoint(config);
+    return {
+      endpoint,
+      savedEndpoint,
+      autoDetected: !savedEndpoint && Boolean(endpoint),
+      models: {
+        image: [...(config.media?.openaiModels?.image || [])],
+        video: [...(config.media?.openaiModels?.video || [])],
+      },
+    };
+  }
+
+  async function autoFillCompatModels(config) {
+    const current = config.media?.openaiModels || {};
+    if ((current.image || []).length || (current.video || []).length) return null;
+    const endpoint = getMedia().compatEndpoint(config);
+    if (!endpoint) return null;
+    const key = getMedia().resolveCloudKey(config, 'openai-compatible');
+    if (!key) return null;
+    try {
+      const ids = await getMedia().discoverCompatModels({ baseUrl: endpoint, apiKey: key });
+      const classified = getMedia().classifyCompatModels(ids);
+      if (!classified.image.length && !classified.video.length) return null;
+      configModule.patchConfig({ media: { openaiModels: classified } });
+      return classified;
+    } catch {
+      return null;
+    }
+  }
 
   ipcMainHandle('media:list', async (_event, options = {}) => getMedia().listAssets(options));
   ipcMainHandle('media:get', async (_event, id) => getMedia().getAsset(String(id || '')));
@@ -1611,24 +1686,56 @@ ${commands}
     return {
       ...getMedia().engineAvailability(),
       defaults: config.media?.defaults || getMedia().MEDIA_DEFAULTS,
-      endpoints: config.media?.endpoints || { comfyui: '' },
+      endpoints: config.media?.endpoints || { comfyui: '', openaiCompatible: '' },
+      compat: compatMediaConfig(config),
       storage: getMedia().storageInfo(),
     };
   });
   ipcMainHandle('media:voices', async () => getMedia().listVoices());
   ipcMainHandle('media:setEndpoint', async (_event, input = {}) => {
-    if (input.id !== 'comfyui') throw new Error('Unknown media endpoint');
+    const id = String(input.id || '');
+    if (id !== 'comfyui' && id !== 'openaiCompatible') throw new Error('Unknown media endpoint');
     const raw = String(input.endpoint || '').trim().slice(0, 300);
     if (raw) {
       let parsed;
-      try { parsed = new URL(raw); } catch { throw new Error('Enter a valid ComfyUI URL.'); }
+      try { parsed = new URL(raw); } catch { throw new Error(id === 'comfyui' ? 'Enter a valid ComfyUI URL.' : 'Enter a valid OpenAI-compatible base URL.'); }
       if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Endpoint must start with http:// or https://.');
     }
     const config = configModule.loadConfig();
-    const endpoints = { ...(config.media?.endpoints || {}), comfyui: raw };
+    const endpoints = { ...(config.media?.endpoints || {}), [id]: raw };
     configModule.patchConfig({ media: { endpoints } });
+    if (id === 'openaiCompatible' && raw) {
+      const next = configModule.loadConfig();
+      await autoFillCompatModels(next);
+    }
     broadcast({ type: 'config:updated' });
-    return { endpoints, engines: getMedia().engineAvailability() };
+    const next = configModule.loadConfig();
+    return {
+      endpoints: next.media?.endpoints || endpoints,
+      compat: compatMediaConfig(next),
+      engines: getMedia().engineAvailability(),
+    };
+  });
+  ipcMainHandle('media:setModels', async (_event, input = {}) => {
+    const clean = {};
+    for (const kind of ['image', 'video']) {
+      const raw = Array.isArray(input[kind]) ? input[kind] : String(input[kind] || '').split(/[\n,]+/);
+      const models = [...new Set(raw.map((model) => String(model || '').trim()).filter(Boolean))].slice(0, 60);
+      clean[kind] = models.map((model) => model.slice(0, 160));
+    }
+    configModule.patchConfig({ media: { openaiModels: clean } });
+    broadcast({ type: 'config:updated' });
+    const config = configModule.loadConfig();
+    return { models: clean, engines: getMedia().engineAvailability() };
+  });
+  ipcMainHandle('media:discoverModels', async (_event, input = {}) => {
+    const config = configModule.loadConfig();
+    const endpoint = String(input.endpoint || '').trim() || getMedia().compatEndpoint(config);
+    const key = getMedia().resolveCloudKey(config, 'openai-compatible');
+    if (!key) throw new Error('Add the OpenAI-compatible API key first.');
+    const ids = await getMedia().discoverCompatModels({ baseUrl: endpoint, apiKey: key });
+    const classified = getMedia().classifyCompatModels(ids);
+    return { endpoint, total: ids.length, all: ids, ...classified };
   });
   ipcMainHandle('media:testEndpoint', async (_event, input = {}) => getMedia().testEndpoint(String(input.endpoint || '')));
 
@@ -1711,15 +1818,21 @@ ${commands}
     if (!MEDIA_KEY_IDS.has(id)) throw new Error('Unknown media provider key');
     const key = String(input.key || '').trim().slice(0, 400);
     const config = configModule.loadConfig();
-    const keys = { ...(config.media?.keys || {}) };
-    if (key) keys[id] = key;
-    else delete keys[id];
-    configModule.patchConfig({ media: { keys } });
+    config.media = config.media || {};
+    config.media.keys = { ...(config.media.keys || {}) };
+    if (key) config.media.keys[id] = key;
+    else delete config.media.keys[id];
+    configModule.saveConfig(config);
+    if (id === 'openaiCompatible' && key) {
+      await autoFillCompatModels(configModule.loadConfig());
+    }
     broadcast({ type: 'config:updated' });
+    const next = configModule.loadConfig();
     return {
       id,
       hasKey: Boolean(key),
       label: MEDIA_KEY_LABELS[id] || id,
+      compat: compatMediaConfig(next),
       engines: getMedia().engineAvailability(),
     };
   });
@@ -1848,6 +1961,7 @@ ${commands}
       reasoningEffort: schedule.reasoningEffort,
     });
     session.title = schedule.title;
+    session.titleSource = 'manual';
     const message = { id: uid('msg_'), role: 'user', content: schedule.prompt, at: new Date().toISOString(), source: 'schedule' };
     session.messages.push(message);
     store.saveSession(session);
