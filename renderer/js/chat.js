@@ -12,9 +12,9 @@
   };
 
   const MODES = {
-    agent: { label: 'Agent', icon: 'bot', description: 'Read, write, run commands, and use tools.' },
-    plan: { label: 'Plan', icon: 'checklist', description: 'Read-only reasoning. Produce a plan before changing code.' },
-    ask: { label: 'Ask', icon: 'message', description: 'Answer questions only. No tools run.' },
+    agent: { label: 'Agent', icon: 'bot' },
+    plan: { label: 'Plan', icon: 'checklist' },
+    ask: { label: 'Ask', icon: 'message' },
   };
 
   const Chat = {
@@ -420,6 +420,13 @@
     if (!input || !modeButton) return;
     const mode = currentMode();
     modeButton.innerHTML = `${icon(modeOf(mode).icon, 13)}<span>${U.esc(modeOf(mode).label)}</span><span class="ws-caret">${icon('chevron-updown', 10)}</span>`;
+    const modelButton = document.getElementById('composer-model');
+    if (modelButton) {
+      const modelId = currentModel();
+      const provider = providerOf(modelId);
+      modelButton.innerHTML = `${provider ? UI.providerMono(provider) : icon('cpu', 12)}<span class="composer-tool-label">${U.esc(modelName(modelId))}</span><span class="ws-caret">${icon('chevron-updown', 10)}</span>`;
+      modelButton.title = `Model · ${modelName(modelId)}`;
+    }
     input.placeholder = mode === 'plan'
       ? 'Describe what you want planned. Reads only.'
       : mode === 'ask'
@@ -503,7 +510,6 @@
     scroll.innerHTML = `<div class="chat-empty">
       <div class="hero">
         <h1>What should we build?</h1>
-        <p class="hero-sub">Blank reads your workspace, runs real tools, and stops for approval before anything risky. Type a request, or start with a thread.</p>
         <div class="suggestion-grid">
           <button class="suggestion" type="button" data-action="suggest" data-suggest="tour">
             <span class="suggestion-icon">${icon('zap', 14)}</span>
@@ -524,8 +530,6 @@
         </div>
         <div class="hero-foot">
           <span>${U.esc(provider ? provider.name : 'Blank')} · ${U.esc(modelName(modelId))}</span>
-          <span>·</span>
-          <span>${icon('shield', 10)} approvals on writes</span>
           <span>·</span>
           <span><kbd>${U.kbd('Ctrl K')}</kbd> commands</span>
         </div>
@@ -1132,18 +1136,50 @@
     });
   }
 
+  const GUARDED_TOOLS = ['write_file', 'edit_file', 'run_command', 'ssh_run', 'mcp'];
+
+  function approvalPreset() {
+    const perms = App.state.config?.permissions || {};
+    return GUARDED_TOOLS.some((tool) => perms[tool] === 'ask') ? 'ask' : 'auto';
+  }
+
+  async function setApprovalPreset(preset) {
+    const level = preset === 'ask' ? 'ask' : 'allow';
+    const permissions = {};
+    for (const tool of GUARDED_TOOLS) permissions[tool] = level;
+    try {
+      await API.config.update({ permissions });
+      if (App.state.config) App.state.config.permissions = { ...(App.state.config.permissions || {}), ...permissions };
+      updateComposer();
+      UI.toast(preset === 'ask' ? 'Blank will ask before writes and commands.' : 'Writes and commands run without prompts.', 'success');
+    } catch (error) { UI.toast(error.message, 'error'); }
+  }
+
   function openModePicker(anchor) {
     if (!anchor) return;
     const current = currentMode();
+    const approvals = approvalPreset();
     const content = document.createElement('div');
     content.className = 'mode-picker';
-    content.innerHTML = Object.entries(MODES).map(([value, mode]) => `<button class="mode-choice ${value === current ? 'selected' : ''}" type="button" data-mode="${value}">
+    content.innerHTML = `<div class="mode-picker-head">Mode</div>${Object.entries(MODES).map(([value, mode]) => `<button class="mode-choice ${value === current ? 'selected' : ''}" type="button" data-mode="${value}">
       <span class="mode-choice-icon">${icon(mode.icon, 15)}</span>
-      <span class="mode-choice-copy"><span class="mode-choice-name">${U.esc(mode.label)}</span><span class="mode-choice-desc">${U.esc(mode.description)}</span></span>
+      <span class="mode-choice-name">${U.esc(mode.label)}</span>
       ${value === current ? `<span class="mode-choice-check">${icon('check', 13)}</span>` : ''}
-    </button>`).join('');
-    const pop = UI.popover(anchor, content, { width: 292 });
+    </button>`).join('')}
+    <div class="mode-picker-sep"></div>
+    <div class="mode-picker-head">Approvals</div>
+    <div class="approval-preset">
+      <button class="approval-choice ${approvals === 'auto' ? 'selected' : ''}" type="button" data-approval="auto">${icon('check-circle', 13)}<span>Auto</span></button>
+      <button class="approval-choice ${approvals === 'ask' ? 'selected' : ''}" type="button" data-approval="ask">${icon('shield-alert', 13)}<span>Ask first</span></button>
+    </div>`;
+    const pop = UI.popover(anchor, content, { width: 208 });
     content.addEventListener('click', (event) => {
+      const approval = event.target.closest('[data-approval]');
+      if (approval) {
+        pop.close();
+        setApprovalPreset(approval.dataset.approval);
+        return;
+      }
       const button = event.target.closest('.mode-choice');
       if (!button) return;
       const mode = button.dataset.mode;
@@ -1526,6 +1562,7 @@
               <div class="composer-tools">
                 <button class="composer-tool" type="button" data-action="attach-files" title="Attach text files">${icon('paperclip', 13)}<span>Attach</span></button>
                 <span class="composer-divider"></span>
+                <button class="composer-tool composer-model" id="composer-model" type="button" data-action="pick-model" title="Switch model"></button>
                 <button class="composer-tool" id="composer-mode" type="button" data-action="pick-mode"></button>
                 <span class="spacer"></span>
                 <span id="composer-context"></span>

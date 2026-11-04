@@ -5,7 +5,7 @@
   const stroke = 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
 
   const MARKS = {
-    sandbox: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.4" y="2.4" width="19.2" height="19.2" rx="5.8" fill="currentColor"/><circle cx="12" cy="12" r="3.7" fill="#fff"/></svg>`,
+    sandbox: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.4 2.8h6l4.8 4.8v12.2c0 .8-.6 1.4-1.4 1.4H7.4c-.8 0-1.4-.6-1.4-1.4V4.2c0-.8.6-1.4 1.4-1.4Z" fill="currentColor"/><path d="M13.4 2.8v4.8h4.8Z" fill="#DCE7FF"/></svg>`,
     anthropic: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l8.6 18.8h-5.2l-1.2-3H9.8l-1.2 3H3.4L12 2.6zm0 7.6l-1.7 4.5h3.4L12 10.2z" fill="currentColor"/></svg>`,
     openai: `<svg viewBox="0 0 24 24" aria-hidden="true"><g ${stroke}><path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M12 8l4 2.3v4.6L12 17.2l-4-2.3V9.3z"/><path d="M12 8V2.9M16 10.3l4.1-2.5M16 13.9l4.1 2.5M12 17.2V22M8 13.9l-4.1 2.5M8 10.3L3.9 7.8"/></g></svg>`,
     google: `<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke-width="3.1" stroke-linecap="butt"><circle cx="12" cy="12" r="7.7" stroke="#4285F4" stroke-dasharray="12.1 36.3" transform="rotate(-45 12 12)"/><circle cx="12" cy="12" r="7.7" stroke="#34A853" stroke-dasharray="12.1 36.3" transform="rotate(45 12 12)"/><circle cx="12" cy="12" r="7.7" stroke="#FBBC05" stroke-dasharray="12.1 36.3" transform="rotate(135 12 12)"/><circle cx="12" cy="12" r="7.7" stroke="#EA4335" stroke-dasharray="12.1 36.3" transform="rotate(225 12 12)"/></g><path d="M12 12h7.6" stroke="#4285F4" stroke-width="2.9" stroke-linecap="round"/></svg>`,

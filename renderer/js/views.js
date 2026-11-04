@@ -39,6 +39,8 @@
         style: 'auto',
         palette: 'auto',
         quality: 'medium',
+        voice: '',
+        rate: 0,
       },
     },
   };
@@ -46,7 +48,7 @@
   const KIND = {
     image: { label: 'Image', plural: 'Images', icon: 'image', noun: 'image' },
     video: { label: 'Video', plural: 'Video', icon: 'film', noun: 'video' },
-    audio: { label: 'Music', plural: 'Music', icon: 'music', noun: 'track' },
+    audio: { label: 'Audio', plural: 'Audio', icon: 'music', noun: 'audio' },
     model3d: { label: '3D', plural: '3D', icon: 'cube', noun: 'model' },
   };
 
@@ -1102,29 +1104,55 @@
     vstate.host = host;
     host.innerHTML = pageLoading('MCP', 'Model Context Protocol servers extend the agent with real tools.');
     try {
-      const [data, refreshed] = await Promise.all([API.mcp.list(), API.mcp.refresh().catch(() => null)]);
+      const [data, refreshed, sshData] = await Promise.all([
+        API.mcp.list(),
+        API.mcp.refresh().catch(() => null),
+        API.ssh?.list ? API.ssh.list().catch(() => null) : Promise.resolve(null),
+      ]);
       if (!alive(host, 'mcp')) return;
       vstate.mcp.servers = refreshed?.servers || data.servers || [];
       vstate.mcp.catalog = data.catalog || [];
+      if (sshData) vstate.settings.ssh = sshData;
       paintMcp(host);
     } catch (error) { if (alive(host, 'mcp')) pageError(host, 'MCP', error); }
   }
 
+  function sshHosts() {
+    return vstate.settings.ssh?.hosts || currentConfig()?.ssh?.hosts || [];
+  }
+
   function paintMcp(host) {
     const servers = vstate.mcp.servers;
-    const connected = servers.filter((s) => s.connected).length;
+    const hosts = sshHosts();
+    const connected = servers.filter((s) => s.connected).length + (hosts.length ? 1 : 0);
     const catalog = vstate.mcp.catalog;
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
         title: 'MCP servers',
-        description: 'Connect stdio or HTTP Model Context Protocol servers. Their tools appear to the agent namespaced as mcp__server__tool.',
         actions: `<button class="btn btn-secondary btn-sm" data-mcp-example>${icon('sparkles', 12)} Add example</button>
           <button class="btn btn-secondary btn-sm" data-mcp-refresh>${icon('refresh', 12)} Refresh</button>
           <button class="btn btn-primary btn-sm" data-add-mcp>${icon('plus', 12)} Add server</button>`,
-        meta: `<span class="badge green">${connected} connected</span>`,
+        meta: connected ? `<span class="badge green">${connected} connected</span>` : '',
       })}
-      <div class="mcp-note">${icon('shield', 15)}<span>MCP servers run code on your machine. Blank asks before calling an MCP tool for the first time in a session unless you change <b>Settings → Approvals</b>.</span></div>
       <div class="mcp-list">
+        <div class="mcp-card builtin ${hosts.length ? 'connected' : ''}" data-ssh-card>
+          <span class="mcp-icon">${icon('terminal', 15)}</span>
+          <div class="mcp-copy">
+            <div class="mcp-name-row">
+              <span class="mcp-name">SSH</span>
+              <span class="mcp-transport">built-in</span>
+              <span class="mcp-status ${hosts.length ? 'connected' : ''}">
+                <span class="status-dot ${hosts.length ? 'on' : 'off'}"></span>
+                ${hosts.length ? `${hosts.length} host${hosts.length === 1 ? '' : 's'}` : 'No hosts'}
+              </span>
+            </div>
+            <div class="mcp-detail">${hosts.length ? hosts.slice(0, 3).map((entry) => `${esc(entry.user)}@${esc(entry.host)}`).join(' · ') + (hosts.length > 3 ? ` +${hosts.length - 3}` : '') : 'Remote shell over saved credentials'}</div>
+            <div class="mcp-tools"><span class="mcp-tool-chip">ssh_run</span></div>
+          </div>
+          <div class="mcp-actions">
+            <button class="btn btn-secondary btn-sm" type="button" data-ssh-manage>Manage</button>
+          </div>
+        </div>
         ${servers.length ? servers.map((server) => `<div class="mcp-card ${server.connected ? 'connected' : ''}">
           <span class="mcp-icon">${icon(server.transport === 'http' ? 'globe' : 'terminal', 15)}</span>
           <div class="mcp-copy">
@@ -1144,21 +1172,22 @@
             ${UI.switchHtml(server.enabled && server.connected, `data-mcp-toggle="${U.attr(server.id)}"`)}
             <button class="mini-icon" type="button" data-mcp-remove="${U.attr(server.id)}" title="Remove server">${icon('trash', 13)}</button>
           </div>
-        </div>`).join('') : `<div class="empty-state"><div class="empty-icon">${icon('plug', 22)}</div><h3>No servers connected</h3><p>Add a stdio command or an HTTP endpoint, or start with the bundled echo example.</p><div class="empty-actions"><button class="btn btn-primary btn-sm" data-add-mcp>${icon('plus', 12)} Add server</button><button class="btn btn-secondary btn-sm" data-mcp-example>Add example</button></div></div>`}
+        </div>`).join('') : `<div class="empty-state"><div class="empty-icon">${icon('plug', 22)}</div><h3>No external servers</h3><div class="empty-actions"><button class="btn btn-primary btn-sm" data-add-mcp>${icon('plus', 12)} Add server</button><button class="btn btn-secondary btn-sm" data-mcp-example>Add example</button></div></div>`}
       </div>
-      <div class="section-stack">
+      ${catalog.length ? `<div class="section-stack">
         <div class="catalog-section-title">Available tools <span class="badge">${catalog.length}</span></div>
-        ${catalog.length ? `<div class="tool-catalog">
+        <div class="tool-catalog">
           <div class="catalog-head"><span>Tool</span><span>Server</span><span>Purpose</span></div>
           ${catalog.map((tool) => `<div class="catalog-row">
             <span class="catalog-name">${esc(tool.name)}</span>
             <span class="catalog-server">${esc(tool.serverName || 'MCP')}</span>
             <span class="catalog-desc">${esc(tool.description || 'No description provided.')}</span>
           </div>`).join('')}
-        </div>` : `<div class="pending-empty">${icon('wrench', 20)}<div>Tools from connected servers will appear here.</div></div>`}
-      </div>
+        </div>
+      </div>` : ''}
     </div>`;
     host.onclick = async (event) => {
+      if (event.target.closest('[data-ssh-manage]')) { openSshHosts(() => mountMcp(host)); return; }
       if (event.target.closest('[data-add-mcp]')) { openMcpComposer(() => mountMcp(host)); return; }
       if (event.target.closest('[data-mcp-refresh]')) { mountMcp(host); return; }
       const example = event.target.closest('[data-mcp-example]');
@@ -1456,13 +1485,11 @@
     const teamCfg = config.team || { enabled: false, members: [] };
     const teamMembers = Array.isArray(teamCfg.members) ? teamCfg.members : [];
     const language = config.language === 'en' ? 'en' : 'ko';
-    const sshHosts = vstate.settings.ssh?.hosts || config.ssh?.hosts || [];
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
         title: 'Settings',
         description: 'Tune how Blank thinks, what it may touch, and where your data lives.',
         actions: `<button class="btn btn-secondary btn-sm" data-open-data>${icon('folder-open', 12)} Data folder</button>`,
-        meta: `<span class="badge">v${esc(info.version || runtime.version || '1.0.0')}</span>`,
       })}
       <div class="settings-layout">
         <nav class="settings-nav">
@@ -1470,7 +1497,6 @@
           <button class="settings-nav-item" type="button" data-settings-go="agent">${icon('bot', 13)} Agent</button>
           <button class="settings-nav-item" type="button" data-settings-go="team">${icon('bot', 13)} Agent team</button>
           <button class="settings-nav-item" type="button" data-settings-go="approvals">${icon('shield', 13)} Approvals</button>
-          <button class="settings-nav-item" type="button" data-settings-go="ssh">${icon('terminal', 13)} SSH</button>
           <button class="settings-nav-item" type="button" data-settings-go="search">${icon('globe', 13)} Web search</button>
           <button class="settings-nav-item" type="button" data-settings-go="computer">${icon('monitor', 13)} Computer</button>
           <button class="settings-nav-item" type="button" data-settings-go="remote">${icon('link', 13)} Remote</button>
@@ -1567,49 +1593,6 @@
             <div class="settings-permission-note">${icon('bot', 12)} Team runs share this session's workspace and consume tokens in parallel. Reports return to the main agent, not directly to you.</div>
           </section>
 
-          <section class="settings-section" id="settings-ssh">
-            <h2>SSH</h2>
-            <p>Save remote machines, then let the agent run approval-gated commands with ssh_run. Secrets stay on this device.</p>
-            <div class="settings-group" data-ssh-list>
-              ${sshHosts.length ? sshHosts.map((entry) => `<div class="ssh-host" data-ssh-host="${U.attr(entry.id)}">
-                <div class="ssh-host-copy">
-                  <div class="ssh-host-name">${icon('terminal', 12)} ${esc(entry.name)}</div>
-                  <div class="ssh-host-meta">${esc(entry.user)}@${esc(entry.host)}:${Number(entry.port) || 22} · ${entry.authType === 'password' ? 'password' : 'private key'}${entry.fingerprint ? ' · host key pinned' : ''}</div>
-                  <div class="setting-note" data-ssh-note></div>
-                </div>
-                <div class="ssh-host-actions">
-                  <button class="btn btn-secondary btn-sm" type="button" data-ssh-test="${U.attr(entry.id)}">Test</button>
-                  <button class="mini-icon" type="button" data-ssh-remove="${U.attr(entry.id)}" title="Remove host">${icon('trash', 13)}</button>
-                </div>
-              </div>`).join('') : `<div class="setting-note">${icon('lock', 11)} No saved hosts. Add one below.</div>`}
-            </div>
-            <div class="settings-group ssh-form">
-              <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">New host</div><div class="setting-desc">Passwords and passphrases are sealed with the OS keychain when available.</div></div>
-              </div>
-              <div class="ssh-grid">
-                <label class="setting-label">Name<input class="field-input" id="ssh-name" placeholder="Production" maxlength="60" spellcheck="false" /></label>
-                <label class="setting-label">Host<input class="field-input" id="ssh-host" placeholder="server.example.com" spellcheck="false" /></label>
-                <label class="setting-label">Port<input class="field-input" id="ssh-port" type="number" min="1" max="65535" value="22" /></label>
-                <label class="setting-label">User<input class="field-input" id="ssh-user" placeholder="deploy" spellcheck="false" /></label>
-                <label class="setting-label">Auth
-                  <select class="settings-select" id="ssh-auth">
-                    <option value="key">Private key</option>
-                    <option value="password">Password</option>
-                  </select>
-                </label>
-                <label class="setting-label" data-ssh-key-block>Private key path<input class="field-input" id="ssh-key" placeholder="~/.ssh/id_ed25519" spellcheck="false" /></label>
-                <label class="setting-label" data-ssh-key-block>Key passphrase <span class="setting-note">optional</span><input class="field-input" id="ssh-passphrase" type="password" autocomplete="off" /></label>
-                <label class="setting-label" data-ssh-password-block hidden>Password<input class="field-input" id="ssh-password" type="password" autocomplete="off" /></label>
-              </div>
-              <div class="provider-actions">
-                <button class="btn btn-primary btn-sm" type="button" data-ssh-add>${icon('plus', 12)} Save host</button>
-                <span class="setting-note">The first successful test pins the host key fingerprint.</span>
-              </div>
-            </div>
-            <div class="settings-permission-note">${icon('shield', 12)} ssh_run asks for approval by default. It runs in a non-interactive shell; interactive prompts will fail.</div>
-          </section>
-
           <section class="settings-section" id="settings-approvals">
             <h2>Approvals</h2>
             <p>Choose what the agent may do on its own. Writes, shell commands and media generation ask by default.</p>
@@ -1620,7 +1603,7 @@
                 return `<div class="approval-row">
                   <div class="approval-tool" title="${U.attr(description)}">${icon(Icons.TOOL_ICONS[tool] || 'wrench', 12)} ${esc(tool)}</div>
                   <div class="approval-values">
-                    ${['allow', 'ask', 'deny'].map((value) => `<button class="permission-option ${level === value ? `active ${value}` : ''}" type="button" data-permission="${U.attr(tool)}" data-level="${value}">${value === 'allow' ? 'Allow' : value === 'ask' ? 'Ask' : 'Block'}</button>`).join('')}
+                    ${['allow', 'ask', 'deny'].map((value) => `<button class="permission-option ${level === value ? `active ${value}` : ''}" type="button" data-permission="${U.attr(tool)}" data-level="${value}">${value === 'allow' ? 'Allow' : value === 'ask' ? 'Ask first' : 'Block'}</button>`).join('')}
                   </div>
                 </div>`;
               }).join('')}
@@ -1759,7 +1742,6 @@
                   <h3>Blank</h3>
                   <p>A quiet, local-first agent harness. Chat, code, plan and create media from one white canvas — with keys, sessions and memory kept on your machine.</p>
                   <div class="about-versions">
-                    <span class="badge blue">v${esc(info.version || runtime.version || '1.0.0')}</span>
                     <span class="badge">Electron ${esc(info.electron || runtime.electron || '—')}</span>
                     <span class="badge">Node ${esc(info.node || runtime.node || '—')}</span>
                     <span class="badge">${esc(info.platform || runtime.platform || '')}</span>
@@ -1799,13 +1781,21 @@
       const language = event.target.closest('[data-language]');
       if (language) {
         const value = language.dataset.language === 'en' ? 'en' : 'ko';
+        let previous = null;
+        try { previous = localStorage.getItem('blank.lang'); } catch {}
         host.querySelectorAll('[data-language]').forEach((item) => item.classList.toggle('active', item === language));
         try {
+          try { localStorage.setItem('blank.lang', value); } catch {}
           await API.config.update({ language: value });
-          localStorage.setItem('blank.lang', value);
           UI.toast(value === 'en' ? 'Switching to English…' : '한국어로 전환합니다…', 'success');
           setTimeout(() => location.reload(), 120);
         } catch (error) {
+          try {
+            if (previous === null) localStorage.removeItem('blank.lang');
+            else localStorage.setItem('blank.lang', previous);
+          } catch {}
+          const restore = previous === 'en' ? 'en' : previous === 'ko' ? 'ko' : (config.language === 'en' ? 'en' : 'ko');
+          host.querySelectorAll('[data-language]').forEach((item) => item.classList.toggle('active', item.dataset.language === restore));
           UI.toast(error.message, 'error');
         }
         return;
@@ -1861,58 +1851,6 @@
           applyConfig(updated);
           paintSettings(host);
           UI.toast(`Agent team saved · ${members.length} member${members.length === 1 ? '' : 's'}.`, 'success');
-        } catch (error) { UI.toast(error.message, 'error'); }
-        return;
-      }
-      if (event.target.closest('[data-ssh-add]')) {
-        const button = event.target.closest('[data-ssh-add]');
-        const authType = host.querySelector('#ssh-auth')?.value === 'password' ? 'password' : 'key';
-        const input = {
-          name: host.querySelector('#ssh-name')?.value.trim() || '',
-          host: host.querySelector('#ssh-host')?.value.trim() || '',
-          port: host.querySelector('#ssh-port')?.value || 22,
-          user: host.querySelector('#ssh-user')?.value.trim() || '',
-          authType,
-          keyPath: host.querySelector('#ssh-key')?.value.trim() || '',
-          password: authType === 'password' ? (host.querySelector('#ssh-password')?.value || '') : '',
-          passphrase: authType === 'key' ? (host.querySelector('#ssh-passphrase')?.value || '') : '',
-        };
-        button.disabled = true;
-        try {
-          vstate.settings.ssh = await API.ssh.add(input);
-          paintSettings(host);
-          UI.toast('SSH host saved. Run a test to verify it.', 'success');
-        } catch (error) { UI.toast(error.message, 'error'); }
-        finally { button.disabled = false; }
-        return;
-      }
-      const sshTest = event.target.closest('[data-ssh-test]');
-      if (sshTest) {
-        const button = sshTest;
-        const row = button.closest('[data-ssh-host]');
-        const note = row?.querySelector('[data-ssh-note]');
-        button.disabled = true;
-        if (note) note.textContent = 'Connecting…';
-        try {
-          const result = await API.ssh.test({ id: button.dataset.sshTest });
-          vstate.settings.ssh = { hosts: result.hosts || [] };
-          if (note) note.textContent = result.ok ? `Connected · ${result.latencyMs} ms` : (result.message || `Exit ${result.code} · ${String(result.output || '').slice(0, 160)}`);
-          UI.toast(result.ok ? `SSH connection verified · ${result.latencyMs} ms` : `SSH connection failed · ${result.message || 'unknown error'}`, result.ok ? 'success' : 'error');
-        } catch (error) {
-          if (note) note.textContent = error.message;
-          UI.toast(error.message, 'error');
-        } finally { button.disabled = false; }
-        return;
-      }
-      const sshRemove = event.target.closest('[data-ssh-remove]');
-      if (sshRemove) {
-        const entry = sshHosts.find((item) => item.id === sshRemove.dataset.sshRemove);
-        const ok = await UI.confirm({ title: 'Remove this SSH host?', message: 'Saved credentials and the pinned host key will be deleted from this device.', confirmLabel: 'Remove host', danger: true, detail: entry ? `${entry.name} · ${entry.user}@${entry.host}` : '' });
-        if (!ok) return;
-        try {
-          vstate.settings.ssh = await API.ssh.remove(sshRemove.dataset.sshRemove);
-          paintSettings(host);
-          UI.toast('SSH host removed.', 'success');
         } catch (error) { UI.toast(error.message, 'error'); }
         return;
       }
@@ -2154,11 +2092,6 @@
           UI.toast('Search provider updated.', 'success');
         } catch (error) { UI.toast(error.message, 'error'); }
       }
-      if (event.target && event.target.id === 'ssh-auth') {
-        const password = event.target.value === 'password';
-        host.querySelectorAll('[data-ssh-key-block]').forEach((node) => { node.hidden = password; });
-        host.querySelectorAll('[data-ssh-password-block]').forEach((node) => { node.hidden = !password; });
-      }
     };
     API.media.storage().then((storage) => {
       vstate.media.storage = storage;
@@ -2253,7 +2186,7 @@
     if (!engines) return [];
     const local = (engines.local || []).filter((engine) => engine.kinds.includes(kind) && engine.available);
     const cloud = (engines.cloud || []).filter((engine) => engine.kinds.includes(kind) && engine.available);
-    return [...local.map((e) => ({ ...e, vendor: 'local' })), ...cloud];
+    return [...local.map((e) => ({ ...e, vendor: e.vendor === 'comfyui' ? 'comfyui' : 'local' })), ...cloud];
   }
 
   function engineInfo(id) {
@@ -2267,7 +2200,7 @@
     const compose = vstate.media.compose;
     compose.kind = kind;
     if (defaults.engine) compose.engine = defaults.engine;
-    else compose.engine = 'blank';
+    else compose.engine = kind === 'audio' ? 'blank-voice' : 'blank';
     if (defaults.aspect) compose.aspect = defaults.aspect;
     else compose.aspect = kind === 'video' ? '16:9' : '1:1';
     if (defaults.duration) compose.duration = defaults.duration;
@@ -2306,6 +2239,10 @@
       vstate.media.storage = storage;
       vstate.media.defaults = engines.defaults || {};
       vstate.media.loaded = true;
+      if (!vstate.media.voices) API.media.voices().then((names) => {
+        vstate.media.voices = Array.isArray(names) ? names : [];
+        if (alive(host, 'studio') && vstate.media.compose.kind === 'audio' && vstate.media.compose.engine === 'blank-voice') paintStudio(host);
+      }).catch(() => { vstate.media.voices = []; });
       if (!vstate.media._composeReady) {
         applyKindDefaults(vstate.media.compose.kind);
         vstate.media._composeReady = true;
@@ -2324,15 +2261,18 @@
     if (!engines.some((engine) => engine.id === compose.engine)) compose.engine = engines[0]?.id || '';
     const engine = engineInfo(compose.engine);
     const isCloud = engine?.vendor === 'cloud';
-    const provider = engine?.provider || '';
+    const isSpeech = kind === 'audio' && compose.engine === 'blank-voice';
     const activeJobs = vstate.media.jobs.filter((job) => job.status === 'queued' || job.status === 'running');
+    const voices = vstate.media.voices || [];
+    const placeholder = isSpeech
+      ? 'Type the script to speak…'
+      : kind === 'audio' ? 'Describe a track…' : kind === 'model3d' ? 'Describe an object…' : 'Describe the image…';
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
         title: 'Studio',
-        description: 'A local-first media workspace. Generate, edit and keep images, video, music and 3D beside your conversations.',
-        actions: `<button class="btn btn-secondary btn-sm" data-media-engines>${icon('sliders', 12)} Engines & keys</button>
+        actions: `<button class="btn btn-secondary btn-sm" data-media-engines>${icon('sliders', 12)} Engines</button>
           <button class="btn btn-secondary btn-sm" data-import-media>${icon('upload', 12)} Import</button>`,
-        meta: `<span class="badge blue">${totalCount} assets</span>`,
+        meta: `<span class="badge blue">${totalCount}</span>`,
       })}
       <div class="studio-layout">
         <aside class="studio-side">
@@ -2340,35 +2280,38 @@
             <div class="studio-compose-head">
               ${icon('wand', 14)}
               <span class="studio-compose-title">Create</span>
-              <span class="studio-compose-sub">${icon('shield', 10)} Local-first</span>
+              <span class="studio-compose-sub"><button class="studio-link" type="button" data-save-defaults title="Remember settings">${icon('save', 12)}</button></span>
             </div>
             <div class="studio-compose-body">
               <div class="studio-kind-tabs">
                 ${Object.entries(KIND).map(([id, meta]) => `<button class="studio-kind ${kind === id ? 'active' : ''}" type="button" data-kind="${id}">${icon(meta.icon, 16)}<span>${meta.label}</span></button>`).join('')}
               </div>
               <div class="studio-prompt-wrap">
-                <textarea class="studio-prompt" id="compose-prompt" placeholder="${U.attr(kind === 'audio' ? 'Describe a track — mood, instruments, tempo…' : kind === 'model3d' ? 'Describe an object to model…' : 'Describe the scene, subject and mood…')}">${esc(compose.prompt)}</textarea>
-              </div>
-              <div class="studio-suggestions">
-                ${(SUGGESTIONS[kind] || []).map((suggestion) => `<button class="studio-suggestion" type="button" data-suggest="${U.attr(suggestion)}">${icon('sparkles', 10)} ${esc(U.truncate(suggestion, 44))}</button>`).join('')}
+                <textarea class="studio-prompt" id="compose-prompt" placeholder="${U.attr(placeholder)}">${esc(compose.prompt)}</textarea>
               </div>
               ${kind === 'image' || kind === 'video' ? `<div class="studio-row">
                 <label class="studio-field"><span>Aspect</span><select class="studio-select" id="compose-aspect">${(ASPECTS[kind] || ASPECTS.image).map(([value, label]) => `<option value="${value}" ${compose.aspect === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
                 ${kind === 'image'
-                  ? `<label class="studio-field"><span>Count <b>${compose.count}</b></span><select class="studio-select" id="compose-count">${[1, 2, 3, 4].map((n) => `<option value="${n}" ${Number(compose.count) === n ? 'selected' : ''}>${n} image${n === 1 ? '' : 's'}</option>`).join('')}</select></label>`
-                  : `<label class="studio-field"><span>Seconds <b>${compose.duration}s</b></span><input class="studio-input" id="compose-duration" type="number" min="2" max="12" step="1" value="${compose.duration}" /></label>`}
+                  ? `<label class="studio-field"><span>Count</span><select class="studio-select" id="compose-count">${[1, 2, 3, 4].map((n) => `<option value="${n}" ${Number(compose.count) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>`
+                  : `<label class="studio-field"><span>Seconds</span><input class="studio-input" id="compose-duration" type="number" min="2" max="12" step="1" value="${compose.duration}" /></label>`}
               </div>` : ''}
               ${kind === 'video' ? `<div class="studio-row">
                 <label class="studio-field"><span>Frame rate</span><select class="studio-select" id="compose-fps">${[12, 18, 24, 30].map((fps) => `<option value="${fps}" ${Number(compose.fps) === fps ? 'selected' : ''}>${fps} fps</option>`).join('')}</select></label>
-                <div class="studio-field"><span>Soundtrack</span><div class="studio-switch-row" style="padding:4px 7px;min-height:28px"><span class="copy"><b>Score</b></span>${UI.switchHtml(compose.soundtrack, 'data-compose-toggle="soundtrack"')}</div></div>
+                <div class="studio-field"><span>Score</span><div class="studio-switch-row" style="padding:4px 7px;min-height:28px"><span class="copy"><b>Soundtrack</b></span>${UI.switchHtml(compose.soundtrack, 'data-compose-toggle="soundtrack"')}</div></div>
               </div>` : ''}
-              ${kind === 'audio' ? `<div class="studio-row">
-                <label class="studio-field"><span>Duration <b>${compose.duration}s</b></span><input class="studio-input" id="compose-duration" type="number" min="4" max="180" step="1" value="${compose.duration}" /></label>
+              ${kind === 'audio' ? (isSpeech ? `<div class="studio-row">
+                <label class="studio-field"><span>Voice</span><select class="studio-select" id="compose-voice">
+                  <option value="">Auto</option>
+                  ${voices.map((name) => `<option value="${U.attr(name)}" ${compose.voice === name ? 'selected' : ''}>${esc(name)}</option>`).join('')}
+                </select></label>
+                <label class="studio-field"><span>Rate</span><select class="studio-select" id="compose-rate">${[-4, -2, 0, 2, 4].map((value) => `<option value="${value}" ${Number(compose.rate) === value ? 'selected' : ''}>${value === 0 ? 'Normal' : value < 0 ? `Slow ${Math.abs(value)}` : `Fast ${value}`}</option>`).join('')}</select></label>
+              </div>` : `<div class="studio-row">
+                <label class="studio-field"><span>Duration</span><input class="studio-input" id="compose-duration" type="number" min="4" max="180" step="1" value="${compose.duration}" /></label>
                 <label class="studio-field"><span>Style</span><select class="studio-select" id="compose-style">${AUDIO_STYLES.map(([value, label]) => `<option value="${value}" ${compose.style === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
-              </div>` : ''}
+              </div>`) : ''}
               ${kind === 'model3d' ? `<div class="studio-row">
                 <label class="studio-field"><span>Quality</span><select class="studio-select" id="compose-quality">${['low', 'medium', 'high'].map((value) => `<option value="${value}" ${compose.quality === value ? 'selected' : ''}>${value[0].toUpperCase()}${value.slice(1)}</option>`).join('')}</select></label>
-                <div class="studio-field"><span>Export</span><div class="studio-switch-row" style="padding:4px 7px;min-height:28px"><span class="copy"><b>OBJ + MTL</b><small>STL from detail</small></span></div></div>
+                <div class="studio-field"><span>Export</span><div class="studio-switch-row" style="padding:4px 7px;min-height:28px"><span class="copy"><b>OBJ + MTL</b></span></div></div>
               </div>` : ''}
               ${kind === 'image' || kind === 'video' ? `<div class="studio-row">
                 <label class="studio-field"><span>Direction</span><select class="studio-select" id="compose-style">${IMAGE_STYLES.map(([value, label]) => `<option value="${value}" ${compose.style === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
@@ -2377,27 +2320,19 @@
               <label class="studio-field">
                 <span>Engine</span>
                 <select class="studio-select" id="compose-engine">
-                  ${engines.length ? engines.map((item) => `<option value="${U.attr(item.id)}" ${compose.engine === item.id ? 'selected' : ''}>${esc(item.label)}${item.vendor === 'cloud' ? ' · Cloud' : ''}</option>`).join('') : '<option value="">No engine available</option>'}
-                  ${(vstate.media.engines?.cloud || []).some((e) => e.kinds.includes(kind) && !e.available) ? '<option value="add-key">Add a cloud engine…</option>' : ''}
+                  ${engines.length ? engines.map((item) => `<option value="${U.attr(item.id)}" ${compose.engine === item.id ? 'selected' : ''}>${esc(item.label)}${item.id === 'blank-voice' ? ' · TTS' : item.vendor === 'cloud' ? ' · Cloud' : ''}</option>`).join('') : '<option value="">No engine</option>'}
+                  ${(vstate.media.engines?.cloud || []).some((e) => e.kinds.includes(kind) && !e.available) ? '<option value="add-key">Add cloud engine…</option>' : ''}
+                  ${kind === 'image' && (vstate.media.engines?.local || []).some((e) => e.id === 'comfyui' && !e.available) ? '<option value="add-comfy">Set up ComfyUI…</option>' : ''}
                 </select>
               </label>
-              ${isCloud ? `<label class="studio-field"><span>Model</span><select class="studio-select" id="compose-model">${(engine.models || []).map((model) => `<option value="${U.attr(model)}" ${compose.model === model ? 'selected' : ''}>${esc(model)}</option>`).join('')}</select></label>
-                <div class="studio-foot-note">${icon('key', 10)} ${esc(engine.keyLabel || 'Cloud key')} required · requests leave this machine.</div>` : `<div class="studio-foot-note">${icon('shield', 10)} Runs offline on this machine. Assets stay in your library.</div>`}
+              ${isCloud ? `<label class="studio-field"><span>Model</span><select class="studio-select" id="compose-model">${(engine.models || []).map((model) => `<option value="${U.attr(model)}" ${compose.model === model ? 'selected' : ''}>${esc(model)}</option>`).join('')}</select></label>` : ''}
               <button class="studio-generate" type="button" data-generate ${engines.length ? '' : 'disabled'}>
                 ${activeJobs.length ? `<span class="spinner" style="width:12px;height:12px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>` : icon('sparkles', 14)}
-                Generate ${KIND[kind].noun} <span class="kbd">${U.kbd('Ctrl ↵')}</span>
+                Generate ${isSpeech ? 'speech' : KIND[kind].noun} <span class="kbd">${U.kbd('Ctrl ↵')}</span>
               </button>
-              <div class="studio-foot-note" style="justify-content:center">
-                <button class="studio-link" type="button" data-save-defaults>${icon('save', 11)} Remember ${KIND[kind].label.toLowerCase()} settings</button>
-              </div>
             </div>
           </div>
           <div class="studio-jobs" id="studio-jobs"></div>
-          <div class="studio-engine-card">
-            <div class="studio-engine-line">${icon('cpu', 13)} Engine <b>${esc(engine?.label || 'None')}</b><span class="spacer"></span><button class="studio-link" type="button" data-media-engines>Keys ${icon('arrow-up-right', 10)}</button></div>
-            <div class="studio-engine-line">${icon('database', 13)} Library <b>${totalCount} assets</b><span class="spacer"></span><span>${U.fmtBytes(storage.bytes || 0)}</span></div>
-            <div class="studio-engine-line">${icon('globe', 13)} Cloud <b>${(storage.cloudReady || []).length} ready</b><span class="spacer"></span>${storage.capabilities?.ffmpeg ? '<span class="badge green">ffmpeg</span>' : '<span class="badge amber">no ffmpeg</span>'}</div>
-          </div>
         </aside>
         <section class="studio-main">
           <div class="studio-library-head">
@@ -2433,7 +2368,7 @@
       const id = event.target.id;
       const value = event.target.value;
       if (id === 'compose-engine') {
-        if (value === 'add-key') { openMediaEngines(() => mountStudio(host)); return; }
+        if (value === 'add-key' || value === 'add-comfy') { openMediaEngines(() => mountStudio(host)); return; }
         compose.engine = value;
         const info = engineInfo(value);
         if (info?.vendor === 'cloud') compose.model = info.models?.[0] || compose.model;
@@ -2441,6 +2376,8 @@
         return;
       }
       if (id === 'compose-model') { compose.model = value; return; }
+      if (id === 'compose-voice') { compose.voice = value; return; }
+      if (id === 'compose-rate') { compose.rate = Number(value) || 0; return; }
       if (id === 'compose-aspect') { compose.aspect = value; return; }
       if (id === 'compose-count') { compose.count = Number(value) || 1; paintStudio(host); return; }
       if (id === 'compose-duration') { compose.duration = Math.max(1, Number(value) || compose.duration); return; }
@@ -2552,9 +2489,8 @@
         ? UI.emptyState({ iconName: 'search', title: 'Nothing matches', description: 'Try another filter or search term.' })
         : `<div class="media-empty">
             <div class="empty-icon">${icon('sparkles', 22)}</div>
-            <h3>Your library is a blank canvas</h3>
-            <p>Write a prompt on the left and generate an image, a short video, a track or a 3D object. Everything runs locally by default.</p>
-            <button class="btn btn-primary btn-sm" type="button" data-generate>${icon('wand', 12)} Generate the first one</button>
+            <h3>No media yet</h3>
+            <button class="btn btn-primary btn-sm" type="button" data-generate>${icon('wand', 12)} Generate</button>
           </div>`;
       grid.innerHTML = `<div style="grid-column:1/-1">${empty}</div>`;
       return;
@@ -2680,6 +2616,8 @@
       style: compose.style,
       palette: compose.palette,
       quality: compose.quality,
+      voice: compose.voice,
+      rate: compose.rate,
     };
     if (engineInfoValue.vendor === 'cloud') payload.model = compose.model || engineInfoValue.models?.[0];
     const button = host.querySelector('[data-generate]');
@@ -2698,7 +2636,8 @@
     } finally {
       if (button && vstate.page === 'studio') {
         button.disabled = false;
-        button.innerHTML = `${icon('sparkles', 14)} Generate ${KIND[compose.kind].noun} <span class="kbd">${U.kbd('Ctrl ↵')}</span>`;
+        const noun = compose.kind === 'audio' && compose.engine === 'blank-voice' ? 'speech' : KIND[compose.kind].noun;
+        button.innerHTML = `${icon('sparkles', 14)} Generate ${noun} <span class="kbd">${U.kbd('Ctrl ↵')}</span>`;
       }
     }
   }
@@ -2803,7 +2742,7 @@
   const SOURCE_LABELS = { generated: 'Generated', edited: 'Edited', imported: 'Imported', cloud: 'Cloud' };
   const CLOUD_GROUP_LABELS = {
     openai: 'OpenAI', google: 'Google AI', stability: 'Stability AI',
-    elevenlabs: 'ElevenLabs', replicate: 'Replicate', fal: 'fal.ai',
+    elevenlabs: 'ElevenLabs', replicate: 'Replicate', fal: 'fal.ai', higgsfield: 'Higgsfield',
   };
 
   function detailMetaItem(label, value, mono) {
@@ -3316,12 +3255,12 @@
       groups.set(engine.keyId, group);
     }
     const ready = [...groups.values()].filter((group) => group.hasKey).length;
-    const localRows = (engines.local || []).map((engine) => `<div class="engine-row ${engine.available ? 'available' : ''}">
+    const comfyEndpoint = engines.endpoints?.comfyui || (engines.local || []).find((engine) => engine.id === 'comfyui')?.endpoint || '';
+    const localRows = (engines.local || []).filter((engine) => engine.id !== 'comfyui').map((engine) => `<div class="engine-row ${engine.available ? 'available' : ''}">
       <div class="engine-head">
         <span class="engine-glyph">${icon('cpu', 13)}</span>
         <div class="engine-copy">
           <div class="engine-name">${esc(engine.label)} <span class="badge green">Local</span></div>
-          <div class="engine-note">${esc(engine.note || 'Runs offline on this machine.')}</div>
           <div class="engine-kinds">${(engine.kinds || []).map((kind) => `<span class="engine-chip">${esc(KIND[kind]?.label || kind)}</span>`).join('')}${(engine.models || []).map((model) => `<span class="engine-chip mono">${esc(model)}</span>`).join('')}</div>
         </div>
         <span class="engine-status ${engine.available ? 'on' : ''}">${icon(engine.available ? 'check-circle' : 'alert-circle', 11)} ${engine.available ? 'Ready' : 'Unavailable'}</span>
@@ -3332,23 +3271,36 @@
         <span class="engine-glyph">${icon('globe', 13)}</span>
         <div class="engine-copy">
           <div class="engine-name">${esc(group.label)} <span class="badge ${group.hasKey ? 'green' : ''}">${group.hasKey ? 'Key stored' : 'No key'}</span></div>
-          <div class="engine-note">${group.engines.map((engine) => esc(engine.label)).join(' · ')}${group.note ? ` — ${esc(group.note)}` : ''}</div>
           <div class="engine-kinds">${group.engines.flatMap((engine) => (engine.models || []).slice(0, 4).map((model) => `<span class="engine-chip mono">${esc(model)}</span>`)).join('')}</div>
         </div>
         <span class="engine-status ${group.hasKey ? 'on' : ''}">${icon(group.hasKey ? 'key' : 'lock', 11)} ${esc(group.keyLabel)}</span>
       </div>
       <div class="engine-key-row">
-        <input class="studio-input" type="password" autocomplete="off" spellcheck="false" data-key-input="${U.attr(group.keyId)}" placeholder="${group.hasKey ? '•••••••• stored — enter a new key to replace' : `Paste ${esc(group.keyLabel)}`}" />
-        <button class="btn btn-secondary btn-sm" type="button" data-key-save="${U.attr(group.keyId)}">${group.hasKey ? 'Replace' : 'Save key'}</button>
+        <input class="studio-input" type="password" autocomplete="off" spellcheck="false" data-key-input="${U.attr(group.keyId)}" placeholder="${group.hasKey ? '•••••••• stored — enter a new key' : `Paste ${esc(group.keyLabel)}`}" />
+        <button class="btn btn-secondary btn-sm" type="button" data-key-save="${U.attr(group.keyId)}">${group.hasKey ? 'Replace' : 'Save'}</button>
         ${group.hasKey ? `<button class="btn btn-ghost btn-sm" type="button" data-key-clear="${U.attr(group.keyId)}">Clear</button>` : ''}
       </div>
     </div>`).join('');
     return `<div class="engine-list">
-      <div class="catalog-section-title">On this machine</div>
-      ${localRows || '<div class="insight-empty-note">No local engines are available in this build.</div>'}
-      <div class="catalog-section-title" style="margin-top:2px">Cloud engines <span class="engine-ready-count">${ready}/${groups.size} ready</span></div>
-      <div class="media-cloud-note">${icon('globe', 12)}<span>Prompts and any source asset you edit are sent to the selected provider over HTTPS. Keys are stored only in <code>~/.blank/config.json</code> and never reach the renderer.</span></div>
-      ${cloudRows || '<div class="insight-empty-note">No cloud engines are registered.</div>'}
+      <div class="catalog-section-title">Local</div>
+      ${localRows || '<div class="insight-empty-note">No local engines in this build.</div>'}
+      <div class="engine-row ${comfyEndpoint ? 'available' : ''}">
+        <div class="engine-head">
+          <span class="engine-glyph">${icon('terminal', 13)}</span>
+          <div class="engine-copy">
+            <div class="engine-name">ComfyUI <span class="badge ${comfyEndpoint ? 'green' : ''}">${comfyEndpoint ? 'Connected' : 'Not configured'}</span></div>
+            <div class="engine-kinds"><span class="engine-chip">Image</span><span class="engine-chip mono">HTTP API</span></div>
+          </div>
+          <span class="engine-status ${comfyEndpoint ? 'on' : ''}">${icon('globe', 11)} ${comfyEndpoint ? 'Endpoint saved' : 'Local server'}</span>
+        </div>
+        <div class="engine-key-row">
+          <input class="studio-input" type="text" spellcheck="false" data-comfy-endpoint placeholder="http://127.0.0.1:8188" value="${U.attr(comfyEndpoint)}" />
+          <button class="btn btn-secondary btn-sm" type="button" data-comfy-save>Save</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-comfy-test>Test</button>
+        </div>
+      </div>
+      <div class="catalog-section-title" style="margin-top:2px">Cloud <span class="engine-ready-count">${ready}/${groups.size}</span></div>
+      ${cloudRows || '<div class="insight-empty-note">No cloud engines registered.</div>'}
     </div>`;
   }
 
@@ -3364,10 +3316,9 @@
     paint();
     const footer = document.createElement('div');
     footer.className = 'media-engines-foot';
-    footer.innerHTML = `<span class="setting-note">Keys stay in the main process and are only sent to their provider.</span><span style="flex:1"></span><button class="btn btn-primary btn-sm" type="button" data-engines-done>Done</button>`;
+    footer.innerHTML = `<span style="flex:1"></span><button class="btn btn-primary btn-sm" type="button" data-engines-done>Done</button>`;
     const modal = UI.modal({
       title: 'Engines & keys',
-      description: 'Local engines run offline. Cloud engines unlock larger models with your own API keys.',
       body,
       footer,
       size: 'large',
@@ -3393,7 +3344,44 @@
       }
     }
 
-    body.addEventListener('click', (event) => {
+    body.addEventListener('click', async (event) => {
+      const comfySave = event.target.closest('[data-comfy-save]');
+      if (comfySave) {
+        const input = body.querySelector('[data-comfy-endpoint]');
+        const endpoint = String(input?.value || '').trim();
+        comfySave.disabled = true;
+        try {
+          const result = await API.media.setEndpoint({ id: 'comfyui', endpoint });
+          if (result?.engines) vstate.media.engines = { ...vstate.media.engines, ...result.engines };
+          if (vstate.media.engines) vstate.media.engines.endpoints = result?.endpoints || { comfyui: endpoint };
+          changed = true;
+          paint();
+          UI.toast(endpoint ? 'ComfyUI endpoint saved.' : 'ComfyUI endpoint cleared.', 'success');
+        } catch (error) {
+          UI.toast(error.message, 'error');
+          comfySave.disabled = false;
+        }
+        return;
+      }
+      const comfyTest = event.target.closest('[data-comfy-test]');
+      if (comfyTest) {
+        const input = body.querySelector('[data-comfy-endpoint]');
+        const endpoint = String(input?.value || '').trim();
+        if (!endpoint) { UI.toast('Enter a ComfyUI endpoint first.', 'warn'); input?.focus(); return; }
+        comfyTest.disabled = true;
+        comfyTest.textContent = 'Testing…';
+        try {
+          const result = await API.media.testEndpoint({ endpoint });
+          if (!result?.ok) throw new Error('ComfyUI did not respond.');
+          const count = (result?.checkpoints || []).length;
+          UI.toast(`ComfyUI reachable${count ? ` · ${count} checkpoint${count === 1 ? '' : 's'}` : ''}.`, 'success');
+        } catch (error) {
+          UI.toast(error.message || 'ComfyUI did not respond.', 'error');
+        }
+        comfyTest.disabled = false;
+        comfyTest.textContent = 'Test';
+        return;
+      }
       const save = event.target.closest('[data-key-save]');
       if (save) {
         const keyId = save.dataset.keySave;
@@ -3422,6 +3410,131 @@
       const keyId = input.dataset.keyInput;
       const value = input.value.trim();
       if (value) saveKey(keyId, value);
+    });
+  }
+
+  /* ---------------------------------------------------------------- SSH (MCP) */
+
+  function sshManagerMarkup(hosts) {
+    return `<div class="settings-group" data-ssh-list>
+      ${hosts.length ? hosts.map((entry) => `<div class="ssh-host" data-ssh-host="${U.attr(entry.id)}">
+        <div class="ssh-host-copy">
+          <div class="ssh-host-name">${icon('terminal', 12)} ${esc(entry.name)}</div>
+          <div class="ssh-host-meta">${esc(entry.user)}@${esc(entry.host)}:${Number(entry.port) || 22} · ${entry.authType === 'password' ? 'password' : 'private key'}</div>
+        </div>
+        <div class="ssh-host-actions">
+          <button class="btn btn-secondary btn-sm" type="button" data-ssh-test="${U.attr(entry.id)}">Test</button>
+          <button class="mini-icon" type="button" data-ssh-remove="${U.attr(entry.id)}" title="Remove host">${icon('trash', 13)}</button>
+        </div>
+      </div>`).join('') : `<div class="setting-note">No SSH hosts yet.</div>`}
+    </div>
+    <div class="settings-group ssh-form">
+      <div class="ssh-grid">
+        <label class="setting-label">Name<input class="field-input" id="ssh-name" placeholder="Production" maxlength="60" spellcheck="false" /></label>
+        <label class="setting-label">Host<input class="field-input" id="ssh-host" placeholder="server.example.com" spellcheck="false" /></label>
+        <label class="setting-label">Port<input class="field-input" id="ssh-port" type="number" min="1" max="65535" value="22" /></label>
+        <label class="setting-label">User<input class="field-input" id="ssh-user" placeholder="deploy" spellcheck="false" /></label>
+        <label class="setting-label">Auth
+          <select class="settings-select" id="ssh-auth">
+            <option value="key">Private key</option>
+            <option value="password">Password</option>
+          </select>
+        </label>
+        <label class="setting-label" data-ssh-key-block>Private key path<input class="field-input" id="ssh-key" placeholder="~/.ssh/id_ed25519" spellcheck="false" /></label>
+        <label class="setting-label" data-ssh-key-block>Key passphrase<input class="field-input" id="ssh-passphrase" type="password" autocomplete="off" /></label>
+        <label class="setting-label" data-ssh-password-block hidden>Password<input class="field-input" id="ssh-password" type="password" autocomplete="off" /></label>
+      </div>
+      <div class="provider-actions">
+        <button class="btn btn-primary btn-sm" type="button" data-ssh-add>${icon('plus', 12)} Save host</button>
+      </div>
+    </div>`;
+  }
+
+  async function openSshHosts(onDone) {
+    let hosts = [];
+    try {
+      const data = API.ssh?.list ? await API.ssh.list() : { hosts: [] };
+      hosts = data.hosts || [];
+      vstate.settings.ssh = data;
+    } catch (error) { UI.toast(error.message, 'error'); return; }
+    let changed = false;
+    const body = document.createElement('div');
+    body.className = 'ssh-manager';
+    const paint = () => { body.innerHTML = sshManagerMarkup(hosts); };
+    paint();
+    const footer = document.createElement('div');
+    footer.className = 'media-engines-foot';
+    footer.innerHTML = `<span class="setting-note">ssh_run is approval-gated.</span><span style="flex:1"></span><button class="btn btn-primary btn-sm" type="button" data-ssh-done>Done</button>`;
+    const modal = UI.modal({
+      title: 'SSH hosts',
+      body,
+      footer,
+      size: 'large',
+      className: 'ssh-modal',
+      onClose: () => { if (changed && onDone) onDone(); },
+    });
+    footer.querySelector('[data-ssh-done]')?.addEventListener('click', () => modal.close());
+
+    body.addEventListener('change', (event) => {
+      if (event.target && event.target.id === 'ssh-auth') {
+        const password = event.target.value === 'password';
+        body.querySelectorAll('[data-ssh-key-block]').forEach((node) => { node.hidden = password; });
+        body.querySelectorAll('[data-ssh-password-block]').forEach((node) => { node.hidden = !password; });
+      }
+    });
+
+    body.addEventListener('click', async (event) => {
+      const add = event.target.closest('[data-ssh-add]');
+      if (add) {
+        const authType = body.querySelector('#ssh-auth')?.value === 'password' ? 'password' : 'key';
+        add.disabled = true;
+        try {
+          const result = await API.ssh.add({
+            name: body.querySelector('#ssh-name')?.value.trim() || '',
+            host: body.querySelector('#ssh-host')?.value.trim() || '',
+            port: body.querySelector('#ssh-port')?.value || 22,
+            user: body.querySelector('#ssh-user')?.value.trim() || '',
+            authType,
+            keyPath: body.querySelector('#ssh-key')?.value.trim() || '',
+            password: authType === 'password' ? (body.querySelector('#ssh-password')?.value || '') : '',
+            passphrase: authType === 'key' ? (body.querySelector('#ssh-passphrase')?.value || '') : '',
+          });
+          hosts = result.hosts || [];
+          vstate.settings.ssh = result;
+          changed = true;
+          paint();
+          UI.toast('SSH host saved.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); add.disabled = false; }
+        return;
+      }
+      const test = event.target.closest('[data-ssh-test]');
+      if (test) {
+        test.disabled = true;
+        test.textContent = 'Testing…';
+        try {
+          const result = await API.ssh.test({ id: test.dataset.sshTest });
+          hosts = result.hosts || hosts;
+          vstate.settings.ssh = result;
+          changed = true;
+          paint();
+          UI.toast(result.ok ? `SSH verified · ${result.latencyMs} ms` : `SSH failed · ${result.message || 'unknown error'}`, result.ok ? 'success' : 'error');
+        } catch (error) { UI.toast(error.message, 'error'); test.disabled = false; test.textContent = 'Test'; }
+        return;
+      }
+      const remove = event.target.closest('[data-ssh-remove]');
+      if (remove) {
+        const entry = hosts.find((item) => item.id === remove.dataset.sshRemove);
+        const ok = await UI.confirm({ title: 'Remove this host?', message: 'Saved credentials and the pinned host key will be deleted from this device.', confirmLabel: 'Remove host', danger: true, detail: entry ? `${entry.name} · ${entry.user}@${entry.host}` : '' });
+        if (!ok) return;
+        try {
+          const result = await API.ssh.remove(remove.dataset.sshRemove);
+          hosts = result.hosts || [];
+          vstate.settings.ssh = result;
+          changed = true;
+          paint();
+          UI.toast('SSH host removed.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+      }
     });
   }
 

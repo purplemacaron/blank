@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: blank-media:; media-src 'self' data: blob: blank-media:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'self';" />
   <title>Blank</title>
-  <link rel="icon" href="../assets/logo.svg" type="image/svg+xml" />
+  <link rel="icon" type="image/png" sizes="512x512" href="../assets/icon.png" />
+  <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="studio.css" />
 </head>
@@ -17,6 +18,7 @@
           <span data-icon="layout"></span>
         </button>
         <div class="brand" data-action="home" title="Blank">
+          <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#2F6BFF"/><path d="M8.6 4.4h4.6l4 4v9.2c0 .9-.7 1.6-1.6 1.6H8.6c-.9 0-1.6-.7-1.6-1.6V6c0-.9.7-1.6 1.6-1.6Z" fill="#fff"/><path d="M13.2 4.4v4h4Z" fill="#DCE7FF"/></svg>
           <span class="brand-word">blank</span>
         </div>
         <span class="titlebar-sep" aria-hidden="true"></span>
@@ -125,7 +127,7 @@
           </button>
           <div class="sidebar-footnote">
             <span class="preview-tag" id="preview-tag" hidden>Preview data</span>
-            <span id="sidebar-version">Blank 1.0</span>
+            <span id="sidebar-version">Blank</span>
           </div>
         </div>
       </aside>

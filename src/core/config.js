@@ -57,6 +57,7 @@ const DEFAULTS = {
   },
   media: {
     keys: {},
+    endpoints: { comfyui: '' },
     defaults: {
       image: { engine: 'blank', aspect: '1:1' },
       video: { engine: 'blank', aspect: '16:9', duration: 4, fps: 24, soundtrack: true },

@@ -22,6 +22,8 @@ const visual = require('./visual');
 const audio = require('./audio');
 const meshEngine = require('./mesh');
 const cloud = require('./cloud');
+const comfy = require('./comfy');
+const voice = require('./voice');
 
 const KINDS = ['image', 'video', 'audio', 'model3d'];
 const KIND_LABEL = { image: 'Image', video: 'Video', audio: 'Music', model3d: '3D' };
@@ -144,6 +146,8 @@ function readConfig() {
 function engineAvailability() {
   const config = readConfig();
   const keys = (config.media && config.media.keys) || {};
+  const endpoints = (config.media && config.media.endpoints) || {};
+  const comfyEndpoint = String(endpoints.comfyui || '').trim();
   const providers = config.providers || {};
   const hasKey = (id) => Boolean(keys[id] || providers[id]?.apiKey);
   const local = [
@@ -182,6 +186,25 @@ function engineAvailability() {
       available: sharpAvailable(),
       note: 'Parametric objects exported as OBJ, MTL and STL.',
       models: ['blank-1'],
+    },
+    {
+      id: 'blank-voice',
+      label: 'Blank Voice',
+      vendor: 'local',
+      kinds: ['audio'],
+      available: voice.available(),
+      note: 'Text to speech with installed system voices.',
+      models: ['system'],
+    },
+    {
+      id: 'comfyui',
+      label: 'ComfyUI',
+      vendor: 'comfyui',
+      kinds: ['image'],
+      available: Boolean(comfyEndpoint),
+      note: 'Your own ComfyUI server over its HTTP API.',
+      endpoint: comfyEndpoint,
+      models: ['auto'],
     },
   ];
   const remote = cloud.cloudProviderList().map((provider) => ({
@@ -781,6 +804,53 @@ async function generateLocalAudio(job, prompt, options) {
   };
 }
 
+async function generateSpeech(job, prompt, options) {
+  const paths = libraryPaths();
+  await fs.promises.mkdir(paths.temp, { recursive: true });
+  let selectedVoice = String(options.voice || '').replace(/[\r\n]/g, ' ').trim().slice(0, 120);
+  if (!selectedVoice && /[가-힣]/.test(prompt)) {
+    const voices = await voice.listVoices().catch(() => []);
+    selectedVoice = voices.find((name) => /Heami|SunHi|Yuna|Jin|Bong|Korean|ko-KR|Garam|Minsu/i.test(name)) || '';
+  }
+  const rate = clamp(Math.round(Number(options.rate) || 0), -10, 10);
+  job.progress(0.2, 'speaking');
+  const wav = await voice.synthesize({
+    text: prompt,
+    voice: selectedVoice,
+    rate,
+    outWav: path.join(paths.temp, `${job.id}.wav`),
+    textFile: path.join(paths.temp, `${job.id}.txt`),
+    signal: job.signal,
+  });
+  let file = wav;
+  if (ffmpegAvailable()) {
+    const mp3 = path.join(paths.temp, `${job.id}.mp3`);
+    try {
+      await runProcess(ffmpegBin(), [
+        '-v', 'error', '-y', '-i', wav,
+        '-codec:a', 'libmp3lame', '-b:a', '192k', mp3,
+      ], { signal: job.signal, timeout: 120000, maxStdout: 4096 });
+      file = mp3;
+    } catch {}
+  }
+  job.progress(0.9, 'finishing');
+  const probe = await probeMedia(file);
+  return {
+    kind: 'audio',
+    file,
+    mime: file.endsWith('.mp3') ? 'audio/mpeg' : 'audio/wav',
+    duration: probe.duration || 0,
+    width: 0,
+    height: 0,
+    title: titleFromPrompt(prompt, 'Speech'),
+    prompt,
+    engine: 'blank-voice',
+    engineLabel: 'Blank Voice',
+    model: 'system',
+    meta: { speech: true, voice: selectedVoice || 'auto', rate },
+  };
+}
+
 async function generateLocalMesh(job, prompt, options) {
   const seed = Number.isFinite(Number(options.seed)) ? Number(options.seed) >>> 0 : hashString(prompt);
   job.progress(0.25, 'building mesh');
@@ -884,6 +954,38 @@ async function generateCloudAsset(job, prompt, options, producedKinds) {
     meta: { ...result.meta, extension: ext, aspect: options.aspect || '', fileSize: probe.bytes },
   };
   void producedKinds;
+}
+
+async function generateComfyAsset(job, prompt, options) {
+  const config = readConfig();
+  const endpoint = String((config.media && config.media.endpoints && config.media.endpoints.comfyui) || '').trim();
+  if (!endpoint) throw new Error('Add a ComfyUI endpoint in Studio → Engines');
+  const paths = libraryPaths();
+  await fs.promises.mkdir(paths.temp, { recursive: true });
+  const result = await comfy.generate({
+    endpoint,
+    prompt,
+    options,
+    tmpFile: path.join(paths.temp, `${job.id}-comfy`),
+    signal: job.signal,
+    onProgress: (progress, stage) => job.progress(0.08 + progress * 0.82, stage),
+  });
+  const probe = await probeMedia(result.file);
+  job.progress(0.93, 'finishing');
+  return {
+    kind: 'image',
+    file: result.file,
+    mime: 'image/png',
+    width: result.width || probe.width,
+    height: result.height || probe.height,
+    title: titleFromPrompt(prompt, 'ComfyUI image'),
+    prompt,
+    engine: 'comfyui',
+    engineLabel: 'ComfyUI',
+    provider: 'comfyui',
+    model: result.meta?.checkpoint || 'auto',
+    meta: { ...(result.meta || {}), aspect: options.aspect || '', fileSize: probe.bytes },
+  };
 }
 
 /* ------------------------------------------------------------------ jobs */
@@ -990,13 +1092,14 @@ function createJob(input, mode) {
   if (prompt.length > 4000) throw new Error('Prompt is too long');
   const engine = input.engine || 'blank';
   const provider = findCloudProvider(engine);
+  const localLabels = { 'blank-voice': 'Blank Voice', comfyui: 'ComfyUI' };
   const job = {
     id: makeId('job'),
     kind,
     mode,
     prompt,
     engine,
-    engineLabel: provider ? provider.label : 'Blank Engine',
+    engineLabel: provider ? provider.label : (localLabels[engine] || 'Blank Engine'),
     status: 'queued',
     progressValue: 0,
     stage: 'queued',
@@ -1077,6 +1180,12 @@ function generate(input = {}) {
     const provider = findCloudProvider(options.engine);
     if (provider) {
       return generateCloudAsset(active, active.prompt, { ...options, kind: active.kind }, active.kind);
+    }
+    if (active.kind === 'image' && options.engine === 'comfyui') {
+      return generateComfyAsset(active, active.prompt, options);
+    }
+    if (active.kind === 'audio' && options.engine === 'blank-voice') {
+      return generateSpeech(active, active.prompt, options);
     }
     if (active.kind === 'image') {
       const count = clamp(Math.round(Number(options.count) || 1), 1, MAX_GENERATED);
@@ -1625,6 +1734,8 @@ module.exports = {
   assetFilePath,
   storageInfo,
   engineAvailability,
+  listVoices: () => voice.listVoices(),
+  testEndpoint: (endpoint) => comfy.ping(endpoint),
   publicItem,
   mediaUrl,
 };

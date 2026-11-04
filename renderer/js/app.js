@@ -125,12 +125,17 @@
 
   function syncLanguage(config) {
     if (!config || !Object.prototype.hasOwnProperty.call(config, 'language')) return;
-    const lang = config.language === 'en' ? 'en' : 'ko';
+    const fromConfig = config.language === 'en' ? 'en' : 'ko';
     let stored = null;
     try { stored = localStorage.getItem('blank.lang'); } catch {}
-    if (stored === lang) return;
-    try { localStorage.setItem('blank.lang', lang); } catch {}
-    if (stored !== null || lang === 'en') location.reload();
+    if (stored === 'ko' || stored === 'en') {
+      /* A choice made in Settings is explicit and always wins. Never let a
+         stale or reset config file flip the interface back to Korean. */
+      if (stored !== fromConfig) API.config.update({ language: stored }).catch(() => {});
+      return;
+    }
+    try { localStorage.setItem('blank.lang', fromConfig); } catch {}
+    if (fromConfig === 'en') location.reload();
   }
 
   function refreshSidebarModel() {
@@ -161,13 +166,13 @@
     if (dot) dot.classList.toggle('off', preview);
     if (pill) {
       const info = state.info || state.config?.runtime || {};
-      const parts = [`Blank ${info.version || '1.0.0'}`, 'local-first agent runtime'];
+      const parts = ['Local-first agent runtime'];
       if (info.electron) parts.push(`Electron ${info.electron}`);
       if (info.node) parts.push(`Node ${info.node}`);
       pill.title = parts.join(' · ');
     }
     const version = $('sidebar-version');
-    if (version) version.textContent = `Blank ${state.info?.version || state.config?.runtime?.version || '1.0'}`;
+    if (version) version.textContent = 'Blank';
     const tag = $('preview-tag');
     if (tag) tag.hidden = !preview;
   }
@@ -304,7 +309,7 @@
       <span class="session-icon">${icon(session.pinned ? 'pin' : 'message', 13)}</span>
       <span class="session-copy">
         <span class="session-title">${U.esc(session.title || 'New session')}</span>
-        <span class="session-sub">${U.esc(U.truncate(sub, 58))}</span>
+        <span class="session-sub">${U.esc(sub)}</span>
       </span>
       <span class="session-trail">
         <span class="session-time">${U.relativeTime(session.updatedAt)}</span>
@@ -318,7 +323,7 @@
     if (!host) return;
     const filtered = state.sessions.filter(matchesSearch);
     if (!state.sessions.length) {
-      host.innerHTML = '<div class="sidebar-empty">No sessions yet. Start a conversation and it will appear here.</div>';
+      host.innerHTML = '<div class="sidebar-empty">Start a conversation to see it here.</div>';
       return;
     }
     if (!filtered.length) {
@@ -683,8 +688,8 @@
     return out;
   }
 
-  function railEmpty(iconName, title, body) {
-    return `<div class="rail-empty"><div class="empty-icon">${icon(iconName, 16)}</div><h4>${U.esc(title)}</h4><p>${U.esc(body)}</p></div>`;
+  function railEmpty(iconName, title) {
+    return `<div class="rail-empty"><div class="empty-icon">${icon(iconName, 16)}</div><h4>${U.esc(title)}</h4></div>`;
   }
 
   function sessionFileEntries() {
@@ -1183,7 +1188,7 @@
     function modelStep() {
       return `<div class="onboard-step">
         <div class="onboard-hero">
-          <span class="onboard-mark">${icon('sparkles', 46)}</span>
+          <span class="onboard-mark"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="15" fill="#2F6BFF"/><path d="M23 13h13l12 12v23a4 4 0 0 1-4 4H23a4 4 0 0 1-4-4V17a4 4 0 0 1 4-4Z" fill="#fff"/><path d="M36 13v12h12Z" fill="#DCE7FF"/></svg></span>
           <div><h2>Meet Blank</h2><p>A local-first agent harness for code, research and media.</p></div>
         </div>
         ${stepsMarkup()}

@@ -25,8 +25,8 @@ Streaming responses, tool calls with per-tool approvals, a live plan rail, check
 **Tools**
 Workspace-scoped read/write/edit, glob, grep, shell commands, web fetch, configurable web search (DuckDuckGo, Brave, Tavily, Exa, Serper, SearXNG), todo plans, memory, media, MCP, and computer use.
 
-**SSH**
-Save remote hosts with sealed passwords or private keys, pin the host key fingerprint on first connect, and let the agent run approval-gated commands through `ssh_run`. Secrets stay on this device.
+**SSH over MCP**
+SSH is a built-in MCP server. Add hosts in **MCP → SSH** with sealed passwords or private keys, pin the host key fingerprint on first connect, and let the agent run approval-gated commands through `ssh_run`. Secrets stay on this device.
 
 **Agent team (MAS)**
 Enable a small team of read-only specialists — Scout, Architect and Critic by default — with per-member models and roles. `team_delegate` fans a brief out in parallel and returns the reports to the main agent. Configure it in **Settings → Agent team**.
@@ -44,7 +44,7 @@ Screenshot capture plus native mouse and keyboard input. A transparent, click-th
 An opt-in authenticated web app served from the desktop app. Each start issues a fresh pairing token, binds to loopback unless you allow LAN access, rate-limits requests, and can optionally accept approvals from your phone. Find it in **Settings → Remote**.
 
 **Media studio**
-Generate and edit images, video, audio, and 3D models. Bundled Blank engines work offline for procedural images, video, waveforms/music sketches, and OBJ/STL meshes; optional cloud engines cover OpenAI Images, Google Imagen/Veo, Stability, ElevenLabs, Replicate, and fal. Assets live in a local library with favorites, import/export, and a 3D viewer.
+Generate and edit images, video, audio, and 3D models. Audio includes speech synthesis through installed system voices (Windows SAPI, macOS `say`, Linux espeak) with voice and rate controls. Bundled Blank engines work offline for procedural images, video, music sketches, and OBJ/STL meshes. Connect ComfyUI as a local HTTP engine, or use cloud engines: OpenAI Images, Google Imagen/Veo, Stability, ElevenLabs, Replicate, fal, and Higgsfield. Assets live in a local library with favorites, import/export, and a 3D viewer.
 
 **Send while responding**
 Press send during a run and the message is queued in the composer tray. The queue drains automatically when the current run finishes; individual queued messages can be removed first.
@@ -72,8 +72,8 @@ Publishing is automated:
 2. Create a release to attach installers. The **Build installers** workflow builds Windows, macOS and Linux packages and uploads them to the GitHub Release:
 
    ```sh
-   git tag v1.1.1
-   git push origin v1.1.1
+   git tag v1.1.3
+   git push origin v1.1.3
    ```
 
 The site reads `https://api.github.com/repos/<owner>/<repo>/releases/latest`, so it updates as soon as a release is published. For local checks, serve `docs/` over HTTP with any static file server, or run `npx electron scripts/qa-site.js` to capture desktop and mobile screenshots in `qa/`.

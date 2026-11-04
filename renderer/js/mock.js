@@ -156,6 +156,7 @@
       autoMemory: true, autoReflect: false, showReasoning: true,
     },
     customInstructions: 'Prefer small, focused diffs. Run the relevant tests before reporting work as complete. Never commit secrets.',
+    ssh: { hosts: [] },
     disabledSkills: [],
     ui: { railOpen: true, sidebarOpen: true, density: 'comfy' },
     runtime: {
@@ -293,12 +294,15 @@
         { id: 'blank-image', label: 'Blank Visual', vendor: 'local', kinds: ['image', 'video'], available: true, note: 'Deterministic poster art.', models: ['blank-1'] },
         { id: 'blank-audio', label: 'Blank Audio', vendor: 'local', kinds: ['audio'], available: false, note: 'Needs ffmpeg on this machine.', models: ['blank-1'] },
         { id: 'blank-3d', label: 'Blank 3D', vendor: 'local', kinds: ['model3d'], available: true, note: 'Parametric objects as OBJ and STL.', models: ['blank-1'] },
+        { id: 'blank-voice', label: 'Blank Voice', vendor: 'local', kinds: ['audio'], available: true, note: 'System text to speech.', models: ['system'] },
+        { id: 'comfyui', label: 'ComfyUI', vendor: 'comfyui', kinds: ['image'], available: false, note: 'Your own ComfyUI server.', endpoint: '', models: ['auto'] },
       ],
       cloud: [
         { id: 'fal', label: 'fal.ai', vendor: 'cloud', kinds: ['image', 'video'], available: false, hasKey: false, note: 'Cloud image and video models.', models: ['flux-pro', 'kling-video'], keyLabel: 'FAL_KEY' },
         { id: 'elevenlabs', label: 'ElevenLabs', vendor: 'cloud', kinds: ['audio'], available: false, hasKey: false, note: 'Cloud music and speech.', models: ['music-v1'], keyLabel: 'ElevenLabs key' },
       ],
       defaults: config.media.defaults || {},
+      endpoints: config.media.endpoints || { comfyui: '' },
     };
   }
 
@@ -1489,6 +1493,34 @@
       async openWorkspace() { return true; },
     },
 
+    ssh: {
+      async list() { await sleep(30); return { hosts: config.ssh?.hosts || [] }; },
+      async add(input = {}) {
+        await sleep(120);
+        const host = {
+          id: `ssh_${Date.now().toString(36)}`,
+          name: input.name || input.host || 'Host',
+          host: input.host || '',
+          port: Number(input.port) || 22,
+          user: input.user || '',
+          authType: input.authType === 'password' ? 'password' : 'key',
+          keyPath: input.keyPath || '',
+          fingerprint: '',
+        };
+        config.ssh = { ...(config.ssh || {}), hosts: [...(config.ssh?.hosts || []), host] };
+        return { hosts: config.ssh.hosts };
+      },
+      async remove(id) {
+        await sleep(80);
+        config.ssh = { ...(config.ssh || {}), hosts: (config.ssh?.hosts || []).filter((host) => host.id !== id) };
+        return { hosts: config.ssh.hosts };
+      },
+      async test(input = {}) {
+        await sleep(250);
+        return { ok: true, latencyMs: 42, hosts: config.ssh?.hosts || [] };
+      },
+    },
+
     workspace: {
       async choose() {
         await sleep(300);
@@ -1684,6 +1716,13 @@
       async job(id) { await sleep(10); const job = mediaJobs.find((entry) => entry.id === id); return job ? { ...job } : null; },
       async engines() { await sleep(20); return mediaEngines(); },
       async storage() { await sleep(10); return mediaStorage(); },
+      async voices() { await sleep(10); return ['Samantha', 'Daniel', 'Microsoft Heami']; },
+      async setEndpoint(input = {}) {
+        await sleep(10);
+        config.media.endpoints = { ...(config.media.endpoints || {}), comfyui: String(input.endpoint || '') };
+        return { endpoints: config.media.endpoints, engines: mediaEngines() };
+      },
+      async testEndpoint() { await sleep(30); return { ok: false, version: '', checkpoints: [] }; },
       async generate(input = {}) {
         await sleep(260);
         const kind = input.kind || 'image';

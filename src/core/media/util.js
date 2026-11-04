@@ -205,7 +205,7 @@ function runProcess(bin, args, options = {}) {
       }
       const out = Buffer.concat(stdout);
       if (code === 0) resolve({ stdout: out, stderr, code });
-      else reject(new Error(cleanFfmpegError(stderr) || `${path.basename(bin)} exited with code ${code}.`));
+      else reject(Object.assign(new Error(cleanFfmpegError(stderr) || `${path.basename(bin)} exited with code ${code}.`), { stderr, code }));
     });
   });
 }
@@ -232,7 +232,7 @@ async function probeMedia(file) {
   if (ffmpegAvailable() && ['.mp4', '.webm', '.mov', '.m4v', '.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.gif'].includes(ext)) {
     try {
       const result = await runProcess(ffmpegBin(), ['-hide_banner', '-i', file], { timeout: 15000, maxStdout: 4096 }).catch((err) => {
-        const match = String(err.message);
+        const match = String(err.stderr || err.message);
         return { stderr: match };
       });
       const text = String(result.stderr || '');

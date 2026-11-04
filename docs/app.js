@@ -257,7 +257,7 @@
       if (asset) {
         enableLink(link, asset.browser_download_url, copy[os].idle);
         if (link) { link.removeAttribute('target'); link.removeAttribute('rel'); }
-        if (assetLabel) assetLabel.textContent = asset.name + (asset.size ? ' · ' + formatBytes(asset.size) : '');
+        if (assetLabel) assetLabel.textContent = assetCaption(asset);
       } else if (state.releasesUrl) {
         enableLink(link, state.releasesUrl, copy[os].missing);
         if (link) { link.target = '_blank'; link.rel = 'noreferrer'; }
@@ -284,10 +284,7 @@
 
   function renderRelease(release) {
     state.release = release;
-    var version = versionLabel(release);
-    var versionNode = document.querySelector('[data-version]');
-    if (versionNode && release) versionNode.textContent = 'v' + version;
-    setPill(release ? ('최신 v' + version) : '아직 릴리스가 없습니다', release ? 'live' : 'warn');
+    setPill(release ? '최신 릴리스' : '아직 릴리스가 없습니다', release ? 'live' : 'warn');
     state.assets = release ? pickAssets(release) : { windows: null, mac: null, macIntel: null, linux: null, all: [] };
     var recommendedAsset = state.assets[state.os] || null;
     if (recommendedAsset) {

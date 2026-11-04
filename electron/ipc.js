@@ -1426,10 +1426,10 @@ ${commands}
 
   /* -------------------------------------------------------------------- media */
 
-  const MEDIA_KEY_IDS = new Set(['openai', 'google', 'stability', 'elevenlabs', 'replicate', 'fal']);
+  const MEDIA_KEY_IDS = new Set(['openai', 'google', 'stability', 'elevenlabs', 'replicate', 'fal', 'higgsfield']);
   const MEDIA_KEY_LABELS = {
     openai: 'OpenAI', google: 'Google AI', stability: 'Stability AI',
-    elevenlabs: 'ElevenLabs', replicate: 'Replicate', fal: 'fal.ai',
+    elevenlabs: 'ElevenLabs', replicate: 'Replicate', fal: 'fal.ai', higgsfield: 'Higgsfield',
   };
 
   ipcMainHandle('media:list', async (_event, options = {}) => mediaLibrary.listAssets(options));
@@ -1442,9 +1442,26 @@ ${commands}
     return {
       ...mediaLibrary.engineAvailability(),
       defaults: config.media?.defaults || mediaLibrary.MEDIA_DEFAULTS,
+      endpoints: config.media?.endpoints || { comfyui: '' },
       storage: mediaLibrary.storageInfo(),
     };
   });
+  ipcMainHandle('media:voices', async () => mediaLibrary.listVoices());
+  ipcMainHandle('media:setEndpoint', async (_event, input = {}) => {
+    if (input.id !== 'comfyui') throw new Error('Unknown media endpoint');
+    const raw = String(input.endpoint || '').trim().slice(0, 300);
+    if (raw) {
+      let parsed;
+      try { parsed = new URL(raw); } catch { throw new Error('Enter a valid ComfyUI URL.'); }
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Endpoint must start with http:// or https://.');
+    }
+    const config = configModule.loadConfig();
+    const endpoints = { ...(config.media?.endpoints || {}), comfyui: raw };
+    configModule.patchConfig({ media: { endpoints } });
+    broadcast({ type: 'config:updated' });
+    return { endpoints, engines: mediaLibrary.engineAvailability() };
+  });
+  ipcMainHandle('media:testEndpoint', async (_event, input = {}) => mediaLibrary.testEndpoint(String(input.endpoint || '')));
 
   ipcMainHandle('media:generate', async (_event, input = {}) => mediaLibrary.generate(input));
   ipcMainHandle('media:edit', async (_event, input = {}) => mediaLibrary.edit(input));

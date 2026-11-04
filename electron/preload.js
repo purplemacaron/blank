@@ -154,6 +154,9 @@ const api = {
     open: (id) => invoke('media:open', id),
     readText: (id) => invoke('media:readText', id),
     setKey: (input) => invoke('media:setKey', input),
+    setEndpoint: (input) => invoke('media:setEndpoint', input),
+    testEndpoint: (input) => invoke('media:testEndpoint', input),
+    voices: () => invoke('media:voices'),
     setDefaults: (input) => invoke('media:setDefaults', input),
   },
 

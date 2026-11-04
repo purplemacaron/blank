@@ -49,6 +49,16 @@ const CLOUD_PROVIDERS = [
     note: 'Text-to-video with native audio in Veo 3.',
   },
   {
+    id: 'higgsfield',
+    label: 'Higgsfield',
+    vendor: 'higgsfield',
+    keyProvider: 'higgsfield',
+    keyLabel: 'Higgsfield key ID:secret',
+    kinds: ['image', 'video'],
+    models: ['higgsfield-ai/soul/v2/standard', 'kling-video/v3.0-turbo/text-to-video'],
+    note: 'Image and video models behind one key.',
+  },
+  {
     id: 'stability',
     label: 'Stability AI',
     vendor: 'stability',
@@ -735,6 +745,60 @@ async function generateFal(ctx) {
   return { file: saved.file, mime, meta: { requestId: queued.request_id, model } };
 }
 
+/* --------------------------------------------------------------- Higgsfield */
+
+async function generateHiggsfield(ctx) {
+  const { apiKey, kind, prompt, model, tmpFile, options, onProgress, signal } = ctx;
+  if (!model) throw new Error('Choose a Higgsfield model');
+  const endpoint = `https://api.higgsfield.ai/${String(model).replace(/^\/+/, '')}`;
+  const body = { prompt };
+  if (kind === 'video') {
+    body.duration = Math.max(3, Math.min(15, Math.round(Number(options.duration) || 5)));
+    body.resolution = options.resolution === '1080p' ? '1080p' : '720p';
+    body.aspect_ratio = ['16:9', '9:16', '1:1'].includes(options.aspect) ? options.aspect : '16:9';
+  }
+  onProgress(0.08, 'queued');
+  const created = await fetchJson(endpoint, {
+    method: 'POST',
+    headers: {
+      authorization: `Key ${apiKey}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal,
+    timeout: 120000,
+  });
+  let status = created;
+  const deadline = Date.now() + 10 * 60 * 1000;
+  let attempt = 0;
+  while (status && !['completed', 'failed', 'cancelled', 'nsfw'].includes(status.status)) {
+    if (Date.now() > deadline) throw new Error('Higgsfield generation timed out');
+    if (signal && signal.aborted) throw new Error('Cancelled');
+    attempt += 1;
+    onProgress(Math.min(0.8, 0.12 + attempt * 0.04), status.status || 'rendering');
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    const statusUrl = status.status_url || (status.request_id ? `https://api.higgsfield.ai/requests/${status.request_id}/status` : '');
+    if (!statusUrl) throw new Error('Higgsfield returned no status URL');
+    status = await fetchJson(statusUrl, {
+      headers: { authorization: `Key ${apiKey}` },
+      signal,
+      timeout: 60000,
+    });
+  }
+  if (!status || status.status !== 'completed') {
+    throw new Error(status?.error?.message || status?.message || `Higgsfield generation ${status?.status || 'failed'}`);
+  }
+  const url = kind === 'video'
+    ? firstUrl(status.video) || firstUrl(status.videos) || firstUrl(status.output)
+    : firstUrl(status.images) || firstUrl(status.image) || firstUrl(status.output);
+  if (!url) throw new Error('Higgsfield returned no media');
+  const ext = kind === 'video' ? '.mp4' : '.png';
+  const mime = kind === 'video' ? 'video/mp4' : 'image/png';
+  onProgress(0.86, 'downloading');
+  const saved = await downloadToFile(url, tmpFile + ext, { maxBytes: limitFor(kind), signal, timeout: 300000 });
+  return { file: saved.file, mime, meta: { requestId: status.request_id || created.request_id || '', model } };
+}
+
 const VENDORS = {
   openai: generateOpenAI,
   'google': generateImagen,
@@ -743,6 +807,7 @@ const VENDORS = {
   elevenlabs: generateElevenLabs,
   replicate: generateReplicate,
   fal: generateFal,
+  higgsfield: generateHiggsfield,
 };
 
 async function generateCloud(ctx) {

@@ -273,7 +273,7 @@ const TOOL_SPECS = [
   {
     name: 'ssh_run',
     label: 'Run on SSH host',
-    description: 'Run a shell command on a saved SSH host and return stdout, stderr and the exit code. Use for remote builds, servers and deployments. The user must save the host in Settings → SSH first. Requires approval by default.',
+    description: 'Run a shell command on a saved SSH host and return stdout, stderr and the exit code. Use for remote builds, servers and deployments. The user must add the host in MCP → SSH first. Requires approval by default.',
     parameters: {
       type: 'object',
       properties: {

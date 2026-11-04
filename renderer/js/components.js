@@ -282,11 +282,10 @@
     return `<div class="empty-state"><div class="empty-icon">${icon(iconName, 22)}</div><h3>${U.esc(title)}</h3><p>${U.esc(description || '')}</p>${actionHtml ? `<div class="empty-actions">${actionHtml}</div>` : ''}</div>`;
   }
 
-  function pageHeader({ title, description, actions, meta }) {
+  function pageHeader({ title, actions, meta }) {
     return `<header class="page-head">
       <div class="page-head-copy">
         <div class="page-title-row"><h1>${U.esc(title)}</h1>${meta || ''}</div>
-        ${description ? `<p>${U.esc(description)}</p>` : ''}
       </div>
       ${actions ? `<div class="page-actions">${actions}</div>` : ''}
     </header>`;
