@@ -164,6 +164,7 @@ img { max-width: 100%; }
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -2084,6 +2085,7 @@ html[data-theme="dark"] .pmono-sandbox { color: var(--accent); background: var(-
 .test-result .test-models { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
 .test-model-chip { font-family: var(--font-mono); font-size: 9px; padding: 1px 5px; border-radius: 4px; background: color-mix(in srgb, var(--bg) 55%, transparent); border: 1px solid color-mix(in srgb, currentColor 20%, transparent); color: inherit; }
 .provider-model-list { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+.model-key-note { display: flex; align-items: center; gap: 5px; padding: 0 5px 5px; margin-top: 0; }
 .provider-model-row {
   display: flex;
   align-items: center;
@@ -3191,6 +3193,9 @@ html[data-theme="dark"] .pmono-sandbox { color: var(--accent); background: var(-
   flex-shrink: 0;
 }
 .model-picker-row.selected .model-picker-icon { color: var(--accent); background: var(--bg); border-color: var(--accent-border); }
+.model-picker-logo { padding: 0; overflow: hidden; }
+.model-picker-logo .pmono { width: 18px; height: 18px; border: none; border-radius: 4px; font-size: 8px; }
+.model-picker-logo .pmono svg { width: 84%; height: 84%; }
 .model-picker-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .model-picker-model { font-size: 11.5px; font-weight: 550; color: var(--text); line-height: 15px; }
 .model-picker-id { font-family: var(--font-mono); font-size: 8.5px; color: var(--text-faint); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3458,7 +3463,7 @@ html[data-theme="dark"] .tok-kw { color: #8db3ff; }
    Providers, plugins, remote, queue — additions
    ========================================================================== */
 
-.pmono.has-logo svg { width: 58%; height: 58%; display: block; }
+.pmono.has-logo svg { width: 64%; height: 64%; display: block; }
 .pmono-sandbox.has-logo svg { width: 66%; height: 66%; }
 .provider-mono.has-logo svg { width: 64%; height: 64%; display: block; }
 

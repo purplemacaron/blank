@@ -1557,6 +1557,7 @@
   }
 
   async function init() {
+    Icons.hydrate(document);
     document.body.classList.add(`platform-${API.platform || 'win32'}`);
     const paletteKbd = $('kbd-palette');
     const newKbd = $('kbd-new');

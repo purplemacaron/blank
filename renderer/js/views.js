@@ -146,6 +146,14 @@
     return Boolean(providerConfig(provider.id).hasKey);
   }
 
+  function providerUsable(provider) {
+    if (!provider) return false;
+    if (provider.kind === 'local') return true;
+    const config = providerConfig(provider.id);
+    if (config.hasKey) return true;
+    return provider.kind === 'custom' && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(config.baseUrl || '');
+  }
+
   async function mountModels(host) {
     vstate.page = 'models';
     vstate.host = host;
@@ -169,6 +177,7 @@
     const fallbackId = config.fallbackModel || '';
     const providers = vstate.models.providers;
     const connectedCount = providers.filter(providerConnected).length;
+    const usableModels = vstate.models.models.filter((model) => providerUsable(providers.find((provider) => provider.id === model.providerId))).length;
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
         title: 'Models',
@@ -180,7 +189,7 @@
       <div class="models-banner">
         <div class="models-banner-copy">
           <div class="models-banner-title">Default model</div>
-          <div class="models-banner-sub">${connectedCount} of ${providers.length} providers ready · ${vstate.models.models.length} models available${fallbackId ? ` · fallback ${esc(U.modelLabel({ providers }, fallbackId))}` : ''}</div>
+          <div class="models-banner-sub">${connectedCount} of ${providers.length} providers ready · ${usableModels} models available${fallbackId ? ` · fallback ${esc(U.modelLabel({ providers }, fallbackId))}` : ''}</div>
         </div>
         <button class="default-model-button" type="button" data-pick-default title="Change the default model">
           ${UI.providerMono(U.providerOf({ providers }, defaultId) || { id: 'sandbox', name: 'Blank', monogram: 'b' })}
@@ -310,7 +319,7 @@
             <div class="key-section-head">
               <div>
                 <div class="key-section-title">API keys</div>
-                <div class="key-section-sub">Keep one key per project or several for rotation. Blank moves to the next key when one is rate-limited.</div>
+                <div class="key-section-sub">Stored only on this machine.</div>
               </div>
               <span class="badge" id="provider-key-count"></span>
             </div>
@@ -321,10 +330,10 @@
               <button class="btn btn-primary btn-sm" type="button" data-add-key>${icon('plus', 12)} Add key</button>
             </div>
             <div class="key-rotate-row">
-              <div class="key-rotate-copy"><b>Rotate on failure</b><span>Retry with the next saved key on 401, 402, 403 or 429 before surfacing an error.</span></div>
+              <div class="key-rotate-copy"><b>Rotate on failure</b><span>Retry with the next key on 401, 402, 403 or 429.</span></div>
               <span id="provider-rotate"></span>
             </div>
-            ${provider.keyEnv ? `<div class="setting-note" style="margin-top:8px">${icon('terminal', 11)} <code>${esc(provider.keyEnv)}</code> is used as a final fallback and never stored.</div>` : ''}
+            ${provider.keyEnv ? `<div class="setting-note" style="margin-top:8px">${icon('terminal', 11)} ${esc(provider.keyEnv)} is used as a final fallback and never stored.</div>` : ''}
           </div>`}
       <div class="field" style="margin-top:14px">
         <span class="field-label">Base URL <small>optional override</small></span>
@@ -358,7 +367,8 @@
       const models = provider.models || [];
       const config = currentConfig();
       const activeDefault = config.defaultModel;
-      list.innerHTML = models.map((model) => {
+      const usable = providerUsable(provider);
+      list.innerHTML = (usable ? '' : `<div class="setting-note model-key-note">${icon('key', 11)} Add a key above to use these models.</div>`) + models.map((model) => {
         const fullId = `${provider.id}/${model.id}`;
         const isDefault = fullId === activeDefault;
         return `<div class="provider-model-row">
@@ -367,7 +377,9 @@
             <div class="model-id">${esc(fullId)}${model.context ? ` · ${U.fmtNumber(model.context)} ctx` : ''}</div>
           </div>
           <div class="model-tags">${(model.tags || []).slice(0, 3).map((tag) => `<span class="badge">${esc(tag)}</span>`).join('')}</div>
-          <button class="model-use-btn" type="button" data-use-model="${U.attr(fullId)}" ${isDefault ? 'disabled' : ''}>${isDefault ? `${icon('check', 10)} Default` : 'Use'}</button>
+          ${usable
+            ? `<button class="model-use-btn" type="button" data-use-model="${U.attr(fullId)}" ${isDefault ? 'disabled' : ''}>${isDefault ? `${icon('check', 10)} Default` : 'Use'}</button>`
+            : `<button class="model-use-btn" type="button" data-focus-key="1">Add key</button>`}
         </div>`;
       }).join('') || `<div class="setting-note">No models listed. Try Discover models.</div>`;
     }
@@ -582,6 +594,12 @@
           UI.toast('Provider removed.', 'success');
           onChanged?.();
         } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+
+      const focusKey = event.target.closest('[data-focus-key]');
+      if (focusKey) {
+        body.querySelector('#provider-key')?.focus();
         return;
       }
 
@@ -1674,7 +1692,7 @@
             <p>Bundled with every agent. The <code>web_search</code> tool works without an account; add a provider key for faster, cleaner results.</p>
             <div class="settings-group">
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">Provider</div><div class="setting-desc">Missing keys fall back to DuckDuckGo automatically.</div><div class="setting-note">${esc(searchMeta ? `${searchMeta.label} · ${searchMeta.note}` : 'Search backend')}</div></div>
+                <div class="setting-copy"><div class="setting-label">Provider</div><div class="setting-desc">Missing keys fall back to DuckDuckGo automatically.</div></div>
                 <div class="setting-control"><select class="settings-select" id="search-provider">${SEARCH_BACKENDS.map((backend) => `<option value="${backend.id}" ${backend.id === searchId ? 'selected' : ''}>${esc(backend.label)} · ${esc(backend.note)}</option>`).join('')}</select></div>
               </div>
               ${searchMeta?.needsKey ? `<div class="setting-row">
@@ -3606,7 +3624,7 @@
 
   function openModelPicker(anchor, options = {}) {
     const catalog = modelPickerCatalog();
-    const providers = (catalog.providers || []).filter((provider) => (provider.models || []).length);
+    const providers = (catalog.providers || []).filter((provider) => (provider.models || []).length && providerUsable(provider));
     const current = options.current || '';
     const allowNone = Boolean(options.allowNone);
     let total = 0;
@@ -3628,7 +3646,7 @@
             const selected = fullId === current;
             const search = `${provider.name} ${provider.id} ${model.name} ${model.id}`.toLowerCase();
             return `<button class="model-picker-row ${selected ? 'selected' : ''}" type="button" data-model-id="${U.attr(fullId)}" data-search="${U.attr(search)}">
-              <span class="model-picker-icon">${icon(model.vision ? 'eye' : model.reasoning ? 'brain' : 'cpu', 13)}</span>
+              <span class="model-picker-icon model-picker-logo">${UI.providerMono(provider)}</span>
               <span class="model-picker-copy"><span class="model-picker-model">${esc(model.name)}</span><span class="model-picker-id">${esc(fullId)}${model.context ? ` · ${U.fmtNumber(model.context)} ctx` : ''}</span></span>
               ${model.local ? '<span class="badge green">Local</span>' : ''}
               <span class="model-picker-check">${selected ? icon('check', 12) : ''}</span>
