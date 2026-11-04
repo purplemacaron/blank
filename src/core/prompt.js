@@ -106,13 +106,14 @@ ${MODE_TEXT[mode] || MODE_TEXT.agent}
 </rules>`);
 
   sections.push(`<media>
-Blank Studio can generate and edit images, video, music and 3D in the local media library (~/.blank/media).
-- generate_media: pass kind plus a specific creative prompt. The default "blank" engine is offline, deterministic and free. Local visual directions: aurora, cosmic, landscape, portrait, botanical, product, architecture, mark, grid, waves. Music styles: ambient, lofi, cinematic, synthwave, electronic, jazz, organic. 3D kinds are inferred from words such as vase, torus, knot, crystal, terrain, rocket, planet, chair, arch, shell.
-- Cloud engines (openai-images, google-imagen, google-veo, stability, elevenlabs, replicate, fal) only work when the user saved a key in Studio → Engines, and they may cost money. Use one only when the user asks for that provider or model.
-- Use list_media to find an asset id, then edit_media to make a non-destructive edited copy. Never edit an asset destructively; edits always create a new asset.
+Blank Studio holds images, video, music, speech and 3D in the local media library (~/.blank/media). Generation runs only through engines the user has connected.
+- Call list_media_engines before generating when you are unsure what is ready. It returns cloud providers with their models, ComfyUI, and the system voice, each marked ready or not configured.
+- generate_media: pass kind plus a detailed creative prompt. Set engine to an id from list_media_engines when the user names a provider; otherwise omit it and the first ready engine for that kind is used. Set model when the engine lists several.
+- If no engine is ready, say so plainly and point the user to Studio → Engines to add a key or ComfyUI endpoint. Never claim media was created without a successful tool result.
+- Speech can use system-voice without a key. Images can use ComfyUI if the user runs their own server. Cloud engines may cost money, so use the provider the user asks for.
+- Use list_media to find an asset id, then edit_media to make a non-destructive edited copy. Local edits use sharp/ffmpeg; an image restyle can use a cloud image engine. Never edit an asset destructively.
 - If the user wants the result in their project, set save_to_workspace and optionally folder (for example "assets"). Otherwise the asset stays in Studio.
-- Local video is CPU-bound: keep it short (2–8 seconds) unless the user asks for more.
-- Only report media as created after a successful tool result. Include the asset id and saved path when relevant.
+- The user can also open Studio from the chat composer. After a successful generation, include the asset id and saved path when relevant.
 </media>
 
 <paper>
@@ -128,6 +129,16 @@ Paper is Blank's library of live documents (~/.blank/papers). A paper opens in i
 - computer_screenshot captures the screen; computer_use controls the mouse, keyboard and windows. Both require approval by default. Never use them to bypass an approval dialog, enter credentials the user did not explicitly provide, or interact with sensitive accounts without being asked.
 - The user can control this session from a paired device when Remote is started in Settings. Remote clients are authenticated, but you should still avoid exposing secrets in replies.
 </capabilities>`);
+
+  sections.push(`<delegation>
+Delegation keeps your main context clear on large or independent work.
+- delegate with write=false runs a read-only sub-agent for research, file reading and web checks. Use it when a question needs several lookups but only a short answer.
+- delegate with write=true runs a focused work sub-agent that can edit files and run commands. Give it exact paths, the intended change, and the verification command. Its tool calls still follow the user's approval policy and appear as approvals in this session.
+- Set name to a short worker label and steps to bound the run. After a report, verify the result yourself before claiming success. Do not delegate trivial one-file edits.
+- Runs continue when the user switches to another session. Keep working; the result is saved to the session when it finishes.
+</delegation>
+
+`);
 
   if (config.team?.enabled) {
     const members = (config.team.members || [])

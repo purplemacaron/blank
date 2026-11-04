@@ -64,10 +64,10 @@ const DEFAULTS = {
     keys: {},
     endpoints: { comfyui: '' },
     defaults: {
-      image: { engine: 'blank', aspect: '1:1' },
-      video: { engine: 'blank', aspect: '16:9', duration: 4, fps: 24, soundtrack: true },
-      audio: { engine: 'blank', duration: 20, style: 'auto' },
-      model3d: { engine: 'blank', quality: 'medium' },
+      image: { engine: '', aspect: '1:1' },
+      video: { engine: '', aspect: '16:9', duration: 4 },
+      audio: { engine: 'system-voice', duration: 20 },
+      model3d: { engine: '' },
     },
   },
   search: {
@@ -126,8 +126,9 @@ function loadConfig() {
     writeJSON(file, DEFAULTS);
   }
   const config = deepMerge(DEFAULTS, raw);
-  const migrated = normalizeProviderKeys(config);
-  if (!fs.existsSync(file) || migrated) writeJSON(file, config);
+  const keysMigrated = normalizeProviderKeys(config);
+  const mediaMigrated = normalizeMediaDefaults(config);
+  if (!fs.existsSync(file) || keysMigrated || mediaMigrated) writeJSON(file, config);
   return config;
 }
 
@@ -142,6 +143,41 @@ function patchConfig(patch) {
   const next = deepMerge(config, patch);
   saveConfig(next);
   return next;
+}
+
+/**
+ * Earlier builds shipped local "Blank" media engines. Those ids are retired;
+ * map them to no engine (or System voice for speech) and drop options that no
+ * real provider accepts, so generated requests only use connected engines.
+ */
+function normalizeMediaDefaults(config) {
+  const media = config.media && typeof config.media === 'object' ? config.media : (config.media = {});
+  const defaults = media.defaults && typeof media.defaults === 'object' ? media.defaults : (media.defaults = {});
+  const legacy = new Set(['blank', 'blank-image', 'blank-audio', 'blank-3d']);
+  let changed = false;
+  const kinds = {
+    image: { aspect: true },
+    video: { aspect: true, duration: true },
+    audio: { duration: true, voice: true, rate: true },
+    model3d: {},
+  };
+  for (const [kind, fields] of Object.entries(kinds)) {
+    const current = defaults[kind] && typeof defaults[kind] === 'object' ? defaults[kind] : {};
+    let engine = String(current.engine || '').trim();
+    if (engine === 'blank-voice') engine = 'system-voice';
+    else if (legacy.has(engine)) engine = '';
+    if (kind === 'audio' && !engine) engine = 'system-voice';
+    const next = { engine };
+    if (fields.aspect) next.aspect = String(current.aspect || (kind === 'image' ? '1:1' : '16:9')).slice(0, 12);
+    if (fields.duration) next.duration = Number(current.duration) > 0 ? Number(current.duration) : (kind === 'audio' ? 20 : 4);
+    if (fields.voice && current.voice) next.voice = String(current.voice).slice(0, 80);
+    if (fields.rate && Number.isFinite(Number(current.rate))) next.rate = Number(current.rate);
+    if (JSON.stringify(defaults[kind]) !== JSON.stringify(next)) {
+      defaults[kind] = next;
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /**
@@ -424,6 +460,6 @@ function publicConfig(config, catalog) {
 
 module.exports = {
   DEFAULTS, loadConfig, saveConfig, patchConfig, resolveKey, setProvider, maskKey,
-  publicConfig, deepMerge, normalizeProviderKeys, keyCandidates, addProviderKey,
+  publicConfig, deepMerge, normalizeProviderKeys, normalizeMediaDefaults, keyCandidates, addProviderKey,
   removeProviderKey, setActiveProviderKey, noteKeyUsage,
 };

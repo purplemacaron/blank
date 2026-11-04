@@ -56,6 +56,10 @@ const CLOUD_PROVIDERS = [
     keyLabel: 'Higgsfield key ID:secret',
     kinds: ['image', 'video'],
     models: ['higgsfield-ai/soul/v2/standard', 'kling-video/v3.0-turbo/text-to-video'],
+    modelsByKind: {
+      image: ['higgsfield-ai/soul/v2/standard'],
+      video: ['kling-video/v3.0-turbo/text-to-video'],
+    },
     note: 'Image and video models behind one key.',
   },
   {
@@ -66,6 +70,10 @@ const CLOUD_PROVIDERS = [
     keyLabel: 'Stability API key',
     kinds: ['image', 'audio'],
     models: ['core', 'sd3', 'ultra', 'stable-audio-2'],
+    modelsByKind: {
+      image: ['core', 'sd3', 'ultra'],
+      audio: ['stable-audio-2'],
+    },
     note: 'Stable Image and Stable Audio generation.',
   },
   {
@@ -91,6 +99,12 @@ const CLOUD_PROVIDERS = [
       'meta/musicgen',
       'firtoz/trellis',
     ],
+    modelsByKind: {
+      image: ['black-forest-labs/flux-1.1-pro'],
+      video: ['minimax/video-01'],
+      audio: ['meta/musicgen'],
+      model3d: ['firtoz/trellis'],
+    },
     note: 'Thousands of community models through one token.',
   },
   {
@@ -106,6 +120,12 @@ const CLOUD_PROVIDERS = [
       'fal-ai/stable-audio',
       'fal-ai/trellis',
     ],
+    modelsByKind: {
+      image: ['fal-ai/flux/dev'],
+      video: ['fal-ai/kling-video/v2/master/text-to-video'],
+      audio: ['fal-ai/stable-audio'],
+      model3d: ['fal-ai/trellis'],
+    },
     note: 'Fast hosted image, video, audio and 3D models.',
   },
 ];
@@ -118,6 +138,12 @@ function cloudProviderList() {
 
 function providerFor(id) {
   return PROVIDER_MAP[id] || null;
+}
+
+function modelsForKind(provider, kind) {
+  const mapped = provider?.modelsByKind?.[kind];
+  if (Array.isArray(mapped) && mapped.length) return mapped;
+  return provider?.models || [];
 }
 
 function resolveCloudKey(config, provider) {
@@ -834,6 +860,7 @@ module.exports = {
   resolveCloudKey,
   generateCloud,
   editOpenAIImage,
+  modelsForKind,
   downloadToFile,
   assertPublicHost,
   aspectRatioOf,

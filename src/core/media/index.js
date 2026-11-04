@@ -1,9 +1,10 @@
 'use strict';
 
-/* Blank media library — one local-first pipeline for images, video, music
-   and 3D. Local generation is fully offline via sharp + ffmpeg. Cloud
-   providers are opt-in per library and their keys never leave the main
-   process. */
+/* Blank media library — one pipeline for images, video, music and 3D.
+   Generation runs only through engines the user has actually connected:
+   cloud providers with saved keys, a ComfyUI endpoint, or installed system
+   voices for speech. Local sharp/ffmpeg tools remain for non-destructive
+   edits and previews. Keys never leave the main process. */
 
 const fs = require('fs');
 const path = require('path');
@@ -18,8 +19,6 @@ const {
   const util = require('./util');
   return { ...util, readJSON: require('../paths').readJSON, writeJSON: require('../paths').writeJSON };
 })();
-const visual = require('./visual');
-const audio = require('./audio');
 const meshEngine = require('./mesh');
 const cloud = require('./cloud');
 const comfy = require('./comfy');
@@ -28,13 +27,12 @@ const voice = require('./voice');
 const KINDS = ['image', 'video', 'audio', 'model3d'];
 const KIND_LABEL = { image: 'Image', video: 'Video', audio: 'Music', model3d: '3D' };
 const MAX_JOBS = 60;
-const MAX_GENERATED = 4;
 
 const MEDIA_DEFAULTS = {
-  image: { engine: 'blank', aspect: '1:1' },
-  video: { engine: 'blank', aspect: '16:9', duration: 4, fps: 24, soundtrack: true },
-  audio: { engine: 'blank', duration: 20, style: 'auto' },
-  model3d: { engine: 'blank', quality: 'medium' },
+  image: { aspect: '1:1' },
+  video: { aspect: '16:9', duration: 4 },
+  audio: { duration: 20 },
+  model3d: {},
 };
 
 let context = {
@@ -152,49 +150,14 @@ function engineAvailability() {
   const hasKey = (id) => Boolean(keys[id] || providers[id]?.apiKey);
   const local = [
     {
-      id: 'blank',
-      label: 'Blank Engine',
-      vendor: 'local',
-      kinds: KINDS.slice(),
-      available: sharpAvailable(),
-      note: 'Offline procedural art, music and 3D. No key, no network.',
-      models: ['blank-1'],
-    },
-    {
-      id: 'blank-image',
-      label: 'Blank Visual',
-      vendor: 'local',
-      kinds: ['image', 'video'],
-      available: sharpAvailable(),
-      note: 'Deterministic poster art in ten visual directions.',
-      models: ['blank-1'],
-    },
-    {
-      id: 'blank-audio',
-      label: 'Blank Audio',
-      vendor: 'local',
-      kinds: ['audio'],
-      available: ffmpegAvailable(),
-      note: 'Synthesized music with style, key and tempo control.',
-      models: ['blank-1'],
-    },
-    {
-      id: 'blank-3d',
-      label: 'Blank 3D',
-      vendor: 'local',
-      kinds: ['model3d'],
-      available: sharpAvailable(),
-      note: 'Parametric objects exported as OBJ, MTL and STL.',
-      models: ['blank-1'],
-    },
-    {
-      id: 'blank-voice',
-      label: 'Blank Voice',
+      id: 'system-voice',
+      label: 'System voice',
       vendor: 'local',
       kinds: ['audio'],
       available: voice.available(),
-      note: 'Text to speech with installed system voices.',
+      note: 'Text to speech with voices installed on this machine.',
       models: ['system'],
+      speech: true,
     },
     {
       id: 'comfyui',
@@ -519,8 +482,8 @@ async function saveFinalAsset(job, produced, options = {}) {
     kind,
     title,
     prompt: produced.prompt || '',
-    engine: produced.engine || 'blank',
-    engineLabel: produced.engineLabel || 'Blank Engine',
+    engine: produced.engine || 'local',
+    engineLabel: produced.engineLabel || 'Local tools',
     provider: produced.provider || '',
     model: produced.model || '',
     fileName,
@@ -591,218 +554,7 @@ async function saveFinalAsset(job, produced, options = {}) {
   return { record, item };
 }
 
-/* -------------------------------------------------------------- local gen */
-
-function localVideoDims(aspect) {
-  const [w, h] = pickAspect(aspect, 'video');
-  const width = Math.min(1280, Math.round(w / 2) * 2);
-  const height = Math.min(1280, Math.round(h / 2) * 2);
-  return { width, height };
-}
-
-async function generateLocalImage(job, prompt, options, index) {
-  const seed = Number.isFinite(Number(options.seed)) ? Number(options.seed) >>> 0 : (hashString(prompt) + index * 977) >>> 0;
-  const theme = visual.resolveTheme(prompt, seed, options.style, options.palette);
-  const dims = parseDimensions(options.size, { width: 1024, height: 1024 });
-  let [fallbackW, fallbackH] = pickAspect(options.aspect || '1:1', 'image');
-  let width = options.size ? dims.width : fallbackW;
-  let height = options.size ? dims.height : fallbackH;
-  width = clamp(Math.round(width / 2) * 2, 256, 2048);
-  height = clamp(Math.round(height / 2) * 2, 256, 2048);
-  job.progress(0.15 + index * 0.05, 'painting');
-  const svg = visual.renderScene({
-    prompt,
-    width,
-    height,
-    seed,
-    time: options.time !== undefined ? Number(options.time) : 0.55,
-    style: options.style,
-    palette: options.palette,
-    grain: options.grain !== false,
-  });
-  const paths = libraryPaths();
-  const svgFile = path.join(paths.temp, `${job.id}-${index}.svg`);
-  const pngFile = path.join(paths.temp, `${job.id}-${index}.png`);
-  await fs.promises.mkdir(paths.temp, { recursive: true });
-  await fs.promises.writeFile(svgFile, svg, 'utf8');
-  await sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toFile(pngFile);
-  job.progress(0.55 + index * 0.05, 'finishing');
-  return {
-    kind: 'image',
-    file: pngFile,
-    mime: 'image/png',
-    width,
-    height,
-    title: titleFromPrompt(prompt, 'Untitled image'),
-    prompt,
-    seed,
-    engine: 'blank',
-    engineLabel: 'Blank Visual',
-    model: 'blank-1',
-    meta: {
-      style: theme.style,
-      styleLabel: visual.STYLE_LABELS[theme.style] || theme.style,
-      palette: theme.palette.id,
-      paletteName: theme.palette.name,
-      seed,
-    },
-  };
-}
-
-async function generateLocalVideo(job, prompt, options) {
-  if (!ffmpegAvailable()) throw new Error('Video needs ffmpeg, which is unavailable in this build');
-  const theme = visual.resolveTheme(prompt, options.seed, options.style, options.palette);
-  const { width, height } = localVideoDims(options.aspect || '16:9');
-  const duration = clamp(Number(options.duration) || 4, 2, 12);
-  const fps = clamp(Math.round(Number(options.fps) || 24), 8, 30);
-  const totalFrames = Math.round(duration * fps);
-  const paths = libraryPaths();
-  const jobDir = path.join(paths.temp, job.id);
-  await fs.promises.mkdir(jobDir, { recursive: true });
-  const framePattern = path.join(jobDir, 'frame-%04d.png');
-  job.progress(0.04, 'rendering frames');
-  const batch = 6;
-  for (let start = 0; start < totalFrames; start += batch) {
-    if (job.cancelled()) throw new Error('Cancelled');
-    const frames = [];
-    for (let i = start; i < Math.min(totalFrames, start + batch); i += 1) {
-      const time = totalFrames <= 1 ? 0 : i / (totalFrames - 1);
-      const svg = visual.renderScene({
-        prompt,
-        width,
-        height,
-        seed: theme.seed,
-        time: 0.12 + time * 0.8,
-        style: options.style,
-        palette: options.palette,
-        grain: false,
-      });
-      frames.push(sharp(Buffer.from(svg)).png().toFile(path.join(jobDir, `frame-${String(i + 1).padStart(4, '0')}.png`)));
-    }
-    await Promise.all(frames);
-    job.progress(0.06 + (Math.min(totalFrames, start + batch) / totalFrames) * 0.56, 'rendering frames');
-  }
-  job.progress(0.63, 'building soundtrack');
-  let scoreFile = '';
-  if (options.soundtrack !== false) {
-    try {
-      const music = audio.resolveMusic(options.musicPrompt || `${prompt}, cinematic ambient underscore`, theme.seed, {
-        style: options.musicStyle || 'cinematic',
-        duration,
-      });
-      const render = audio.renderMusic({
-        prompt: music.title,
-        duration,
-        seed: theme.seed,
-        style: music.style,
-        bpm: music.bpm,
-        rootPc: music.rootPc,
-        scale: music.scale,
-      });
-      scoreFile = path.join(jobDir, 'score.wav');
-      await audio.writeMusicFile(render, scoreFile);
-    } catch {
-      scoreFile = '';
-    }
-  }
-  job.progress(0.74, 'encoding video');
-  const videoOnly = path.join(paths.temp, `${job.id}.video.mp4`);
-  const args = [
-    '-v', 'error', '-framerate', String(fps), '-i', framePattern,
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p',
-    '-movflags', '+faststart', '-y', videoOnly,
-  ];
-  await runProcess(ffmpegBin(), args, { timeout: 180000, signal: job.signal });
-  let finalFile = videoOnly;
-  if (scoreFile && fs.existsSync(scoreFile)) {
-    job.progress(0.88, 'mixing audio');
-    const withAudio = path.join(paths.temp, `${job.id}.mp4`);
-    await runProcess(ffmpegBin(), [
-      '-v', 'error', '-i', videoOnly, '-i', scoreFile,
-      '-filter_complex', '[1:a]volume=0.55,afade=t=out:st=' + Math.max(0, duration - 1).toFixed(2) + ':d=1[a]',
-      '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k',
-      '-shortest', '-movflags', '+faststart', '-y', withAudio,
-    ], { timeout: 120000, signal: job.signal });
-    finalFile = withAudio;
-  }
-  job.progress(0.95, 'finishing');
-  return {
-    kind: 'video',
-    file: finalFile,
-    mime: 'video/mp4',
-    width,
-    height,
-    duration,
-    title: titleFromPrompt(prompt, 'Untitled video'),
-    prompt,
-    seed: theme.seed,
-    engine: 'blank',
-    engineLabel: 'Blank Motion',
-    model: 'blank-1',
-    meta: {
-      style: theme.style,
-      palette: theme.palette.id,
-      fps,
-      frames: totalFrames,
-      soundtrack: Boolean(scoreFile),
-      resolution: `${width}×${height}`,
-    },
-  };
-}
-
-async function generateLocalAudio(job, prompt, options) {
-  const duration = clamp(Number(options.duration) || 20, 2, 180);
-  const seed = Number.isFinite(Number(options.seed)) ? Number(options.seed) >>> 0 : hashString(prompt);
-  const resolved = audio.resolveMusic(prompt, seed, {
-    style: options.style && options.style !== 'auto' ? options.style : undefined,
-    bpm: options.bpm,
-    key: options.key,
-    scale: options.scale,
-    duration,
-  });
-  job.progress(0.2, 'composing');
-  const render = audio.renderMusic({
-    prompt: resolved.title,
-    duration,
-    seed,
-    style: resolved.style,
-    bpm: resolved.bpm,
-    rootPc: resolved.rootPc,
-    scale: resolved.scale,
-    intensity: options.intensity,
-  });
-  job.progress(0.7, 'mixing');
-  const paths = libraryPaths();
-  const wavFile = path.join(paths.temp, `${job.id}.wav`);
-  const mp3File = path.join(paths.temp, `${job.id}.mp3`);
-  const written = await audio.writeMusicFile(render, ffmpegAvailable() ? mp3File : wavFile, job.signal);
-  job.progress(0.9, 'finishing');
-  return {
-    kind: 'audio',
-    file: written,
-    mime: written.endsWith('.mp3') ? 'audio/mpeg' : 'audio/wav',
-    duration: render.duration,
-    title: resolved.title || titleFromPrompt(prompt, 'Untitled track'),
-    prompt,
-    seed,
-    engine: 'blank',
-    engineLabel: 'Blank Audio',
-    model: 'blank-1',
-    width: 0,
-    height: 0,
-    meta: {
-      style: resolved.style,
-      styleLabel: resolved.styleLabel,
-      bpm: resolved.bpm,
-      key: resolved.key,
-      scale: resolved.scaleLabel,
-      bars: render.meta.bars,
-      progression: render.meta.progression,
-      instruments: render.meta.instruments,
-      peaks: render.peaks,
-    },
-  };
-}
+/* ---------------------------------------------------------------- speech */
 
 async function generateSpeech(job, prompt, options) {
   const paths = libraryPaths();
@@ -844,71 +596,64 @@ async function generateSpeech(job, prompt, options) {
     height: 0,
     title: titleFromPrompt(prompt, 'Speech'),
     prompt,
-    engine: 'blank-voice',
-    engineLabel: 'Blank Voice',
+    engine: 'system-voice',
+    engineLabel: 'System voice',
     model: 'system',
     meta: { speech: true, voice: selectedVoice || 'auto', rate },
   };
 }
 
-async function generateLocalMesh(job, prompt, options) {
-  const seed = Number.isFinite(Number(options.seed)) ? Number(options.seed) >>> 0 : hashString(prompt);
-  job.progress(0.25, 'building mesh');
-  const model = meshEngine.generateMesh({
-    prompt,
-    seed,
-    kind: options.kind,
-    quality: options.quality,
-  });
-  job.progress(0.55, 'shading preview');
-  const paths = libraryPaths();
-  const tempDir = path.join(paths.temp, job.id);
-  await fs.promises.mkdir(tempDir, { recursive: true });
-  const base = path.join(tempDir, 'model');
-  const previewFile = path.join(tempDir, 'preview.png');
-  const svg = meshEngine.renderMeshPreview(model, { width: 1200, height: 900, shadow: true, grid: true, label: model.title });
-  await sharp(Buffer.from(svg)).png().toFile(previewFile);
-  const obj = meshEngine.exportObj(model);
-  const objFile = `${base}.obj`;
-  const mtlFile = `${base}.mtl`;
-  const mtlName = `${safeName(model.title || model.kind)}.mtl`;
-  await fs.promises.writeFile(objFile, obj.obj.replace(/^mtllib .*$/m, `mtllib ${mtlName}`), 'utf8');
-  await fs.promises.writeFile(mtlFile, obj.mtl, 'utf8');
-  job.progress(0.9, 'exporting');
-  return {
-    kind: 'model3d',
-    file: objFile,
-    mime: 'model/obj',
-    width: 1200,
-    height: 900,
-    title: model.title,
-    prompt,
-    seed: model.seed,
-    engine: 'blank',
-    engineLabel: 'Blank 3D',
-    model: 'blank-1',
-    previewFile,
-    extraFiles: [{ file: mtlFile, name: `${safeName(model.title || model.kind)}.mtl` }],
-    meta: {
-      format: 'obj',
-      meshKind: model.kind,
-      meshLabel: model.kindLabel,
-      quality: model.quality,
-      vertices: model.stats.vertices,
-      triangles: model.stats.triangles,
-      groups: model.stats.groups,
-      palette: model.theme.id,
-      size: model.size.map((v) => Number(v.toFixed(2))),
-    },
-  };
-}
-
 /* ------------------------------------------------------------- cloud gen */
 
+const SPEECH_ENGINE = 'system-voice';
+const LEGACY_ENGINES = new Set(['blank', 'blank-image', 'blank-audio', 'blank-3d']);
+
+function normalizeEngineId(engine) {
+  const id = String(engine || '').trim().replace(/^cloud:/, '');
+  if (!id || id === 'auto') return '';
+  if (id === 'blank-voice') return SPEECH_ENGINE;
+  if (LEGACY_ENGINES.has(id)) return '';
+  return id;
+}
+
 function findCloudProvider(engine) {
-  if (!engine || engine === 'blank' || engine === 'auto') return null;
-  const id = String(engine).replace(/^cloud:/, '');
+  const id = normalizeEngineId(engine);
+  if (!id || id === SPEECH_ENGINE || id === 'comfyui') return null;
   return cloud.providerFor(id);
+}
+
+function enginesForKind(kind) {
+  const { local, cloud: remote } = engineAvailability();
+  return [...local, ...remote].filter((engine) => engine.kinds.includes(kind));
+}
+
+function noEngineMessage(kind) {
+  if (kind === 'image') return 'No image engine is configured. Add a provider key or a ComfyUI endpoint in Studio → Engines.';
+  if (kind === 'video') return 'No video engine is configured. Add Google Veo, Higgsfield, Replicate or fal in Studio → Engines.';
+  if (kind === 'audio') return 'No audio engine is configured. Add a music provider in Studio → Engines, or choose System voice for speech.';
+  if (kind === 'model3d') return 'No 3D engine is configured. Add Replicate or fal in Studio → Engines.';
+  return `No ${KIND_LABEL[kind] || kind} engine is configured. Open Studio → Engines.`;
+}
+
+function resolveGenerateEngine(kind, requested) {
+  const wanted = normalizeEngineId(requested);
+  if (wanted) {
+    const engine = enginesForKind(kind).find((entry) => entry.id === wanted);
+    if (!engine) throw new Error(`Unknown ${KIND_LABEL[kind] || kind} engine: ${wanted}`);
+    if (!engine.available) throw new Error(`${engine.label} is not configured. Add its key or endpoint in Studio → Engines.`);
+    return engine;
+  }
+  const automatic = enginesForKind(kind).find((engine) => engine.available && !engine.speech);
+  if (automatic) return automatic;
+  throw new Error(noEngineMessage(kind));
+}
+
+function engineLabelFor(engine) {
+  const id = normalizeEngineId(engine);
+  if (!id || id === 'local') return 'Local tools';
+  if (id === SPEECH_ENGINE) return 'System voice';
+  if (id === 'comfyui') return 'ComfyUI';
+  return findCloudProvider(id)?.label || id;
 }
 
 async function generateCloudAsset(job, prompt, options, producedKinds) {
@@ -918,7 +663,8 @@ async function generateCloudAsset(job, prompt, options, producedKinds) {
   const config = readConfig();
   const apiKey = cloud.resolveCloudKey(config, provider);
   if (!apiKey) throw new Error(`Add a ${provider.keyLabel} in Studio → Engines to use ${provider.label}`);
-  const model = options.model || provider.models[0];
+  const models = typeof cloud.modelsForKind === 'function' ? cloud.modelsForKind(provider, options.kind) : provider.models;
+  const model = options.model || models[0] || provider.models[0];
   const paths = libraryPaths();
   const tmpBase = path.join(paths.temp, `${job.id}-${provider.id}`);
   await fs.promises.mkdir(paths.temp, { recursive: true });
@@ -1090,16 +836,14 @@ function createJob(input, mode) {
   const prompt = String(input.prompt || '').trim();
   if (!prompt) throw new Error('Describe what to create');
   if (prompt.length > 4000) throw new Error('Prompt is too long');
-  const engine = input.engine || 'blank';
-  const provider = findCloudProvider(engine);
-  const localLabels = { 'blank-voice': 'Blank Voice', comfyui: 'ComfyUI' };
+  const engine = normalizeEngineId(input.engine) || 'local';
   const job = {
     id: makeId('job'),
     kind,
     mode,
     prompt,
     engine,
-    engineLabel: provider ? provider.label : (localLabels[engine] || 'Blank Engine'),
+    engineLabel: engineLabelFor(engine),
     status: 'queued',
     progressValue: 0,
     stage: 'queued',
@@ -1173,32 +917,16 @@ async function executeJob(job, runner) {
 }
 
 function generate(input = {}) {
-  const job = createJob(input, 'generate');
-  const options = { ...input };
-  if (options.engine === 'auto') options.engine = '';
+  const kind = KINDS.includes(input.kind) ? input.kind : 'image';
+  const engine = resolveGenerateEngine(kind, input.engine);
+  const options = { ...input, kind, engine: engine.id };
+  const job = createJob(options, 'generate');
   executeJob(job, async (active) => {
-    const provider = findCloudProvider(options.engine);
-    if (provider) {
-      return generateCloudAsset(active, active.prompt, { ...options, kind: active.kind }, active.kind);
-    }
-    if (active.kind === 'image' && options.engine === 'comfyui') {
-      return generateComfyAsset(active, active.prompt, options);
-    }
-    if (active.kind === 'audio' && options.engine === 'blank-voice') {
-      return generateSpeech(active, active.prompt, options);
-    }
-    if (active.kind === 'image') {
-      const count = clamp(Math.round(Number(options.count) || 1), 1, MAX_GENERATED);
-      const results = [];
-      for (let i = 0; i < count; i += 1) {
-        results.push(await generateLocalImage(active, active.prompt, options, i));
-      }
-      return results;
-    }
-    if (active.kind === 'video') return generateLocalVideo(active, active.prompt, options);
-    if (active.kind === 'audio') return generateLocalAudio(active, active.prompt, options);
-    if (active.kind === 'model3d') return generateLocalMesh(active, active.prompt, options);
-    throw new Error(`Unsupported media kind ${active.kind}`);
+    const provider = findCloudProvider(engine.id);
+    if (provider) return generateCloudAsset(active, active.prompt, options, active.kind);
+    if (engine.id === 'comfyui' && active.kind === 'image') return generateComfyAsset(active, active.prompt, options);
+    if (engine.id === SPEECH_ENGINE && active.kind === 'audio') return generateSpeech(active, active.prompt, options);
+    throw new Error(`${engine.label} cannot generate ${KIND_LABEL[active.kind] || active.kind}.`);
   });
   return publicJob(job);
 }
@@ -1267,14 +995,7 @@ async function editImageLocal(record, input, job) {
   job.progress(0.45, 'processing image');
   let buffer = await pipeline.png().toBuffer();
   let info = await sharp(buffer).metadata();
-  let tint = '';
-  if (input.prompt && ops.tint !== false) {
-    try {
-      const theme = visual.resolveTheme(input.prompt, (record.seed || 0) + 1);
-      tint = theme.palette.colors[0];
-    } catch {}
-  }
-  if (ops.tintColor) tint = String(ops.tintColor);
+  const tint = ops.tintColor ? String(ops.tintColor) : '';
   if (tint && /^#[0-9a-f]{6}$/i.test(tint)) {
     const { r, g, b } = hexToRgb(tint);
     const overlay = {
@@ -1297,8 +1018,7 @@ async function editImageLocal(record, input, job) {
   const paths = libraryPaths();
   const outFile = path.join(paths.temp, `${job.id}-edit${extension}`);
   await fs.promises.writeFile(outFile, buffer);
-  const suffix = input.prompt ? titleFromPrompt(input.prompt, '') : '';
-  const title = suffix ? `${record.title} · ${suffix.slice(0, 28)}` : `${record.title} · edit`;
+  const title = `${record.title} · edit`;
   job.progress(0.85, 'finishing');
   return {
     kind: 'image',
@@ -1307,10 +1027,10 @@ async function editImageLocal(record, input, job) {
     width: info.width || width,
     height: info.height || height,
     title,
-    prompt: input.prompt || record.prompt,
+    prompt: record.prompt,
     seed: record.seed,
-    engine: 'blank',
-    engineLabel: 'Blank Darkroom',
+    engine: 'local',
+    engineLabel: 'Local tools',
     model: 'sharp',
     source: 'edited',
     parentId: record.id,
@@ -1356,8 +1076,8 @@ async function editVideoLocal(record, input, job) {
       title: `${record.title} · animated`,
       prompt: record.prompt,
       seed: record.seed,
-      engine: 'blank',
-      engineLabel: 'Blank Motion',
+      engine: 'local',
+      engineLabel: 'Local tools',
       model: 'ffmpeg',
       source: 'edited',
       parentId: record.id,
@@ -1398,8 +1118,8 @@ async function editVideoLocal(record, input, job) {
     title: `${record.title} · cut`,
     prompt: record.prompt,
     seed: record.seed,
-    engine: 'blank',
-    engineLabel: 'Blank Motion',
+    engine: 'local',
+    engineLabel: 'Local tools',
     model: 'ffmpeg',
     source: 'edited',
     parentId: record.id,
@@ -1456,38 +1176,13 @@ async function editAudioLocal(record, input, job) {
     title: `${record.title} · edit`,
     prompt: record.prompt,
     seed: record.seed,
-    engine: 'blank',
-    engineLabel: 'Blank Audio',
+    engine: 'local',
+    engineLabel: 'Local tools',
     model: 'ffmpeg',
     source: 'edited',
     parentId: record.id,
     meta: { operations: ops, peaks },
   };
-}
-
-async function editMeshLocal(record, input, job) {
-  const prompt = input.prompt || record.prompt || record.title;
-  const options = {
-    kind: input.operations?.kind || record.meta?.meshKind,
-    quality: input.operations?.quality || record.meta?.quality || 'medium',
-    seed: Number.isFinite(Number(input.operations?.seed)) ? Number(input.operations.seed) : (record.seed || hashString(prompt)) + 1,
-    format: input.operations?.format === 'stl' ? 'stl' : 'obj',
-  };
-  const produced = await generateLocalMesh(job, prompt, options);
-  produced.source = 'edited';
-  produced.parentId = record.id;
-  produced.title = `${record.title} · remix`;
-  if (options.format === 'stl') {
-    const model = meshEngine.generateMesh({ prompt, seed: options.seed, kind: options.kind, quality: options.quality });
-    const stlFile = path.join(libraryPaths().temp, `${job.id}.stl`);
-    await fs.promises.writeFile(stlFile, meshEngine.exportStl(model));
-    produced.file = stlFile;
-    produced.mime = 'model/stl';
-    produced.meta.format = 'stl';
-    delete produced.extraFiles;
-  }
-  delete produced.meta.stl;
-  return produced;
 }
 
 async function editImageCloud(record, input, job) {
@@ -1534,9 +1229,17 @@ async function editImageCloud(record, input, job) {
 function edit(input = {}) {
   const record = getRecord(input.id);
   if (!record) throw new Error('Media asset not found');
-  const job = createJob({ ...input, kind: record.kind, prompt: input.prompt || record.prompt || record.title }, 'edit');
+  if (record.kind === 'model3d') throw new Error('3D editing is not supported. Export the mesh or create a new one with a 3D engine.');
+  const requested = normalizeEngineId(input.engine);
+  const provider = requested ? findCloudProvider(requested) : null;
+  if (requested && !provider) throw new Error(`${engineLabelFor(requested)} cannot edit media. Choose a cloud image engine or use the local tools.`);
+  const job = createJob({
+    ...input,
+    kind: record.kind,
+    engine: provider ? provider.id : 'local',
+    prompt: input.prompt || record.prompt || record.title,
+  }, 'edit');
   executeJob(job, async (active) => {
-    const provider = findCloudProvider(input.engine);
     if (record.kind === 'image' && provider) return editImageCloud(record, input, active);
     if (record.kind === 'image') return editImageLocal(record, input, active);
     if (record.kind === 'video') {
@@ -1547,7 +1250,6 @@ function edit(input = {}) {
       if (provider) throw new Error('Cloud audio editing is not supported — use the local mixer');
       return editAudioLocal(record, input, active);
     }
-    if (record.kind === 'model3d') return editMeshLocal(record, input, active);
     throw new Error('Unsupported edit');
   });
   return publicJob(job);

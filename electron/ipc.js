@@ -767,7 +767,11 @@ function registerIpc({ mcp, getWindow }) {
 
   require('electron').ipcMain.handle('sessions:list', async () => {
     const config = configModule.loadConfig();
-    return { sessions: store.listSessions(config.workspace), workspace: config.workspace };
+    const sessions = store.listSessions(config.workspace).map((session) => ({
+      ...session,
+      running: state.sessionRuns.has(session.id),
+    }));
+    return { sessions, workspace: config.workspace };
   });
 
   require('electron').ipcMain.handle('sessions:get', async (_event, id) => {
@@ -952,6 +956,7 @@ function registerIpc({ mcp, getWindow }) {
       denyApprovalsFor((approval) => approval.runId === runId);
       setTimeout(() => {
         try { drainQueue(session.id); } catch {}
+        broadcast({ type: 'sessions:refresh' });
       }, 60);
     });
 
@@ -1768,12 +1773,11 @@ ${commands}
       if (!raw || typeof raw !== 'object') continue;
       const entry = {};
       if (raw.engine) entry.engine = String(raw.engine).slice(0, 60);
+      if (raw.model) entry.model = String(raw.model).slice(0, 120);
       if (raw.aspect) entry.aspect = String(raw.aspect).slice(0, 12);
-      if (raw.quality) entry.quality = String(raw.quality).slice(0, 12);
-      if (raw.style) entry.style = String(raw.style).slice(0, 40);
+      if (raw.voice) entry.voice = String(raw.voice).slice(0, 120);
+      if (raw.rate !== undefined) entry.rate = Math.min(10, Math.max(-10, Number(raw.rate) || 0));
       if (Number(raw.duration) > 0) entry.duration = Math.min(600, Math.max(1, Number(raw.duration)));
-      if (Number(raw.fps) > 0) entry.fps = Math.min(30, Math.max(8, Math.round(Number(raw.fps))));
-      if (raw.soundtrack !== undefined) entry.soundtrack = Boolean(raw.soundtrack);
       if (Object.keys(entry).length) clean[kind] = entry;
     }
     if (!Object.keys(clean).length) return { defaults: configModule.loadConfig().media?.defaults || {} };

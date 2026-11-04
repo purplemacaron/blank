@@ -307,7 +307,7 @@
 
   function sessionMarkup(session) {
     const active = session.id === state.currentSessionId;
-    const pending = active && Boolean(window.ChatView?.running);
+    const pending = (active && Boolean(window.ChatView?.running)) || Boolean(session.running);
     const preview = String(session.preview || '').replace(/\s+/g, ' ').trim();
     const sub = preview || modelName(session.model);
     return `<div class="session-item ${active ? 'active' : ''} ${pending ? 'pending' : ''}" role="button" tabindex="0" data-session-id="${U.attr(session.id)}" title="${U.attr(`${session.title || 'New session'}\n${preview || modelName(session.model)}`)}">

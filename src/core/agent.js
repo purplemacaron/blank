@@ -73,13 +73,21 @@ async function compactSession({ session, config, signal, modelId }) {
   }
 }
 
-async function runSubagent({ task, parentSession, config, modelId, workspace, signal, usageOut, system, name }) {
-  const readonly = `You are ${name || 'a read-only research sub-agent'} inside Blank. You have file and web tools, but cannot write or run commands. Investigate the task efficiently, using at most a few targeted tool calls. Return a compact report with concrete findings and file:line references. Do not restate the task. Do not ask questions.`;
-  const prompt = system ? `${system}\n\n${readonly}` : readonly;
+async function runSubagent({ task, parentSession, config, modelId, workspace, signal, usageOut, system, name, allowWrite = false, requestApproval = null, maxSteps = 0 }) {
+  const write = Boolean(allowWrite);
+  const role = name || (write ? 'a work sub-agent' : 'a read-only research sub-agent');
+  const guidance = write
+    ? `You are ${role} inside Blank. You can read and edit files and run commands in the workspace. Work independently, make the smallest correct changes, and verify them with a focused test or build when practical. Every write or command follows the user's approval policy, so do not ask questions. Finish with a compact report: what changed, file paths, and what you verified. Do not delegate further.`
+    : `You are ${role} inside Blank. You have file and web tools, but cannot write or run commands. Investigate the task efficiently, using at most a few targeted tool calls. Return a compact report with concrete findings and file:line references. Do not restate the task. Do not ask questions.`;
+  const prompt = system ? `${system}\n\n${guidance}` : guidance;
   const messages = [{ role: 'user', content: task }];
-  const tools = getToolDefinitions({ mode: 'plan', config }).filter((tool) => ['read_file', 'list_dir', 'glob', 'grep', 'web_search', 'web_fetch'].includes(tool.name));
+  const wanted = write
+    ? ['read_file', 'write_file', 'edit_file', 'list_dir', 'glob', 'grep', 'run_command', 'web_search', 'web_fetch', 'read_skill', 'memory_search']
+    : ['read_file', 'list_dir', 'glob', 'grep', 'web_search', 'web_fetch'];
+  const tools = getToolDefinitions({ mode: write ? 'agent' : 'plan', config }).filter((tool) => wanted.includes(tool.name));
+  const limit = Math.max(4, Math.min(24, Number(maxSteps) || (write ? 14 : 8)));
   let final = '';
-  for (let step = 0; step < 8; step += 1) {
+  for (let step = 0; step < limit; step += 1) {
     if (signal?.aborted) break;
     let text = '';
     let calls = [];
@@ -92,7 +100,7 @@ async function runSubagent({ task, parentSession, config, modelId, workspace, si
         messages,
         tools,
         signal,
-        options: { temperature: 0.3, maxTokens: 4096 },
+        options: { temperature: write ? 0.2 : 0.3, maxTokens: 4096 },
       })) {
         if (event.type === 'text') text += event.text;
         if (event.type === 'usage') {
@@ -116,6 +124,7 @@ async function runSubagent({ task, parentSession, config, modelId, workspace, si
         session: { id: parentSession?.id || '', allowTools: [] },
         config,
         mode: 'agent',
+        requestApproval,
         emit: () => {},
       });
       messages.push({ role: 'tool', toolCallId: call.id, name: call.name, content: result.content, isError: Boolean(result.isError) });
@@ -184,12 +193,35 @@ async function runAgent({
     signal,
     requestApproval: approve,
     mcp: mcp ? { callTool: (server, tool, args) => mcp.callTool(server, tool, args) } : null,
-    delegate: async (task) => {
+    delegate: async (task, options = {}) => {
+      const write = Boolean(options.write);
+      const label = String(options.name || '').trim() || (write ? 'work worker' : 'research sub-agent');
+      const text = String(task || '').trim();
+      if (!text) return 'A task is required for the sub-agent.';
+      emit({ type: 'notice', level: 'info', text: `${label} working${write ? ' · can edit and run' : ' · read-only'}.` });
       const usageOut = { input: 0, output: 0 };
-      const report = await runSubagent({ task, parentSession: session, config, modelId: activeModel, workspace, signal, usageOut });
+      let report;
+      try {
+        report = await runSubagent({
+          task: text,
+          parentSession: session,
+          config,
+          modelId: activeModel,
+          workspace,
+          signal,
+          usageOut,
+          name: label,
+          allowWrite: write,
+          requestApproval: approve,
+          maxSteps: options.steps,
+        });
+      } catch (err) {
+        report = `Sub-agent failed: ${err.message}`;
+      }
       session.usage.input += usageOut.input;
       session.usage.output += usageOut.output;
       emit({ type: 'usage', usage: { ...session.usage } });
+      emit({ type: 'notice', level: 'info', text: `${label} finished.` });
       return report;
     },
     teamDelegate: async (task, wanted = []) => {

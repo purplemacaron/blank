@@ -253,11 +253,14 @@ const TOOL_SPECS = [
   {
     name: 'delegate',
     label: 'Delegate',
-    description: 'Ask a read-only sub-agent to investigate a narrow question (files, code, web) and report back. Saves your main context for synthesis.',
+    description: 'Hand a focused task to a sub-agent and get a compact report back. Read-only by default, which is ideal for research. Set write to true for a worker that can edit files and run commands in the workspace; those calls still follow your approval policy. Use this to keep the main context clear on large or independent work.',
     parameters: {
       type: 'object',
       properties: {
-        task: { type: 'string', description: 'A precise research task with expected output.' },
+        task: { type: 'string', description: 'A precise task with expected output and any relevant paths.' },
+        write: { type: 'boolean', description: 'Allow the sub-agent to edit files and run commands. Default false (read-only research).' },
+        name: { type: 'string', description: 'Optional short worker name shown in notices, e.g. "test-runner".' },
+        steps: { type: 'integer', description: 'Maximum sub-agent steps (4-24, default 8 for research and 14 for write work).' },
       },
       required: ['task'],
     },
@@ -309,25 +312,31 @@ const TOOL_SPECS = [
     planSafe: true,
   },
   {
+    name: 'list_media_engines',
+    label: 'List media engines',
+    description: 'List the media engines connected in Studio and whether each is ready. Returns cloud providers with their models plus local options such as ComfyUI and the system voice. Call this before generate_media when you do not know which engine or model is available.',
+    parameters: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['image', 'video', 'audio', 'model3d'], description: 'Optional media kind filter.' },
+      },
+    },
+    planSafe: true,
+  },
+  {
     name: 'generate_media',
     label: 'Generate media',
-    description: 'Generate an image, video, music track or 3D model. Uses the offline Blank engine by default. Cloud engines (openai-images, google-imagen, google-veo, stability, elevenlabs, replicate, fal) require a saved API key and may cost money. The job is saved to the media library and can optionally be copied into the workspace.',
+    description: 'Generate an image, video, music track or 3D model through an engine connected in Studio. Requires a saved API key (OpenAI Images, Google Imagen/Veo, Higgsfield, Stability, ElevenLabs, Replicate, fal), a ComfyUI endpoint, or the system voice for speech. Call list_media_engines first to see what is ready. When engine is omitted the first available engine for that kind is used. Jobs are saved to the media library and can optionally be copied into the workspace.',
     parameters: {
       type: 'object',
       properties: {
         kind: { type: 'string', enum: ['image', 'video', 'audio', 'model3d'], description: 'Media kind.' },
         prompt: { type: 'string', description: 'Detailed creative brief.' },
-        engine: { type: 'string', description: 'blank (default), or a cloud provider id such as openai-images or fal.' },
-        model: { type: 'string', description: 'Optional cloud model id.' },
+        engine: { type: 'string', description: 'Engine id from list_media_engines, e.g. openai-images, fal, comfyui, system-voice. Omit to auto-select.' },
+        model: { type: 'string', description: 'Optional model id from list_media_engines.' },
         aspect: { type: 'string', description: 'Aspect ratio: 1:1, 16:9, 9:16, 4:3 or 3:4.' },
-        duration: { type: 'number', description: 'Video seconds (2-12) or audio seconds (2-180).' },
-        fps: { type: 'integer', description: 'Video frame rate (8-30, default 24).' },
-        count: { type: 'integer', description: 'Number of image variations (1-4).' },
-        style: { type: 'string', description: 'Visual style or music style. Blank visual styles: aurora, cosmic, landscape, portrait, botanical, product, architecture, mark, grid, waves. Music: ambient, lofi, cinematic, synthwave, electronic, jazz, organic.' },
-        palette: { type: 'string', description: 'Visual palette: cobalt, ice, sunset, dawn, violet, mint, forest, sand, mono, noir.' },
-        quality: { type: 'string', enum: ['low', 'medium', 'high'], description: '3D mesh quality.' },
-        seed: { type: 'integer', description: 'Optional deterministic seed.' },
-        soundtrack: { type: 'boolean', description: 'Add a generated soundtrack to local video (default true).' },
+        duration: { type: 'number', description: 'Video seconds or audio seconds, within the engine limits.' },
+        image_url: { type: 'string', description: 'Optional public image URL for image-to-video or image-to-3D engines.' },
         save_to_workspace: { type: 'boolean', description: 'Copy the result into the workspace when finished.' },
         folder: { type: 'string', description: 'Optional workspace subfolder for saved files, e.g. "assets".' },
       },
@@ -338,16 +347,16 @@ const TOOL_SPECS = [
   {
     name: 'edit_media',
     label: 'Edit media',
-    description: 'Create an edited copy of a media asset. Images support crop, resize, rotate, brightness, contrast, saturation, hue, blur, sharpen, grayscale, duotone and format. Audio supports trim, fade, volume and speed. Video supports trim, resize, mute, speed and GIF. 3D supports a regenerated remix or STL export. Check the operations schema in the tool description.',
+    description: 'Create an edited copy of a media asset. Images support local crop, resize, rotate, brightness, contrast, saturation, hue, blur, sharpen, grayscale, duotone and format changes, or a cloud restyle with an image engine. Audio supports trim, fade, volume and speed. Video supports trim, resize, mute, speed and GIF. Every edit makes a new asset.',
     parameters: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Media asset id from list_media.' },
-        prompt: { type: 'string', description: 'Optional restyle brief or remix prompt.' },
-        engine: { type: 'string', description: 'blank (local) or openai-images for cloud image edits.' },
+        prompt: { type: 'string', description: 'Optional restyle brief when editing an image with a cloud engine.' },
+        engine: { type: 'string', description: 'Optional cloud image engine id for a restyle. Omit to use the local tools.' },
         operations: {
           type: 'object',
-          description: 'Edit operations. Image: {crop:{left,top,width,height}, width, height, rotate, flip, flop, grayscale, duotone, brightness, contrast, saturation, hue, gamma, blur, sharpen, normalize, format}. Audio: {start, duration, fadeIn, fadeOut, volumeDb, speed, reverse, normalize, format}. Video: {start, duration, width, speed, mute, format:"mp4"|"gif"}. 3D: {kind, quality, seed, format:"obj"|"stl"}.',
+          description: 'Local edit operations. Image: {crop:{left,top,width,height}, width, height, rotate, flip, flop, grayscale, duotone, brightness, contrast, saturation, hue, gamma, blur, sharpen, normalize, format}. Audio: {start, duration, fadeIn, fadeOut, volumeDb, speed, reverse, normalize, format}. Video: {start, duration, width, speed, mute, format:"mp4"|"gif"}.',
         },
         save_to_workspace: { type: 'boolean' },
         folder: { type: 'string' },
@@ -921,28 +930,47 @@ async function toolListMedia(args, ctx) {
   };
 }
 
+async function toolListMediaEngines(args) {
+  const { local, cloud } = mediaLibrary().engineAvailability();
+  const all = [...local, ...cloud];
+  const kind = args.kind;
+  const list = kind ? all.filter((engine) => engine.kinds.includes(kind)) : all;
+  if (!list.length) {
+    return { content: 'No media engines are connected. Open Studio → Engines to add a provider key or a ComfyUI endpoint.' };
+  }
+  const lines = ['Media engines (✓ ready, ○ needs setup):'];
+  for (const engine of list) {
+    const mark = engine.available ? '✓' : '○';
+    const models = Array.isArray(engine.models) && engine.models.length ? ` · models: ${engine.models.join(', ')}` : '';
+    const kinds = engine.kinds.join('/');
+    const note = engine.available ? '' : ` · ${engine.note || 'not configured'}`;
+    lines.push(`- ${mark} ${engine.label} (${engine.id}) · ${kinds}${models}${note}`);
+  }
+  lines.push('Use an engine id from this list in generate_media. Studio → Engines stores keys and endpoints.');
+  return { content: lines.join('\n'), meta: { engines: list } };
+}
+
 async function toolGenerateMedia(args, ctx) {
   if (!['image', 'video', 'audio', 'model3d'].includes(args.kind)) {
     return { content: 'kind must be image, video, audio or model3d.', isError: true };
   }
   if (!String(args.prompt || '').trim()) return { content: 'prompt is required.', isError: true };
-  const job = mediaLibrary().generate({
-    kind: args.kind,
-    prompt: String(args.prompt),
-    engine: args.engine || 'blank',
-    model: args.model || '',
-    aspect: args.aspect,
-    duration: args.duration,
-    fps: args.fps,
-    count: args.count,
-    style: args.style,
-    palette: args.palette,
-    quality: args.quality,
-    seed: args.seed,
-    soundtrack: args.soundtrack,
-    save_to_workspace: args.save_to_workspace,
-    folder: args.folder,
-  });
+  let job;
+  try {
+    job = mediaLibrary().generate({
+      kind: args.kind,
+      prompt: String(args.prompt),
+      engine: args.engine || '',
+      model: args.model || '',
+      aspect: args.aspect,
+      duration: args.duration,
+      imageUrl: args.image_url || '',
+      save_to_workspace: args.save_to_workspace,
+      folder: args.folder,
+    });
+  } catch (error) {
+    return { content: error.message, isError: true };
+  }
   const finished = await mediaLibrary().waitForJob(job.id, { signal: ctx.signal });
   return collectMediaResults(finished, args, ctx);
 }
@@ -950,14 +978,19 @@ async function toolGenerateMedia(args, ctx) {
 async function toolEditMedia(args, ctx) {
   const id = String(args.id || '').trim();
   if (!id) return { content: 'id is required. Use list_media to find an asset id.', isError: true };
-  const job = mediaLibrary().edit({
-    id,
-    prompt: args.prompt || '',
-    engine: args.engine || 'blank',
-    operations: args.operations && typeof args.operations === 'object' ? args.operations : {},
-    save_to_workspace: args.save_to_workspace,
-    folder: args.folder,
-  });
+  let job;
+  try {
+    job = mediaLibrary().edit({
+      id,
+      prompt: args.prompt || '',
+      engine: args.engine || '',
+      operations: args.operations && typeof args.operations === 'object' ? args.operations : {},
+      save_to_workspace: args.save_to_workspace,
+      folder: args.folder,
+    });
+  } catch (error) {
+    return { content: error.message, isError: true };
+  }
   const finished = await mediaLibrary().waitForJob(job.id, { signal: ctx.signal });
   return collectMediaResults(finished, args, ctx);
 }
@@ -1080,6 +1113,7 @@ const HANDLERS = {
   read_skill: toolReadSkill,
   ssh_run: toolSshRun,
   list_media: toolListMedia,
+  list_media_engines: toolListMediaEngines,
   generate_media: toolGenerateMedia,
   edit_media: toolEditMedia,
   create_paper: toolCreatePaper,
@@ -1151,8 +1185,15 @@ async function executeTool(call, ctx) {
     }
     if (name === 'delegate') {
       if (!ctx.delegate) return { content: 'Sub-agents are unavailable in this runner.', isError: true };
-      const output = await ctx.delegate(String(args.task || ''), ctx);
-      return { content: output, meta: { delegated: true } };
+      if (mode === 'plan' && args.write) {
+        return { content: 'Plan mode is read-only. Delegate research without write, or switch to Agent mode to hand out write work.', isError: true };
+      }
+      const output = await ctx.delegate(String(args.task || ''), {
+        write: Boolean(args.write),
+        name: String(args.name || '').trim(),
+        steps: Number(args.steps) || 0,
+      });
+      return { content: output, meta: { delegated: true, write: Boolean(args.write) } };
     }
     if (name.startsWith('mcp__')) {
       if (!ctx.mcp) return { content: 'MCP is unavailable in this runner.', isError: true };
@@ -1187,7 +1228,7 @@ function summarizeArgs(name, args = {}) {
   if (name === 'read_skill' || name === 'memory_search') return args.name || args.query || '';
   if (name === 'todo_write') return `${(args.todos || []).length} items`;
   if (name === 'remember') return args.text || '';
-  if (name === 'delegate') return args.task || '';
+  if (name === 'delegate') return `${args.write ? 'write worker · ' : ''}${args.task || ''}`;
   if (name === 'team_delegate') return `${(args.members || []).length || 'all'} agents · ${args.task || ''}`;
   if (name === 'ssh_run') return `${args.host || ''} · ${args.command || ''}`;
   if (name === 'generate_media') return `${args.kind || 'image'} · ${args.prompt || ''}`;

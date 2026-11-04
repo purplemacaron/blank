@@ -232,7 +232,7 @@
   const PLUGIN_ITEMS = [
     { id: 'builtin-web-search', name: 'Web search', category: 'Built in', icon: 'globe', kind: 'builtin', action: 'settings-web', tagline: 'Search the live web, then read and cite the best pages.', description: 'Blank ships web_search and web_fetch. DuckDuckGo works with no key; other backends can be connected in Settings.', tags: ['No setup', 'Citations'] },
     { id: 'builtin-computer', name: 'Computer use', category: 'Built in', icon: 'monitor', kind: 'builtin', action: 'settings-computer', tagline: 'See the screen and control the desktop with approval.', description: 'computer_screenshot and computer_use work on Windows, macOS and Linux with a blue cursor marker.', tags: ['Approval gated', 'Cursor overlay'] },
-    { id: 'builtin-media', name: 'Studio', category: 'Built in', icon: 'wand', kind: 'builtin', action: 'studio', tagline: 'Create and edit images, video, music and 3D.', description: 'A local-first media workspace with deterministic local engines and optional cloud models.', tags: ['Local first'] },
+    { id: 'builtin-media', name: 'Studio', category: 'Built in', icon: 'wand', kind: 'builtin', action: 'studio', tagline: 'Create and edit images, video, music and 3D.', description: 'A media workspace for images, video, music, speech and 3D, connected to real providers.', tags: ['Providers'] },
     { id: 'builtin-remote', name: 'Remote control', category: 'Built in', icon: 'smartphone', kind: 'builtin', action: 'settings-remote', tagline: 'Pair a phone over your network with a one-time token.', description: 'An authenticated web client for sending messages, watching runs and answering approvals.', tags: ['Token auth', 'Off by default'] },
     { id: 'filesystem', name: 'Filesystem', category: 'MCP', icon: 'folder', kind: 'mcp', transport: 'stdio', tagline: 'Give the agent a scoped view of your workspace files.', description: 'Starts the official Filesystem MCP server rooted at your current workspace.', requires: ['workspace', 'node'], risk: 'Starts a local process with npx. Every MCP tool call still follows your approval policy.', tags: ['Local', 'npx'] },
     { id: 'playwright', name: 'Playwright Browser', category: 'MCP', icon: 'globe', kind: 'mcp', transport: 'stdio', tagline: 'Drive a real browser, inspect pages and take screenshots.', description: 'Microsoft Playwright MCP gives the agent a browser with snapshots, navigation and form interaction.', requires: ['node'], risk: 'Starts a local browser automation process.', tags: ['Browser', 'npx'] },
@@ -265,23 +265,23 @@
   let mediaSeq = 0;
   const mediaJobs = [];
   const mediaAssets = [
-    { kind: 'image', title: 'Harbor at blue hour', prompt: 'A quiet harbor at blue hour, long exposure, minimal composition', engine: 'blank-image', engineLabel: 'Blank Visual', w: 1 },
-    { kind: 'video', title: 'Rooftop wind study', prompt: 'Slow pan across a rooftop, fabric moving in the wind, soft light', engine: 'blank-image', engineLabel: 'Blank Visual' },
-    { kind: 'audio', title: 'Glass morning', prompt: 'Ambient piano with warm tape hiss, slow arpeggio', engine: 'blank-audio', engineLabel: 'Blank Audio' },
-    { kind: 'model3d', title: 'Parametric shell', prompt: 'A ribbed glass pavilion, rounded base, translucent shell', engine: 'blank-3d', engineLabel: 'Blank 3D' },
-    { kind: 'image', title: 'Signal map', prompt: 'Abstract signal map, thin blue lines on off-white', engine: 'blank-image', engineLabel: 'Blank Visual' },
-    { kind: 'image', title: 'Paper interior', prompt: 'Editorial photo of a paper-white interior with a single blue chair', engine: 'blank-image', engineLabel: 'Blank Visual' },
-    { kind: 'audio', title: 'Night transit', prompt: 'Minimal electronic loop, 92 bpm, soft analog bass', engine: 'blank-audio', engineLabel: 'Blank Audio' },
-    { kind: 'video', title: 'Line field', prompt: 'A field of thin lines bending in wind, monochrome, loop', engine: 'blank-image', engineLabel: 'Blank Visual' },
+    { kind: 'image', title: 'Harbor at blue hour', prompt: 'A quiet harbor at blue hour, long exposure, minimal composition', engine: 'fal', engineLabel: 'fal.ai', w: 1 },
+    { kind: 'video', title: 'Rooftop wind study', prompt: 'Slow pan across a rooftop, fabric moving in the wind, soft light', engine: 'fal', engineLabel: 'fal.ai' },
+    { kind: 'audio', title: 'Glass morning', prompt: 'Ambient piano with warm tape hiss, slow arpeggio', engine: 'elevenlabs', engineLabel: 'ElevenLabs' },
+    { kind: 'model3d', title: 'Parametric shell', prompt: 'A ribbed glass pavilion, rounded base, translucent shell', engine: 'replicate', engineLabel: 'Replicate' },
+    { kind: 'image', title: 'Signal map', prompt: 'Abstract signal map, thin blue lines on off-white', engine: 'fal', engineLabel: 'fal.ai' },
+    { kind: 'image', title: 'Paper interior', prompt: 'Editorial photo of a paper-white interior with a single blue chair', engine: 'openai-images', engineLabel: 'OpenAI Images' },
+    { kind: 'audio', title: 'Night transit', prompt: 'Minimal electronic loop, 92 bpm, soft analog bass', engine: 'elevenlabs', engineLabel: 'ElevenLabs' },
+    { kind: 'video', title: 'Line field', prompt: 'A field of thin lines bending in wind, monochrome, loop', engine: 'fal', engineLabel: 'fal.ai' },
   ].map((asset, index) => {
     const palette = paletteSets[index % paletteSets.length];
     const id = `asset_${String(index + 1).padStart(3, '0')}`;
     const thumb = svgThumb(asset.title, palette, asset.kind);
-    if (asset.kind === 'audio') config.media.keyIds = config.media.keyIds || [];
     return {
       id, kind: asset.kind, kindLabel: { image: 'Image', video: 'Video', audio: 'Music', model3d: '3D' }[asset.kind],
       title: asset.title, prompt: asset.prompt, engine: asset.engine, engineLabel: asset.engineLabel,
-      provider: '', model: 'blank-1', fileName: `${id}.bin`, mime: 'application/octet-stream',
+      provider: asset.engine, model: asset.kind === 'image' ? 'fal-ai/flux/dev' : '',
+      fileName: `${id}.bin`, mime: 'application/octet-stream',
       bytes: 420000 + index * 180000, width: 1024, height: 1024, duration: asset.kind === 'video' ? 4 : asset.kind === 'audio' ? 20 + index : 0,
       seed: 1000 + index, favorite: index === 0 || index === 3, source: 'generated', parentId: '',
       createdAt: iso(-3600000 * (index * 7 + 1)), meta: {}, extraFiles: [],
@@ -303,16 +303,14 @@
   function mediaEngines() {
     return {
       local: [
-        { id: 'blank', label: 'Blank Engine', vendor: 'local', kinds: ['image', 'video', 'audio', 'model3d'], available: true, note: 'Offline procedural art, music and 3D. No key, no network.', models: ['blank-1'] },
-        { id: 'blank-image', label: 'Blank Visual', vendor: 'local', kinds: ['image', 'video'], available: true, note: 'Deterministic poster art.', models: ['blank-1'] },
-        { id: 'blank-audio', label: 'Blank Audio', vendor: 'local', kinds: ['audio'], available: false, note: 'Needs ffmpeg on this machine.', models: ['blank-1'] },
-        { id: 'blank-3d', label: 'Blank 3D', vendor: 'local', kinds: ['model3d'], available: true, note: 'Parametric objects as OBJ and STL.', models: ['blank-1'] },
-        { id: 'blank-voice', label: 'Blank Voice', vendor: 'local', kinds: ['audio'], available: true, note: 'System text to speech.', models: ['system'] },
-        { id: 'comfyui', label: 'ComfyUI', vendor: 'comfyui', kinds: ['image'], available: false, note: 'Your own ComfyUI server.', endpoint: '', models: ['auto'] },
+        { id: 'system-voice', label: 'System voice', vendor: 'local', kinds: ['audio'], available: true, note: 'Text to speech with voices installed on this machine.', models: ['system'], speech: true },
+        { id: 'comfyui', label: 'ComfyUI', vendor: 'comfyui', kinds: ['image'], available: false, note: 'Your own ComfyUI server over its HTTP API.', endpoint: '', models: ['auto'] },
       ],
       cloud: [
-        { id: 'fal', label: 'fal.ai', vendor: 'cloud', kinds: ['image', 'video'], available: false, hasKey: false, note: 'Cloud image and video models.', models: ['flux-pro', 'kling-video'], keyLabel: 'FAL_KEY' },
-        { id: 'elevenlabs', label: 'ElevenLabs', vendor: 'cloud', kinds: ['audio'], available: false, hasKey: false, note: 'Cloud music and speech.', models: ['music-v1'], keyLabel: 'ElevenLabs key' },
+        { id: 'openai-images', label: 'OpenAI Images', vendor: 'cloud', kinds: ['image'], available: true, hasKey: true, note: 'GPT Image generation and editing.', models: ['gpt-image-1'], keyId: 'openai', keyLabel: 'OpenAI API key' },
+        { id: 'fal', label: 'fal.ai', vendor: 'cloud', kinds: ['image', 'video', 'audio', 'model3d'], available: true, hasKey: true, note: 'Fast hosted image, video, audio and 3D models.', models: ['fal-ai/flux/dev', 'fal-ai/kling-video/v2/master/text-to-video', 'fal-ai/stable-audio', 'fal-ai/trellis'], modelsByKind: { image: ['fal-ai/flux/dev'], video: ['fal-ai/kling-video/v2/master/text-to-video'], audio: ['fal-ai/stable-audio'], model3d: ['fal-ai/trellis'] }, keyId: 'fal', keyLabel: 'FAL_KEY' },
+        { id: 'elevenlabs', label: 'ElevenLabs', vendor: 'cloud', kinds: ['audio'], available: true, hasKey: true, note: 'Music and speech generation.', models: ['music_v1', 'eleven_multilingual_v2'], modelsByKind: { audio: ['music_v1', 'eleven_multilingual_v2'] }, keyId: 'elevenlabs', keyLabel: 'ElevenLabs key' },
+        { id: 'replicate', label: 'Replicate', vendor: 'cloud', kinds: ['image', 'video', 'audio', 'model3d'], available: false, hasKey: false, note: 'Community models through one token.', models: ['black-forest-labs/flux-1.1-pro'], modelsByKind: { image: ['black-forest-labs/flux-1.1-pro'], model3d: ['firtoz/trellis'] }, keyId: 'replicate', keyLabel: 'Replicate token' },
       ],
       defaults: config.media.defaults || {},
       endpoints: config.media.endpoints || { comfyui: '' },
@@ -1969,10 +1967,11 @@ Add the duplicate-delivery test before the next release.
       async generate(input = {}) {
         await sleep(260);
         const kind = input.kind || 'image';
+        const label = { 'system-voice': 'System voice', comfyui: 'ComfyUI', 'openai-images': 'OpenAI Images', fal: 'fal.ai', elevenlabs: 'ElevenLabs', replicate: 'Replicate' }[input.engine] || input.engine || 'Studio';
         const job = {
           id: `job_${Math.random().toString(36).slice(2, 9)}`, kind,
-          prompt: String(input.prompt || ''), engine: input.engine || 'blank',
-          engineLabel: { blank: 'Blank Engine', 'blank-image': 'Blank Visual', 'blank-audio': 'Blank Audio', 'blank-3d': 'Blank 3D' }[input.engine] || 'Blank Engine',
+          prompt: String(input.prompt || ''), engine: input.engine || '',
+          engineLabel: label,
           status: 'running', progress: 0.08, stage: 'Preparing', assetIds: [], createdAt: new Date().toISOString(),
         };
         mediaJobs.unshift(job);
@@ -1991,8 +1990,8 @@ Add the duplicate-delivery test before the next release.
             const asset = {
               id: `asset_${Math.random().toString(36).slice(2, 9)}`,
               kind, kindLabel: { image: 'Image', video: 'Video', audio: 'Music', model3d: '3D' }[kind],
-              title, prompt: String(input.prompt || ''), engine: input.engine || 'blank',
-              engineLabel: job.engineLabel, provider: '', model: 'blank-1',
+              title, prompt: String(input.prompt || ''), engine: input.engine || '',
+              engineLabel: job.engineLabel, provider: input.engine || '', model: input.model || '',
               fileName: 'preview.bin', mime: 'image/svg+xml', bytes: 680000 + index * 90000,
               width: 1024, height: 1024,
               duration: kind === 'video' ? Number(input.duration) || 4 : kind === 'audio' ? Number(input.duration) || 20 : 0,

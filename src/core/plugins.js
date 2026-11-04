@@ -42,7 +42,7 @@ const CATALOG = [
     category: 'Built in',
     icon: 'wand',
     tagline: 'Create and edit images, video, music and 3D.',
-    description: 'A local-first media workspace with deterministic local engines and optional cloud models.',
+    description: 'A media workspace for images, video, music, speech and 3D, connected to real providers.',
     kind: 'builtin',
     action: 'studio',
     tags: ['Local first'],

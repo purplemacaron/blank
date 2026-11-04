@@ -517,7 +517,10 @@
       }
     }
     const enterHint = document.getElementById('composer-enter-hint');
-    if (enterHint) enterHint.innerHTML = `<kbd>Enter</kbd> ${Chat.running ? 'queue' : 'send'}`;
+    if (enterHint) {
+      enterHint.innerHTML = `<kbd>Enter</kbd> ${Chat.running ? 'queue' : 'send'}`;
+      window.__blankI18n?.translate?.(enterHint);
+    }
     renderQueue();
   }
 
@@ -539,6 +542,7 @@
         <span class="queue-text">${U.esc(item.text || 'Attachment')}</span>
         <button class="queue-remove" type="button" data-action="queue-remove" data-queue-id="${U.attr(item.queueId)}" title="Remove from queue" aria-label="Remove from queue">${icon('x', 10)}</button>
       </div>`).join('')}</div>`;
+    window.__blankI18n?.translate?.(tray);
   }
 
   function renderAttachments() {
@@ -932,6 +936,7 @@
 
   const COMMANDS = [
     { name: 'new', description: 'Start a new session', icon: 'plus' },
+    { name: 'studio', description: 'Open Studio to create media', icon: 'wand' },
     { name: 'model', description: 'Switch the model for this session', icon: 'sparkles' },
     { name: 'mode', description: 'Agent, Plan, or Ask', icon: 'bot' },
     { name: 'compact', description: 'Summarize earlier context', icon: 'panel-bottom' },
@@ -979,6 +984,7 @@
     const command = COMMANDS.find((item) => item.name === name);
     if (!command) return;
     if (name === 'new') App.newSession();
+    else if (name === 'studio') App.openPage('studio');
     else if (name === 'model') openModelPicker(document.querySelector('[data-action="pick-model"]') || input);
     else if (name === 'mode') openModePicker(document.getElementById('composer-mode') || input);
     else if (name === 'compact') compactSession();
@@ -1647,6 +1653,7 @@
               </div>
               <div class="composer-tools">
                 <button class="composer-tool" type="button" data-action="attach-files" title="Attach text files">${icon('paperclip', 13)}<span>Attach</span></button>
+                <button class="composer-tool" type="button" data-action="open-studio" title="Open Studio">${icon('wand', 13)}<span>Studio</span></button>
                 <span class="composer-divider"></span>
                 <button class="composer-tool composer-model" id="composer-model" type="button" data-action="pick-model" title="Switch model"></button>
                 <button class="composer-tool" id="composer-reasoning" type="button" data-action="pick-reasoning" title="Reasoning effort"></button>
@@ -1786,7 +1793,7 @@
       Chat.focusComposer('Design a clean, responsive page for ');
     } else if (kind === 'audio') {
       if (window.Views?.openStudio) {
-        Views.openStudio({ kind: 'audio', engine: 'blank-audio', prompt: 'Warm ambient loop with soft piano, slow tape texture, 40 seconds' });
+        Views.openStudio({ kind: 'audio', prompt: 'Warm ambient loop with soft piano, slow tape texture, 40 seconds' });
       }
     }
   }

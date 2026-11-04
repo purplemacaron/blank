@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const {
   normalizeProviderKeys,
+  normalizeMediaDefaults,
   keyCandidates,
   addProviderKey,
   removeProviderKey,
@@ -79,4 +80,24 @@ test('maskKey keeps only the edges visible', () => {
   assert.equal(maskKey(''), '');
   assert.equal(maskKey('short'), '••••');
   assert.equal(maskKey('sk-1234567890abcdef'), 'sk-1…cdef');
+});
+
+test('retired Blank media engines migrate to real engines only', () => {
+  const config = {
+    providers: {},
+    media: {
+      defaults: {
+        image: { engine: 'blank', aspect: '4:3' },
+        video: { engine: 'blank-image', aspect: '16:9', duration: 6, fps: 24, soundtrack: true },
+        audio: { engine: 'blank-voice', duration: 12, style: 'auto', quality: 'medium' },
+        model3d: { engine: 'blank-3d', quality: 'high' },
+      },
+    },
+  };
+  assert.equal(normalizeMediaDefaults(config), true);
+  assert.deepEqual(config.media.defaults.image, { engine: '', aspect: '4:3' });
+  assert.deepEqual(config.media.defaults.video, { engine: '', aspect: '16:9', duration: 6 });
+  assert.deepEqual(config.media.defaults.audio, { engine: 'system-voice', duration: 12 });
+  assert.deepEqual(config.media.defaults.model3d, { engine: '' });
+  assert.equal(normalizeMediaDefaults(config), false);
 });

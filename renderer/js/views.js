@@ -38,16 +38,10 @@
       compose: {
         kind: 'image',
         prompt: '',
-        engine: 'blank',
+        engine: '',
         model: '',
         aspect: '1:1',
-        count: 1,
         duration: 20,
-        fps: 24,
-        soundtrack: true,
-        style: 'auto',
-        palette: 'auto',
-        quality: 'medium',
         voice: '',
         rate: 0,
       },
@@ -58,7 +52,7 @@
     image: { label: 'Image', plural: 'Images', icon: 'image', noun: 'image' },
     video: { label: 'Video', plural: 'Video', icon: 'film', noun: 'video' },
     audio: { label: 'Audio', plural: 'Audio', icon: 'music', noun: 'audio' },
-    model3d: { label: '3D', plural: '3D', icon: 'cube', noun: 'model' },
+    model3d: { label: '3D', plural: '3D', icon: 'cube', noun: '3D object' },
   };
 
   const PAPER_KIND = {
@@ -2628,19 +2622,6 @@ Start writing, or ask the agent to draft it.
 
   /* ------------------------------------------------------------------- studio */
 
-  const IMAGE_STYLES = [
-    ['auto', 'Auto'], ['aurora', 'Aurora'], ['cosmic', 'Cosmic'], ['landscape', 'Landscape'],
-    ['portrait', 'Portrait'], ['botanical', 'Botanical'], ['product', 'Still life'],
-    ['architecture', 'Architecture'], ['mark', 'Identity'], ['grid', 'Poster'], ['waves', 'Waves'],
-  ];
-  const PALETTES = [
-    ['auto', 'Auto'], ['cobalt', 'Cobalt'], ['ice', 'Ice'], ['sunset', 'Sunset'], ['dawn', 'Dawn'],
-    ['violet', 'Violet'], ['mint', 'Mint'], ['forest', 'Forest'], ['sand', 'Sand'], ['mono', 'Mono'], ['noir', 'Noir'],
-  ];
-  const AUDIO_STYLES = [
-    ['auto', 'Auto'], ['ambient', 'Ambient'], ['lofi', 'Lo-fi'], ['cinematic', 'Cinematic'],
-    ['synthwave', 'Synthwave'], ['electronic', 'Electronic'], ['jazz', 'Jazz'], ['organic', 'Organic'],
-  ];
   const ASPECTS = {
     image: [['1:1', 'Square 1:1'], ['4:3', 'Landscape 4:3'], ['3:4', 'Portrait 3:4'], ['16:9', 'Wide 16:9'], ['9:16', 'Tall 9:16']],
     video: [['16:9', 'Wide 16:9'], ['9:16', 'Tall 9:16'], ['1:1', 'Square 1:1'], ['4:3', 'Classic 4:3']],
@@ -2674,28 +2655,35 @@ Start writing, or ask the agent to draft it.
     return [...(engines.local || []), ...(engines.cloud || [])].find((engine) => engine.id === id) || null;
   }
 
+  function engineModelsFor(engine, kind) {
+    if (!engine) return [];
+    const mapped = engine.modelsByKind?.[kind];
+    const models = Array.isArray(mapped) && mapped.length ? mapped : engine.models || [];
+    return models.filter((model) => model && model !== 'auto' && model !== 'system');
+  }
+
+  function preferredEngine(kind, engineId) {
+    const available = currentEngineList(kind);
+    const match = engineId ? available.find((engine) => engine.id === engineId) : null;
+    if (match) return match;
+    if (kind === 'audio') return available.find((engine) => !engine.speech) || available[0] || null;
+    return available[0] || null;
+  }
+
   function applyKindDefaults(kind) {
     const defaults = (vstate.media.defaults || {})[kind] || {};
     const compose = vstate.media.compose;
     compose.kind = kind;
-    if (defaults.engine) compose.engine = defaults.engine;
-    else compose.engine = kind === 'audio' ? 'blank-voice' : 'blank';
+    const wanted = preferredEngine(kind, defaults.engine);
+    compose.engine = wanted?.id || '';
+    compose.model = engineModelsFor(wanted, kind)[0] || '';
     if (defaults.aspect) compose.aspect = defaults.aspect;
     else compose.aspect = kind === 'video' ? '16:9' : '1:1';
     if (defaults.duration) compose.duration = defaults.duration;
     else compose.duration = kind === 'video' ? 4 : 20;
-    if (defaults.fps) compose.fps = defaults.fps;
-    if (defaults.soundtrack !== undefined) compose.soundtrack = Boolean(defaults.soundtrack);
-    else compose.soundtrack = true;
-    if (defaults.style) compose.style = defaults.style;
-    else compose.style = 'auto';
-    if (defaults.quality) compose.quality = defaults.quality;
-    else compose.quality = 'medium';
-    if (defaults.palette) compose.palette = defaults.palette;
-    compose.count = 1;
-    const engine = engineInfo(compose.engine);
-    if (engine?.vendor === 'cloud') compose.model = engine.models?.[0] || '';
-    else compose.model = '';
+    if (defaults.voice) compose.voice = defaults.voice;
+    if (defaults.rate !== undefined) compose.rate = Number(defaults.rate) || 0;
+    else compose.rate = 0;
   }
 
   async function mountStudio(host) {
@@ -2720,7 +2708,7 @@ Start writing, or ask the agent to draft it.
       vstate.media.loaded = true;
       if (!vstate.media.voices) API.media.voices().then((names) => {
         vstate.media.voices = Array.isArray(names) ? names : [];
-        if (alive(host, 'studio') && vstate.media.compose.kind === 'audio' && vstate.media.compose.engine === 'blank-voice') paintStudio(host);
+        if (alive(host, 'studio') && vstate.media.compose.kind === 'audio' && vstate.media.compose.engine === 'system-voice') paintStudio(host);
       }).catch(() => { vstate.media.voices = []; });
       if (!vstate.media._composeReady) {
         applyKindDefaults(vstate.media.compose.kind);
@@ -2729,9 +2717,16 @@ Start writing, or ask the agent to draft it.
       const pending = vstate.media.pending;
       if (pending) {
         vstate.media.pending = null;
-        applyKindDefaults(pending.kind || vstate.media.compose.kind);
+        const pendingKind = pending.kind || vstate.media.compose.kind;
+        applyKindDefaults(pendingKind);
         if (pending.prompt != null) vstate.media.compose.prompt = pending.prompt;
-        if (pending.engine) vstate.media.compose.engine = pending.engine;
+        if (pending.engine) {
+          const chosen = preferredEngine(pendingKind, pending.engine);
+          if (chosen) {
+            vstate.media.compose.engine = chosen.id;
+            vstate.media.compose.model = engineModelsFor(chosen, pendingKind)[0] || '';
+          }
+        }
         if (pending.voice) vstate.media.compose.voice = pending.voice;
       }
       paintStudio(host);
@@ -2745,15 +2740,38 @@ Start writing, or ask the agent to draft it.
     const counts = storage.counts || vstate.media.counts;
     const totalCount = counts.image + counts.video + counts.audio + counts.model3d;
     const engines = currentEngineList(kind);
-    if (!engines.some((engine) => engine.id === compose.engine)) compose.engine = engines[0]?.id || '';
+    if (!engines.some((item) => item.id === compose.engine)) {
+      const next = preferredEngine(kind);
+      compose.engine = next?.id || '';
+      compose.model = engineModelsFor(next, kind)[0] || '';
+    } else {
+      const choices = engineModelsFor(engineInfo(compose.engine), kind);
+      if (!choices.includes(compose.model)) compose.model = choices[0] || '';
+    }
     const engine = engineInfo(compose.engine);
-    const isCloud = engine?.vendor === 'cloud';
-    const isSpeech = kind === 'audio' && compose.engine === 'blank-voice';
+    const isSpeech = kind === 'audio' && compose.engine === 'system-voice';
+    const modelChoices = engineModelsFor(engine, kind);
     const activeJobs = vstate.media.jobs.filter((job) => job.status === 'queued' || job.status === 'running');
     const voices = vstate.media.voices || [];
     const placeholder = isSpeech
       ? 'Type the script to speak…'
-      : kind === 'audio' ? 'Describe a track…' : kind === 'model3d' ? 'Describe an object…' : 'Describe the image…';
+      : kind === 'audio' ? 'Describe a track…' : kind === 'model3d' ? 'Describe an object…' : kind === 'video' ? 'Describe the video…' : 'Describe the image…';
+    const noun = isSpeech ? 'speech' : KIND[kind].noun;
+    const connectCopy = kind === 'image'
+      ? 'Add a provider key or a ComfyUI endpoint to create images.'
+      : kind === 'video'
+        ? 'Add a provider key to create video.'
+        : kind === 'audio'
+          ? 'Add a music provider key to create music.'
+          : 'Add a provider key to create 3D.';
+    const connectMarkup = engines.length ? '' : `<div class="studio-connect">
+      <span class="studio-connect-icon">${icon('sliders', 15)}</span>
+      <div class="studio-connect-copy">
+        <b>Connect an engine</b>
+        <span>${connectCopy}</span>
+      </div>
+      <button class="btn btn-primary btn-sm" type="button" data-media-engines>Open Engines</button>
+    </div>`;
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
         title: 'Studio',
@@ -2776,17 +2794,12 @@ Start writing, or ask the agent to draft it.
               <div class="studio-prompt-wrap">
                 <textarea class="studio-prompt" id="compose-prompt" placeholder="${U.attr(placeholder)}">${esc(compose.prompt)}</textarea>
               </div>
-              ${kind === 'image' || kind === 'video' ? `<div class="studio-row">
+              ${connectMarkup}
+              ${engines.length && (kind === 'image' || kind === 'video') ? `<div class="studio-row">
                 <label class="studio-field"><span>Aspect</span><select class="studio-select" id="compose-aspect">${(ASPECTS[kind] || ASPECTS.image).map(([value, label]) => `<option value="${value}" ${compose.aspect === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
-                ${kind === 'image'
-                  ? `<label class="studio-field"><span>Count</span><select class="studio-select" id="compose-count">${[1, 2, 3, 4].map((n) => `<option value="${n}" ${Number(compose.count) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>`
-                  : `<label class="studio-field"><span>Seconds</span><input class="studio-input" id="compose-duration" type="number" min="2" max="12" step="1" value="${compose.duration}" /></label>`}
+                ${kind === 'video' ? `<label class="studio-field"><span>Seconds</span><input class="studio-input" id="compose-duration" type="number" min="2" max="12" step="1" value="${compose.duration}" /></label>` : ''}
               </div>` : ''}
-              ${kind === 'video' ? `<div class="studio-row">
-                <label class="studio-field"><span>Frame rate</span><select class="studio-select" id="compose-fps">${[12, 18, 24, 30].map((fps) => `<option value="${fps}" ${Number(compose.fps) === fps ? 'selected' : ''}>${fps} fps</option>`).join('')}</select></label>
-                <div class="studio-field"><span>Score</span><div class="studio-switch-row" style="padding:4px 7px;min-height:28px"><span class="copy"><b>Soundtrack</b></span>${UI.switchHtml(compose.soundtrack, 'data-compose-toggle="soundtrack"')}</div></div>
-              </div>` : ''}
-              ${kind === 'audio' ? (isSpeech ? `<div class="studio-row">
+              ${engines.length && kind === 'audio' ? (isSpeech ? `<div class="studio-row">
                 <label class="studio-field"><span>Voice</span><select class="studio-select" id="compose-voice">
                   <option value="">Auto</option>
                   ${voices.map((name) => `<option value="${U.attr(name)}" ${compose.voice === name ? 'selected' : ''}>${esc(name)}</option>`).join('')}
@@ -2794,28 +2807,19 @@ Start writing, or ask the agent to draft it.
                 <label class="studio-field"><span>Rate</span><select class="studio-select" id="compose-rate">${[-4, -2, 0, 2, 4].map((value) => `<option value="${value}" ${Number(compose.rate) === value ? 'selected' : ''}>${value === 0 ? 'Normal' : value < 0 ? `Slow ${Math.abs(value)}` : `Fast ${value}`}</option>`).join('')}</select></label>
               </div>` : `<div class="studio-row">
                 <label class="studio-field"><span>Duration</span><input class="studio-input" id="compose-duration" type="number" min="4" max="180" step="1" value="${compose.duration}" /></label>
-                <label class="studio-field"><span>Style</span><select class="studio-select" id="compose-style">${AUDIO_STYLES.map(([value, label]) => `<option value="${value}" ${compose.style === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
               </div>`) : ''}
-              ${kind === 'model3d' ? `<div class="studio-row">
-                <label class="studio-field"><span>Quality</span><select class="studio-select" id="compose-quality">${['low', 'medium', 'high'].map((value) => `<option value="${value}" ${compose.quality === value ? 'selected' : ''}>${value[0].toUpperCase()}${value.slice(1)}</option>`).join('')}</select></label>
-                <div class="studio-field"><span>Export</span><div class="studio-switch-row" style="padding:4px 7px;min-height:28px"><span class="copy"><b>OBJ + MTL</b></span></div></div>
-              </div>` : ''}
-              ${kind === 'image' || kind === 'video' ? `<div class="studio-row">
-                <label class="studio-field"><span>Direction</span><select class="studio-select" id="compose-style">${IMAGE_STYLES.map(([value, label]) => `<option value="${value}" ${compose.style === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
-                <label class="studio-field"><span>Palette</span><select class="studio-select" id="compose-palette">${PALETTES.map(([value, label]) => `<option value="${value}" ${compose.palette === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
-              </div>` : ''}
-              <label class="studio-field">
+              ${engines.length ? `<label class="studio-field">
                 <span>Engine</span>
                 <select class="studio-select" id="compose-engine">
-                  ${engines.length ? engines.map((item) => `<option value="${U.attr(item.id)}" ${compose.engine === item.id ? 'selected' : ''}>${esc(item.label)}${item.id === 'blank-voice' ? ' · TTS' : item.vendor === 'cloud' ? ' · Cloud' : ''}</option>`).join('') : '<option value="">No engine</option>'}
+                  ${engines.map((item) => `<option value="${U.attr(item.id)}" ${compose.engine === item.id ? 'selected' : ''}>${esc(item.label)}${item.id === 'system-voice' ? ' · TTS' : item.vendor === 'cloud' ? ' · Cloud' : ''}</option>`).join('')}
                   ${(vstate.media.engines?.cloud || []).some((e) => e.kinds.includes(kind) && !e.available) ? '<option value="add-key">Add cloud engine…</option>' : ''}
                   ${kind === 'image' && (vstate.media.engines?.local || []).some((e) => e.id === 'comfyui' && !e.available) ? '<option value="add-comfy">Set up ComfyUI…</option>' : ''}
                 </select>
-              </label>
-              ${isCloud ? `<label class="studio-field"><span>Model</span><select class="studio-select" id="compose-model">${(engine.models || []).map((model) => `<option value="${U.attr(model)}" ${compose.model === model ? 'selected' : ''}>${esc(model)}</option>`).join('')}</select></label>` : ''}
+              </label>` : ''}
+              ${engines.length && modelChoices.length > 1 ? `<label class="studio-field"><span>Model</span><select class="studio-select" id="compose-model">${modelChoices.map((model) => `<option value="${U.attr(model)}" ${compose.model === model ? 'selected' : ''}>${esc(model)}</option>`).join('')}</select></label>` : ''}
               <button class="studio-generate" type="button" data-generate ${engines.length ? '' : 'disabled'}>
                 ${activeJobs.length ? `<span class="spinner" style="width:12px;height:12px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>` : icon('sparkles', 14)}
-                Generate ${isSpeech ? 'speech' : KIND[kind].noun} <span class="kbd">${U.kbd('Ctrl ↵')}</span>
+                Generate ${noun} <span class="kbd">${U.kbd('Ctrl ↵')}</span>
               </button>
             </div>
           </div>
@@ -2857,8 +2861,7 @@ Start writing, or ask the agent to draft it.
       if (id === 'compose-engine') {
         if (value === 'add-key' || value === 'add-comfy') { openMediaEngines(() => mountStudio(host)); return; }
         compose.engine = value;
-        const info = engineInfo(value);
-        if (info?.vendor === 'cloud') compose.model = info.models?.[0] || compose.model;
+        compose.model = engineModelsFor(engineInfo(value), compose.kind)[0] || '';
         paintStudio(host);
         return;
       }
@@ -2866,12 +2869,7 @@ Start writing, or ask the agent to draft it.
       if (id === 'compose-voice') { compose.voice = value; return; }
       if (id === 'compose-rate') { compose.rate = Number(value) || 0; return; }
       if (id === 'compose-aspect') { compose.aspect = value; return; }
-      if (id === 'compose-count') { compose.count = Number(value) || 1; paintStudio(host); return; }
       if (id === 'compose-duration') { compose.duration = Math.max(1, Number(value) || compose.duration); return; }
-      if (id === 'compose-fps') { compose.fps = Number(value) || 24; return; }
-      if (id === 'compose-style') { compose.style = value; return; }
-      if (id === 'compose-palette') { compose.palette = value; return; }
-      if (id === 'compose-quality') { compose.quality = value; return; }
     };
     host.onclick = (event) => {
       const kindButton = event.target.closest('[data-kind]');
@@ -3066,14 +3064,10 @@ Start writing, or ask the agent to draft it.
     const compose = vstate.media.compose;
     const payload = {
       engine: compose.engine,
-      style: compose.style,
-      palette: compose.palette,
       aspect: compose.aspect,
-      count: compose.count,
       duration: compose.duration,
-      fps: compose.fps,
-      soundtrack: compose.soundtrack,
-      quality: compose.quality,
+      voice: compose.voice,
+      rate: compose.rate,
     };
     API.media.setDefaults({ [compose.kind]: payload }).then((result) => {
       if (result?.defaults) vstate.media.defaults = result.defaults;
@@ -3090,23 +3084,18 @@ Start writing, or ask the agent to draft it.
       return;
     }
     const engineInfoValue = engineInfo(compose.engine);
-    if (!engineInfoValue) { UI.toast('Choose an engine in Engines & keys.', 'warn'); return; }
+    if (!engineInfoValue) { UI.toast('Connect an engine in Studio → Engines first.', 'warn'); openMediaEngines(() => mountStudio(host)); return; }
     const payload = {
       kind: compose.kind,
       prompt,
       engine: compose.engine,
       aspect: compose.aspect,
-      count: compose.count,
       duration: compose.duration,
-      fps: compose.fps,
-      soundtrack: compose.soundtrack,
-      style: compose.style,
-      palette: compose.palette,
-      quality: compose.quality,
       voice: compose.voice,
       rate: compose.rate,
     };
-    if (engineInfoValue.vendor === 'cloud') payload.model = compose.model || engineInfoValue.models?.[0];
+    const models = engineModelsFor(engineInfoValue, compose.kind);
+    if (models.length) payload.model = compose.model || models[0];
     const button = host.querySelector('[data-generate]');
     if (button) { button.disabled = true; button.innerHTML = `<span class="spinner" style="width:12px;height:12px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span> Queuing…`; }
     try {
@@ -3123,7 +3112,7 @@ Start writing, or ask the agent to draft it.
     } finally {
       if (button && vstate.page === 'studio') {
         button.disabled = false;
-        const noun = compose.kind === 'audio' && compose.engine === 'blank-voice' ? 'speech' : KIND[compose.kind].noun;
+        const noun = compose.kind === 'audio' && compose.engine === 'system-voice' ? 'speech' : KIND[compose.kind].noun;
         button.innerHTML = `${icon('sparkles', 14)} Generate ${noun} <span class="kbd">${U.kbd('Ctrl ↵')}</span>`;
       }
     }
@@ -3258,7 +3247,6 @@ Start writing, or ask the agent to draft it.
     return `<div class="media-edit">
       <div class="media-edit-head">${icon('sliders', 13)} Edit image <small>Creates a version · local</small></div>
       <div class="media-edit-grid">
-        <label class="studio-field full"><span>Prompt <b>optional</b></span><input class="studio-input" data-edit-prompt placeholder="Refine the mood, palette or treatment" /></label>
         <label class="studio-field"><span>Width</span><input class="studio-input" data-edit-width type="number" min="8" max="4096" placeholder="${asset.width || 'auto'}" /></label>
         <label class="studio-field"><span>Height</span><input class="studio-input" data-edit-height type="number" min="8" max="4096" placeholder="${asset.height || 'auto'}" /></label>
         <label class="studio-field"><span>Brightness</span><input class="studio-input" data-edit-brightness type="number" min="-100" max="100" placeholder="0" /></label>
@@ -3315,30 +3303,10 @@ Start writing, or ask the agent to draft it.
     </div>`;
   }
 
-  function meshEditMarkup(asset) {
-    const format = asset.meta?.format === 'stl' ? 'stl' : 'obj';
-    return `<div class="media-edit">
-      <div class="media-edit-head">${icon('cube', 13)} Remix model <small>Creates a version · local</small></div>
-      <div class="media-edit-grid">
-        <label class="studio-field full"><span>Prompt</span><input class="studio-input" data-edit-prompt value="${U.attr(asset.prompt || '')}" placeholder="Describe a variation of this object" /></label>
-        <label class="studio-field"><span>Quality</span><select class="studio-select" data-edit-quality>
-          ${['low', 'medium', 'high'].map((value) => `<option value="${value}" ${(asset.meta?.quality || 'medium') === value ? 'selected' : ''}>${value[0].toUpperCase()}${value.slice(1)}</option>`).join('')}
-        </select></label>
-        <label class="studio-field"><span>Seed</span><input class="studio-input" data-edit-seed type="number" min="0" placeholder="${asset.seed ?? 'auto'}" /></label>
-        <label class="studio-field"><span>Format</span><select class="studio-select" data-edit-format>
-          <option value="obj" ${format === 'obj' ? 'selected' : ''}>OBJ + MTL</option><option value="stl" ${format === 'stl' ? 'selected' : ''}>Binary STL</option>
-        </select></label>
-        <div class="studio-field full"><span>Note</span><div class="info-line">${icon('alert-circle', 11)} STL versions replace the OBJ/MTL pair with a single binary mesh; previews are generated the same way.</div></div>
-      </div>
-      ${editActionsHtml('Parametric remix · OBJ/MTL or STL, plus a preview render.')}
-    </div>`;
-  }
-
   function editMarkup(asset) {
     if (asset.kind === 'image') return imageEditMarkup(asset);
     if (asset.kind === 'video') return videoEditMarkup(asset);
     if (asset.kind === 'audio') return audioEditMarkup(asset);
-    if (asset.kind === 'model3d') return meshEditMarkup(asset);
     return '';
   }
 
@@ -3416,8 +3384,6 @@ Start writing, or ask the agent to draft it.
     const flag = (name) => Boolean(scope.querySelector(`[data-edit-flag="${name}"]`)?.checked);
     const operations = {};
     const payload = { id: asset.id, operations };
-    const prompt = text('prompt');
-    if (prompt) payload.prompt = prompt;
     if (asset.kind === 'image') {
       const width = numeric('width');
       const height = numeric('height');
@@ -3466,13 +3432,6 @@ Start writing, or ask the agent to draft it.
       if (flag('reverse')) operations.reverse = true;
       if (flag('normalize')) operations.normalize = true;
       operations.format = text('format') || 'mp3';
-    } else if (asset.kind === 'model3d') {
-      if (prompt) payload.prompt = prompt;
-      const quality = text('quality');
-      const seed = numeric('seed');
-      if (quality) operations.quality = quality;
-      if (seed !== null) operations.seed = Math.round(seed);
-      operations.format = text('format') === 'stl' ? 'stl' : 'obj';
     }
     return payload;
   }
