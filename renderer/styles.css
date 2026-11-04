@@ -2364,19 +2364,27 @@ html[data-theme="dark"] .pmono-sandbox { color: var(--accent); background: var(-
 .transport-switch { display: flex; gap: 0; }
 .transport-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 2px;
   padding: 2px;
   background: var(--bg-subtle);
   border-radius: 7px;
-  margin-bottom: 13px;
+  margin-bottom: 14px;
 }
 .transport-tab {
-  height: 27px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
   border-radius: 5px;
   font-size: 11px;
   color: var(--text-tertiary);
 }
+.transport-tab svg { flex: 0 0 auto; }
+.transport-tab.active .icon { color: var(--accent); }
 .transport-tab.active { background: var(--bg); color: var(--text); box-shadow: var(--shadow-xs); font-weight: 550; }
 .transport-secret { font-family: var(--font-mono); font-size: 10.5px; min-height: 74px; }
 

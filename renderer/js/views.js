@@ -1248,36 +1248,94 @@
       <div class="transport-tabs">
         <button class="transport-tab active" type="button" data-transport="stdio">${icon('terminal', 12)} stdio</button>
         <button class="transport-tab" type="button" data-transport="http">${icon('globe', 12)} HTTP</button>
+        <button class="transport-tab" type="button" data-transport="ssh">${icon('key', 12)} SSH</button>
       </div>
       ${UI.field({ label: 'Name', control: '<input class="field-input" id="mcp-name" type="text" maxlength="60" placeholder="linear" />' })}
       <div id="mcp-stdio-fields">
-        ${UI.field({ label: 'Command', hint: 'executed with the system shell', control: '<input class="field-input" id="mcp-command" type="text" spellcheck="false" placeholder="npx -y @modelcontextprotocol/server-filesystem C:\\\\Projects" />' })}
+        ${UI.field({ label: 'Command', control: '<input class="field-input" id="mcp-command" type="text" spellcheck="false" placeholder="npx -y @modelcontextprotocol/server-filesystem C:\\\\Projects" />' })}
         ${UI.field({ label: 'Environment', hint: 'KEY=value per line', control: '<textarea class="field-textarea transport-secret" id="mcp-env" rows="3" placeholder="API_KEY=…"></textarea>' })}
       </div>
       <div id="mcp-http-fields" hidden>
-        ${UI.field({ label: 'Endpoint URL', hint: 'https', control: '<input class="field-input" id="mcp-url" type="url" spellcheck="false" placeholder="https://mcp.example.com/sse" />' })}
+        ${UI.field({ label: 'Endpoint URL', control: '<input class="field-input" id="mcp-url" type="url" spellcheck="false" placeholder="https://mcp.example.com/sse" />' })}
         ${UI.field({ label: 'Headers', hint: 'KEY=value per line', control: '<textarea class="field-textarea transport-secret" id="mcp-headers" rows="3" placeholder="Authorization=Bearer …"></textarea>' })}
       </div>
-      <p class="custom-note">Secrets are stored locally with the server definition and never shown in the agent transcript.</p>
+      <div id="mcp-ssh-fields" hidden>
+        <div class="field-grid">
+          ${UI.field({ label: 'Host', control: '<input class="field-input" id="mcp-ssh-host" type="text" spellcheck="false" placeholder="server.example.com" />' })}
+          ${UI.field({ label: 'Port', control: '<input class="field-input" id="mcp-ssh-port" type="number" min="1" max="65535" value="22" />' })}
+        </div>
+        <div class="field-grid">
+          ${UI.field({ label: 'User', control: '<input class="field-input" id="mcp-ssh-user" type="text" spellcheck="false" placeholder="deploy" />' })}
+          ${UI.field({ label: 'Auth', control: '<select class="field-select" id="mcp-ssh-auth"><option value="key">Private key</option><option value="password">Password</option></select>' })}
+        </div>
+        <div data-mcp-ssh-key>
+          <div class="field-grid">
+            ${UI.field({ label: 'Private key path', control: '<input class="field-input" id="mcp-ssh-key" type="text" spellcheck="false" placeholder="~/.ssh/id_ed25519" />' })}
+            ${UI.field({ label: 'Key passphrase', control: '<input class="field-input" id="mcp-ssh-passphrase" type="password" autocomplete="off" />' })}
+          </div>
+        </div>
+        <div data-mcp-ssh-password hidden>
+          ${UI.field({ label: 'Password', control: '<input class="field-input" id="mcp-ssh-password" type="password" autocomplete="off" />' })}
+        </div>
+      </div>
     `;
     const stdioFields = body.querySelector('#mcp-stdio-fields');
     const httpFields = body.querySelector('#mcp-http-fields');
+    const sshFields = body.querySelector('#mcp-ssh-fields');
+    const nameInput = body.querySelector('#mcp-name');
+    const sshAuth = body.querySelector('#mcp-ssh-auth');
+    sshAuth?.addEventListener('change', () => {
+      const password = sshAuth.value === 'password';
+      body.querySelector('[data-mcp-ssh-key]').hidden = password;
+      body.querySelector('[data-mcp-ssh-password]').hidden = !password;
+    });
+    const footer = document.createElement('div');
+    footer.style.cssText = 'display:flex;justify-content:flex-end;gap:6px;width:100%';
+    footer.innerHTML = `<button class="btn btn-ghost btn-sm" data-cancel>Cancel</button><button class="btn btn-primary btn-sm" data-save>${icon('plug', 12)} Connect server</button>`;
+    const modal = UI.modal({ title: 'Add MCP server', size: 'large', body, footer });
+    footer.querySelector('[data-cancel]').addEventListener('click', () => modal.close());
+    const save = footer.querySelector('[data-save]');
     body.querySelectorAll('[data-transport]').forEach((tab) => {
       tab.addEventListener('click', () => {
         transport = tab.dataset.transport;
         body.querySelectorAll('[data-transport]').forEach((t) => t.classList.toggle('active', t === tab));
         stdioFields.hidden = transport !== 'stdio';
         httpFields.hidden = transport !== 'http';
+        sshFields.hidden = transport !== 'ssh';
+        nameInput.placeholder = transport === 'ssh' ? 'Production' : 'linear';
+        save.innerHTML = transport === 'ssh' ? `${icon('key', 12)} Save host` : `${icon('plug', 12)} Connect server`;
       });
     });
-    const footer = document.createElement('div');
-    footer.style.cssText = 'display:flex;justify-content:flex-end;gap:6px;width:100%';
-    footer.innerHTML = `<button class="btn btn-ghost btn-sm" data-cancel>Cancel</button><button class="btn btn-primary btn-sm" data-save>${icon('plug', 12)} Connect server</button>`;
-    const modal = UI.modal({ title: 'Add MCP server', description: 'Blank starts the server, lists its tools and namespaces them for the agent.', size: 'large', body, footer });
-    footer.querySelector('[data-cancel]').addEventListener('click', () => modal.close());
-    const save = footer.querySelector('[data-save]');
     save.addEventListener('click', async () => {
       const name = body.querySelector('#mcp-name').value.trim();
+      if (transport === 'ssh') {
+        const host = body.querySelector('#mcp-ssh-host').value.trim();
+        const user = body.querySelector('#mcp-ssh-user').value.trim();
+        if (!host) { UI.toast('Host is required.', 'warn'); body.querySelector('#mcp-ssh-host').focus(); return; }
+        if (!user) { UI.toast('Username is required.', 'warn'); body.querySelector('#mcp-ssh-user').focus(); return; }
+        save.disabled = true;
+        save.innerHTML = `<span class="spinner" style="width:11px;height:11px"></span> Saving…`;
+        try {
+          await API.ssh.add({
+            name,
+            host,
+            port: Number(body.querySelector('#mcp-ssh-port').value) || 22,
+            user,
+            authType: sshAuth.value,
+            keyPath: body.querySelector('#mcp-ssh-key').value.trim(),
+            passphrase: body.querySelector('#mcp-ssh-passphrase').value,
+            password: body.querySelector('#mcp-ssh-password').value,
+          });
+          modal.close();
+          UI.toast('SSH host saved.', 'success');
+          onChanged?.();
+        } catch (error) {
+          UI.toast(error.message, 'error');
+          save.disabled = false;
+          save.innerHTML = `${icon('key', 12)} Save host`;
+        }
+        return;
+      }
       if (!name) { UI.toast('Name the server.', 'warn'); return; }
       const payload = { name, transport };
       if (transport === 'stdio') {

@@ -2,7 +2,11 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
+const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload).catch((error) => {
+  const raw = String((error && error.message) || error || '');
+  const message = raw.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '').trim();
+  throw new Error(message || 'The operation failed.');
+});
 
 const api = {
   isElectron: true,
