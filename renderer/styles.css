@@ -778,8 +778,8 @@ body.platform-linux .window-btn.close:hover { background: var(--red); }
   text-align: center;
   animation: hero-in 0.45s var(--ease) both;
 }
-.hero-brand { display: flex; justify-content: center; margin-bottom: 16px; }
-.hero-brand svg { display: block; width: 34px; height: 34px; border-radius: 9px; }
+.hero-brand { display: flex; justify-content: center; margin-bottom: 16px; color: var(--text); }
+.hero-brand svg { display: block; width: 36px; height: 36px; }
 .hero h1 {
   font-size: 27px;
   font-weight: 620;
