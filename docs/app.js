@@ -4,7 +4,13 @@
   var cfg = Object.assign({ repo: '', version: '1.0.0' }, window.BLANK_SITE || {});
   var repo = String(cfg.repo || '').trim() || inferRepo();
   var repoUrl = repo ? 'https://github.com/' + repo : '';
-  var state = { release: null, assets: [], os: detectOS(), arch: 'x64', repo: repo, releasesUrl: repoUrl ? repoUrl + '/releases' : '' };
+  var state = { release: null, assets: [], os: detectOS(), arch: 'x64', repo: repo, releasesUrl: repoUrl ? repoUrl + '/releases' : '', status: 'loading' };
+
+  function t(key, vars) {
+    var api = window.BLANK_SITE_I18N;
+    if (api && typeof api.t === 'function') return api.t(key, vars);
+    return '';
+  }
 
   function inferRepo() {
     if (!/\.github\.io$/i.test(location.hostname)) return '';
@@ -44,7 +50,7 @@
   }
 
   function assetCaption(asset) {
-    var kind = /\.dmg$/i.test(asset.name) ? '디스크 이미지' : /\.appimage$/i.test(asset.name) ? 'AppImage' : '설치 파일';
+    var kind = /\.dmg$/i.test(asset.name) ? t('asset.disk') : /\.appimage$/i.test(asset.name) ? t('asset.appimage') : t('asset.installer');
     return kind + (asset.size ? ' · ' + formatBytes(asset.size) : '');
   }
 
@@ -157,6 +163,13 @@
     if (tone) pill.classList.add(tone);
   }
 
+  function setLinkLabel(link, label) {
+    if (!link) return;
+    var inner = link.querySelector('[data-os-label]');
+    if (inner) inner.textContent = label;
+    else link.textContent = label;
+  }
+
   function disableLink(link, label) {
     if (!link) return;
     link.removeAttribute('href');
@@ -165,7 +178,7 @@
     if (label) {
       var inner = link.querySelector('.btn-label');
       if (inner) inner.textContent = label;
-      else link.textContent = label;
+      else setLinkLabel(link, label);
     }
   }
 
@@ -174,7 +187,7 @@
     link.href = href;
     link.removeAttribute('aria-disabled');
     link.classList.remove('is-disabled');
-    if (label) link.textContent = label;
+    if (label) setLinkLabel(link, label);
   }
 
   function setRecommended() {
@@ -188,7 +201,7 @@
   }
 
   function osLabel(os) {
-    return os === 'windows' ? 'Windows' : os === 'mac' ? 'macOS' : os === 'linux' ? 'Linux' : '이 기기';
+    return os === 'windows' ? 'Windows' : os === 'mac' ? 'macOS' : os === 'linux' ? 'Linux' : t('os.thisDevice');
   }
 
   function setPrimary(asset, href) {
@@ -199,7 +212,7 @@
       enableLink(primary, href);
       var title = primary.querySelector('.btn-label');
       var sub = primary.querySelector('.btn-sub');
-      if (title) title.textContent = label + '용 다운로드';
+      if (title) title.textContent = t('download.forOs', { os: label });
       if (sub) sub.textContent = assetCaption(asset);
       primary.removeAttribute('target');
       primary.removeAttribute('rel');
@@ -208,8 +221,8 @@
       enableLink(closing, href);
       var closingTitle = closing.querySelector('.btn-label');
       var closingSub = closing.querySelector('.btn-sub');
-      if (closingTitle) closingTitle.textContent = 'blank 받기';
-      if (closingSub) closingSub.textContent = label + '용';
+      if (closingTitle) closingTitle.textContent = t('download.getBlank');
+      if (closingSub) closingSub.textContent = t('download.forOsShort', { os: label });
       closing.removeAttribute('target');
       closing.removeAttribute('rel');
     }
@@ -221,38 +234,41 @@
     if (primary) {
       var label = primary.querySelector('.btn-label');
       var sub = primary.querySelector('.btn-sub');
-      if (label) label.textContent = '다운로드 선택';
-      if (sub) sub.textContent = 'Windows · macOS · Linux';
+      if (label) label.textContent = t('download.chooseOs');
+      if (sub) sub.textContent = t('download.platforms');
     }
     if (closing) {
       var closingLabel = closing.querySelector('.btn-label');
       var closingSub = closing.querySelector('.btn-sub');
-      if (closingLabel) closingLabel.textContent = '다운로드 선택';
-      if (closingSub) closingSub.textContent = 'Windows · macOS · Linux';
+      if (closingLabel) closingLabel.textContent = t('download.chooseOs');
+      if (closingSub) closingSub.textContent = t('download.platforms');
     }
   }
 
   function fillCards(assets) {
     var copy = {
-      windows: { idle: '설치 파일 받기', missing: '릴리스 보기' },
-      mac: { idle: '디스크 이미지 받기', missing: '릴리스 보기' },
-      linux: { idle: 'AppImage 받기', missing: '릴리스 보기' }
+      windows: { idle: t('download.installer'), missing: t('download.viewRelease') },
+      mac: { idle: t('download.disk'), missing: t('download.viewRelease') },
+      linux: { idle: t('download.appimage'), missing: t('download.viewRelease') }
     };
     ['windows', 'mac', 'linux'].forEach(function (os) {
       var asset = assets[os] || null;
       var link = document.querySelector('[data-download="' + os + '"]');
       var assetLabel = document.querySelector('[data-asset="' + os + '"]');
       if (asset) {
-        enableLink(link, asset.browser_download_url, copy[os].idle);
+        enableLink(link, asset.browser_download_url);
+        setLinkLabel(link, copy[os].idle);
         if (link) { link.removeAttribute('target'); link.removeAttribute('rel'); }
         if (assetLabel) assetLabel.textContent = assetCaption(asset);
       } else if (state.releasesUrl) {
-        enableLink(link, state.releasesUrl, copy[os].missing);
+        enableLink(link, state.releasesUrl);
+        setLinkLabel(link, copy[os].missing);
         if (link) { link.target = '_blank'; link.rel = 'noreferrer'; }
-        if (assetLabel) assetLabel.textContent = '최신 릴리스에 빌드가 없습니다';
+        if (assetLabel) assetLabel.textContent = t('download.noBuild');
       } else {
-        disableLink(link, '빌드 없음');
-        if (assetLabel) assetLabel.textContent = '저장소를 연결하면 다운로드를 사용할 수 있습니다';
+        disableLink(link);
+        setLinkLabel(link, t('download.unavailable'));
+        if (assetLabel) assetLabel.textContent = t('download.repoHint');
       }
     });
 
@@ -262,7 +278,7 @@
       if (assets.mac && other && other !== assets.mac) {
         alt.hidden = false;
         alt.href = other.browser_download_url;
-        alt.textContent = other === assets.macArm ? 'Apple silicon 빌드' : 'Intel Mac 빌드';
+        alt.textContent = other === assets.macArm ? t('download.macAltArm') : t('download.macAltIntel');
       } else {
         alt.hidden = true;
         alt.removeAttribute('href');
@@ -272,8 +288,9 @@
 
   function renderRelease(release) {
     state.release = release;
+    state.status = 'ready';
     setVersion(release);
-    setPill(release ? 'v' + versionLabel(release) + ' · 최신 릴리스' : '아직 릴리스가 없습니다', release ? 'live' : 'warn');
+    setPill(release ? t('release.latest', { v: versionLabel(release) }) : t('release.none'), release ? 'live' : 'warn');
     state.assets = release ? pickAssets(release) : { windows: null, mac: null, macIntel: null, linux: null, all: [] };
     var recommendedAsset = state.assets[state.os] || null;
     if (recommendedAsset) {
@@ -284,13 +301,13 @@
       var label = osLabel(state.os);
       if (primary) {
         enableLink(primary, state.releasesUrl);
-        primary.querySelector('.btn-label').textContent = '릴리스 보기';
-        primary.querySelector('.btn-sub').textContent = '최신 릴리스에 ' + label + ' 빌드가 없습니다';
+        primary.querySelector('.btn-label').textContent = t('download.viewRelease');
+        primary.querySelector('.btn-sub').textContent = t('download.releaseMissing', { os: label });
       }
       if (closing) {
         enableLink(closing, state.releasesUrl);
-        closing.querySelector('.btn-label').textContent = '릴리스 보기';
-        closing.querySelector('.btn-sub').textContent = 'GitHub에서';
+        closing.querySelector('.btn-label').textContent = t('download.viewRelease');
+        closing.querySelector('.btn-sub').textContent = t('download.onGithub');
       }
     } else {
       resetPrimary();
@@ -298,8 +315,11 @@
     fillCards(state.assets);
   }
 
-  function setUnavailable(message) {
-    setPill(message, 'warn');
+  function setUnavailable(reasonKey) {
+    state.release = null;
+    state.status = reasonKey;
+    state.assets = { windows: null, mac: null, macIntel: null, linux: null, all: [] };
+    setPill(t(reasonKey), 'warn');
     resetPrimary();
     var primary = document.getElementById('primary-download');
     var closing = document.getElementById('closing-download');
@@ -307,19 +327,34 @@
       enableLink(primary, state.releasesUrl, null);
       enableLink(closing, state.releasesUrl, null);
       if (primary) {
-        primary.querySelector('.btn-label').textContent = '릴리스 보기';
-        primary.querySelector('.btn-sub').textContent = '설치 파일은 GitHub에 있습니다';
+        primary.querySelector('.btn-label').textContent = t('download.viewRelease');
+        primary.querySelector('.btn-sub').textContent = t('download.inReleases');
       }
       if (closing) {
-        closing.querySelector('.btn-label').textContent = '릴리스 보기';
-        closing.querySelector('.btn-sub').textContent = 'GitHub에서';
+        closing.querySelector('.btn-label').textContent = t('download.viewRelease');
+        closing.querySelector('.btn-sub').textContent = t('download.onGithub');
       }
     } else {
-      disableLink(primary, '다운로드할 수 없음');
-      disableLink(closing, '다운로드할 수 없음');
-      if (primary) primary.querySelector('.btn-sub').textContent = message;
-      if (closing) closing.querySelector('.btn-sub').textContent = message;
+      disableLink(primary, t('download.unavailable'));
+      disableLink(closing, t('download.unavailable'));
+      if (primary) primary.querySelector('.btn-sub').textContent = t(reasonKey);
+      if (closing) closing.querySelector('.btn-sub').textContent = t(reasonKey);
     }
+    fillCards({ windows: null, mac: null, macIntel: null, linux: null });
+  }
+
+  function renderNoRepo() {
+    state.release = null;
+    state.status = 'norepo';
+    state.assets = { windows: null, mac: null, macIntel: null, linux: null, all: [] };
+    setPill(t('download.notConfigured'), 'warn');
+    resetPrimary();
+    var primary = document.getElementById('primary-download');
+    var closing = document.getElementById('closing-download');
+    disableLink(primary, t('download.notConfigured'));
+    disableLink(closing, t('download.unavailable'));
+    if (primary && primary.querySelector('.btn-sub')) primary.querySelector('.btn-sub').textContent = t('download.pagesSetup');
+    if (closing && closing.querySelector('.btn-sub')) closing.querySelector('.btn-sub').textContent = t('download.localPreview');
     fillCards({ windows: null, mac: null, macIntel: null, linux: null });
   }
 
@@ -359,6 +394,13 @@
     });
   }
 
+  function refreshLanguage() {
+    setRepoLinks();
+    if (state.status === 'ready' && state.release) renderRelease(state.release);
+    else if (state.status === 'norepo') renderNoRepo();
+    else if (state.status === 'error.releaseMissing' || state.status === 'error.releaseFetch') setUnavailable(state.status);
+  }
+
   function boot() {
     var year = document.getElementById('year');
     if (year) year.textContent = String(new Date().getFullYear());
@@ -367,17 +409,10 @@
     setRecommended();
     setupPlatformJumps();
     setupMenu();
+    document.addEventListener('blank:langchange', refreshLanguage);
 
     if (!repo) {
-      setPill('다운로드가 설정되지 않았습니다', 'warn');
-      resetPrimary();
-      var primary = document.getElementById('primary-download');
-      var closing = document.getElementById('closing-download');
-      disableLink(primary, '다운로드가 설정되지 않았습니다');
-      disableLink(closing, '다운로드할 수 없음');
-      if (primary && primary.querySelector('.btn-sub')) primary.querySelector('.btn-sub').textContent = 'Pages 워크플로를 설정하세요';
-      if (closing && closing.querySelector('.btn-sub')) closing.querySelector('.btn-sub').textContent = '로컬 미리보기';
-      fillCards({ windows: null, mac: null, macIntel: null, linux: null });
+      renderNoRepo();
       return;
     }
 
@@ -385,10 +420,10 @@
       state.arch = arch;
       return loadRelease();
     }).then(function (release) {
-      if (!release) { setUnavailable('릴리스를 찾을 수 없습니다'); return; }
+      if (!release) { setUnavailable('error.releaseMissing'); return; }
       renderRelease(release);
     }).catch(function () {
-      setUnavailable('GitHub Releases에 연결하지 못했습니다');
+      setUnavailable('error.releaseFetch');
     });
   }
 
