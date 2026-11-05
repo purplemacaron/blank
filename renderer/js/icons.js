@@ -77,6 +77,7 @@
     lock: '<rect x="4.5" y="10" width="15" height="10.5" rx="2.4"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10"/>',
     'git-branch': '<circle cx="6" cy="5.5" r="2.3"/><circle cx="6" cy="18.5" r="2.3"/><circle cx="18" cy="8" r="2.3"/><path d="M6 7.8v8.4M18 10.3c0 3.2-3 4.2-6 4.2H6"/>',
     bot: '<rect x="4.5" y="7" width="15" height="11" rx="3"/><path d="M12 7V3.5M8.7 12h.01M15.3 12h.01M9.5 15h5M2.5 11v3M21.5 11v3"/>',
+    pet: '<path d="M6.4 3.8h7.8L19 8.6v11.1a1.6 1.6 0 0 1-1.6 1.6H6.4a1.6 1.6 0 0 1-1.6-1.6V5.4a1.6 1.6 0 0 1 1.6-1.6Z"/><path d="M14.2 3.8v4.8H19"/><circle cx="9.2" cy="12.8" r=".9" fill="currentColor" stroke="none"/><circle cx="13.6" cy="12.8" r=".9" fill="currentColor" stroke="none"/>',
     'circle-dot': '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/>',
     glasses: '<circle cx="6.5" cy="13.5" r="3.5"/><circle cx="17.5" cy="13.5" r="3.5"/><path d="M10 13.5h4M3 11l1.5-4.5h3.8M21 11l-1.5-4.5h-3.8"/>',
     'arrow-down-right': '<path d="M5 5l14 14M19 8.5V19H8.5"/>',

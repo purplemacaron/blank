@@ -152,6 +152,34 @@ function allProviders(config = {}) {
   return [...PROVIDERS, ...custom];
 }
 
+function reasoningHintFor(providerId, model, config = {}) {
+  const cache = config.reasoningHints?.[`${providerId}/${model.id}`];
+  if (cache && (cache.source === 'probe' || !model.reasoningHint)) return cache;
+  return model.reasoningHint || cache || null;
+}
+
+/**
+ * Whether a model accepts an image attachment. Explicit endpoint metadata wins;
+ * otherwise only families known to accept images are marked.
+ */
+function visionFor(providerId, modelId, hint) {
+  if (typeof hint === 'boolean') return hint;
+  const pid = String(providerId || '').toLowerCase();
+  const id = String(modelId || '').toLowerCase();
+  if (pid === 'openai') return /^(gpt-4o|gpt-4\.1|gpt-4\.5|gpt-5|gpt-6|o[1-9](?!-mini))/.test(id);
+  if (pid === 'anthropic') return /claude-(3|4|5)/.test(id);
+  if (pid === 'google') return /gemini-(1\.5|2|3)/.test(id);
+  if (pid === 'xai') return /grok-(2.*vision|3|4)/.test(id);
+  if (pid === 'openrouter') return false;
+  if (pid.startsWith('custom_')) {
+    return /(vision|-vl\b|\bvl\b|llava|pixtral|gpt-4o|claude-|gemini-)/i.test(id);
+  }
+  if (['groq', 'together', 'cerebras', 'ollama', 'lmstudio', 'mistral'].includes(pid)) {
+    return /(vision|-vl\b|\bvl\b|llava|pixtral|llama-3\.2|gemma-3|qwen2\.5-vl)/i.test(id);
+  }
+  return false;
+}
+
 function getProvider(id, config = {}) {
   return allProviders(config).find((p) => p.id === id) || null;
 }
@@ -181,7 +209,8 @@ function allModels(config = {}) {
     for (const model of providerModels(provider, config)) {
       out.push({
         ...model,
-        reasoning: profileFor(provider.id, model.id),
+        reasoning: profileFor(provider.id, model.id, reasoningHintFor(provider.id, model, config)),
+        vision: visionFor(provider.id, model.id, model.vision),
         providerId: provider.id,
         providerName: provider.name,
         monogram: provider.monogram,
@@ -204,7 +233,8 @@ function findModel(fullId, config = {}) {
     { id: modelId, name: modelId, context: 128000, tags: [], custom: true };
   return {
     ...model,
-    reasoning: profileFor(providerId, modelId),
+    reasoning: profileFor(providerId, modelId, reasoningHintFor(providerId, model, config)),
+    vision: visionFor(providerId, modelId, model.vision),
     providerId,
     providerName: provider.name,
     protocol: provider.protocol,
@@ -218,7 +248,8 @@ function publicProvider(provider, config = {}) {
   const { id, name, monogram, protocol, kind, description, baseUrl, keyEnv, docs } = provider;
   const models = providerModels(provider, config).map((model) => ({
     ...model,
-    reasoning: profileFor(id, model.id),
+    reasoning: profileFor(id, model.id, reasoningHintFor(id, model, config)),
+    vision: visionFor(id, model.id, model.vision),
   }));
   return { id, name, monogram, protocol, kind, description, baseUrl, keyEnv, docs, models };
 }

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>개인정보처리방침 — blank</title>
+  <meta name="description" content="blank의 개인정보처리방침. 로컬 우선, 계정 없음, 분석 쿠키 없음." />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="icon" href="media/icon.svg?v=122" type="image/svg+xml" />
+  <link rel="icon" type="image/png" sizes="64x64" href="media/favicon.png?v=122" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'" />
+  <link rel="stylesheet" href="styles.css?v=122" />
+</head>
+<body>
+  <header class="site-head">
+    <div class="shell head-inner">
+      <a class="wordmark" href="index.html" aria-label="blank 홈">
+        <img src="media/icon.svg?v=122" alt="" width="24" height="24" />
+        <span>blank</span>
+      </a>
+      <nav class="nav" aria-label="주요 메뉴">
+        <a href="index.html#features">기능</a>
+        <a href="index.html#install">설치</a>
+        <a href="privacy.html" aria-current="page">개인정보</a>
+        <a href="terms.html">약관</a>
+      </nav>
+      <div class="head-actions">
+        <a class="repo-link" href="https://github.com/purplemacaron/blank" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+        <a class="btn btn-primary" href="index.html#install">다운로드</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="legal">
+    <div class="shell legal-shell">
+      <p class="eyebrow">Legal</p>
+      <h1>개인정보처리방침</h1>
+      <p class="legal-meta">시행일 2026년 11월 5일</p>
+
+      <div class="prose">
+        <h2>1. 적용 범위</h2>
+        <p>이 방침은 blank 데스크톱 앱과 공식 사이트(<code>purplemacaron.github.io/blank</code>)에 적용됩니다. blank는 별도의 계정 서버나 사용자 데이터베이스를 운영하지 않습니다.</p>
+
+        <h2>2. 수집하지 않는 정보</h2>
+        <p>blank는 이름, 이메일, 전화번호 같은 계정 정보를 요구하지 않습니다. 공식 사이트에는 광고 식별자, 분석 도구, 추적 쿠키가 없습니다.</p>
+
+        <h2>3. 기기에 저장되는 정보</h2>
+        <p>앱을 사용하면 다음 정보가 기본적으로 사용자의 컴퓨터에 있는 <code>~/.blank</code> 폴더에 저장됩니다.</p>
+        <ul>
+          <li>설정과 프로바이더 키: <code>config.json</code></li>
+          <li>대화 세션, 메모리, 스킬, 체크포인트</li>
+          <li>생성한 미디어와 Paper 문서</li>
+          <li>실행 로그와 자동화 기록</li>
+        </ul>
+        <p>키는 저장 후 화면에 전체 값이 다시 표시되지 않고 마스킹됩니다. <code>BLANK_HOME</code> 환경 변수로 데이터 위치를 바꿀 수 있으며, 폴더를 삭제하면 해당 데이터가 함께 삭제됩니다.</p>
+
+        <h2>4. 외부로 전송되는 정보</h2>
+        <p>blank 자체는 대화를 자체 서버로 보내지 않습니다. 다만 사용자가 선택하거나 설정한 모델 프로바이더, 검색 API, MCP 서버, 미디어 엔진, SSH 대상에는 작업에 필요한 프롬프트, 첨부 파일, 도구 결과가 전송될 수 있습니다. 이 정보는 각 제공자의 개인정보처리방침과 보관 정책을 따릅니다.</p>
+        <p>설치 파일은 GitHub Releases에서, 사이트는 GitHub Pages에서 제공됩니다. GitHub는 접속 시 IP 주소, 브라우저 정보, 요청 시각 등 일반적인 서버 로그를 처리할 수 있습니다. 자세한 내용은 GitHub의 개인정보처리방침을 확인하세요.</p>
+
+        <h2>5. 사이트의 로컬 저장소</h2>
+        <p>공식 사이트는 최신 릴리스 정보를 <code>sessionStorage</code>에 최대 10분 동안 임시 저장합니다. 이 값은 다운로드 버튼을 빠르게 표시하기 위한 것으로, 탭을 닫으면 사라지며 서버로 전송되지 않습니다.</p>
+
+        <h2>6. 보관과 삭제</h2>
+        <p>로컬 데이터는 사용자가 직접 삭제할 때까지 기기에 남습니다. 앱의 데이터 폴더를 열어 세션, 미디어, 설정을 개별적으로 지울 수 있습니다. 앱을 제거해도 <code>~/.blank</code> 폴더는 자동으로 삭제되지 않습니다.</p>
+
+        <h2>7. 아동의 개인정보</h2>
+        <p>blank는 만 14세 미만 아동을 대상으로 하지 않으며, 아동의 개인정보를 의도적으로 수집하지 않습니다.</p>
+
+        <h2>8. 외부 링크</h2>
+        <p>사이트와 앱에는 GitHub, 모델 프로바이더, 기타 외부 서비스로 이동하는 링크가 있을 수 있습니다. 외부 사이트의 정보 처리 방식에는 이 방침이 적용되지 않습니다.</p>
+
+        <h2>9. 방침의 변경</h2>
+        <p>기능이나 법령이 바뀌면 이 방침을 수정할 수 있습니다. 중요한 변경은 이 페이지에 시행일과 함께 게시합니다.</p>
+
+        <h2>10. 문의</h2>
+        <p>개인정보 처리에 관한 문의는 <a href="https://github.com/purplemacaron/blank/issues" target="_blank" rel="noreferrer">GitHub Issues</a>로 남겨 주세요.</p>
+
+        <div class="inline-actions">
+          <a class="btn btn-ghost" href="terms.html">이용약관 보기</a>
+          <a class="btn btn-ghost" href="index.html">홈으로</a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-foot">
+    <div class="shell foot-inner">
+      <div class="foot-brand">
+        <a class="wordmark" href="index.html" aria-label="blank 홈">
+          <img src="media/icon.svg?v=122" alt="" width="24" height="24" />
+          <span>blank</span>
+        </a>
+        <p>모델과 도구를 한 화면에 두는 로컬 우선 데스크톱 하네스.</p>
+        <span class="foot-version">v1.2.2</span>
+      </div>
+      <div class="foot-links">
+        <div class="foot-col">
+          <span>제품</span>
+          <a href="index.html#features">기능</a>
+          <a href="index.html#install">설치</a>
+          <a href="https://github.com/purplemacaron/blank/releases" target="_blank" rel="noreferrer">릴리스</a>
+          <a href="https://github.com/purplemacaron/blank" target="_blank" rel="noreferrer">GitHub</a>
+        </div>
+        <div class="foot-col">
+          <span>문서</span>
+          <a href="privacy.html" aria-current="page">개인정보처리방침</a>
+          <a href="terms.html">이용약관</a>
+          <a href="https://github.com/purplemacaron/blank" target="_blank" rel="noreferrer">소스 코드</a>
+        </div>
+      </div>
+    </div>
+    <div class="shell foot-bottom">
+      <span>© 2026 blank · MIT License</span>
+      <span>모델은 직접 연결합니다. GitHub Pages에서 호스팅됩니다.</span>
+    </div>
+  </footer>
+</body>
+</html>

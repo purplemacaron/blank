@@ -5,9 +5,9 @@
  *
  * Providers expose different ladders: some models cannot think at all, some
  * are always on, and the adjustable ones range from none/minimal up to
- * xhigh/max. blank never shows a generic "auto" list — the catalog attaches
- * the exact stages each discovered model accepts, and requests are translated
- * to that provider's native parameter.
+ * xhigh/max/ultra. blank never shows a generic "auto" list — the catalog
+ * attaches the exact stages each discovered model accepts, and requests are
+ * translated to that provider's native parameter.
  */
 
 const LEVELS = {
@@ -16,13 +16,43 @@ const LEVELS = {
   low: { label: 'Low', hint: 'Fast, shallow' },
   medium: { label: 'Medium', hint: 'Balanced' },
   high: { label: 'High', hint: 'Deeper, slower' },
-  xhigh: { label: 'Max', hint: 'Very deep thinking' },
-  max: { label: 'Ultra', hint: 'Maximum effort and cost' },
+  xhigh: { label: 'xHigh', hint: 'Very deep thinking' },
+  max: { label: 'Max', hint: 'Maximum reasoning' },
+  ultra: { label: 'Ultra', hint: 'Highest effort and cost' },
 };
 
-const ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+const FULL = ['none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+const FULL_WITH_MINIMAL = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 /* 'auto' is accepted from older sessions and configs, then normalized. */
 const EFFORTS = ['auto', ...ORDER];
+
+const LEVEL_ALIASES = {
+  none: 'none',
+  'non-reasoning': 'none',
+  nonreasoning: 'none',
+  non_reasoning: 'none',
+  'no-reasoning': 'none',
+  minimal: 'minimal',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+  'x-high': 'xhigh',
+  'extra-high': 'xhigh',
+  'extra high': 'xhigh',
+  'very-high': 'xhigh',
+  max: 'max',
+  maximum: 'max',
+  ultra: 'ultra',
+  highest: 'ultra',
+};
+
+/** Map an API effort name onto our stage keys. */
+function normalizeLevel(value) {
+  const key = String(value ?? '').trim().toLowerCase();
+  return LEVEL_ALIASES[key] || LEVEL_ALIASES[key.replace(/_/g, '-')] || null;
+}
 
 function pick(levels, fallback, transport) {
   return {
@@ -41,10 +71,44 @@ function off() {
   return { levels: ['none'], default: 'none', transport: 'none', fixed: true };
 }
 
+/**
+ * Turn endpoint-reported reasoning metadata (or a probe result) into a stage
+ * list. Only stages the endpoint actually named are kept.
+ */
+function profileFromHint(hint) {
+  if (!hint || typeof hint !== 'object') return null;
+  const source = ['probe', 'api'].includes(hint.source) ? hint.source : 'api';
+  const listed = Array.isArray(hint.levels)
+    ? hint.levels.map(normalizeLevel).filter(Boolean)
+    : [];
+  const levels = ORDER.filter((level) => listed.includes(level));
+  const preferred = normalizeLevel(hint.default)
+    || (levels.includes('medium') ? 'medium' : levels.includes('high') ? 'high' : '');
+  if (levels.length > 1) {
+    const profile = pick(levels, preferred, hint.transport || 'openai-effort');
+    if (hint.mandatory) profile.levels = profile.levels.filter((level) => level !== 'none');
+    if (!profile.levels.length) return { ...fixed(hint.fixedLabel || 'Always on'), source };
+    profile.source = source;
+    return profile;
+  }
+  if (levels.length === 1) {
+    if (levels[0] === 'none') return { ...off(), source };
+    return { ...pick(levels, levels[0], hint.transport || 'openai-effort'), fixed: true, source };
+  }
+  if (hint.alwaysOn) return { ...fixed(hint.fixedLabel || 'Always on'), source };
+  if (hint.supported === false) return { ...off(), source };
+  if (hint.supported === true) {
+    const profile = pick(['low', 'medium', 'high'], normalizeLevel(hint.default), 'openai-effort');
+    profile.source = source;
+    return profile;
+  }
+  return null;
+}
+
 function openaiProfile(id) {
-  if (/^gpt-6\.1|^gpt-6[.-].*sol|^gpt-6.*sol/.test(id)) return pick(['medium', 'high', 'xhigh', 'max'], 'medium', 'openai-effort');
-  if (/^gpt-6.*astra/.test(id)) return pick(['low', 'medium', 'high', 'xhigh', 'max'], 'medium', 'openai-effort');
-  if (/^gpt-6/.test(id)) return pick(['none', 'low', 'medium', 'high', 'xhigh', 'max'], 'medium', 'openai-effort');
+  if (/^gpt-6\.1|^gpt-6[.-].*sol|^gpt-6.*sol/.test(id)) return pick(['medium', 'high', 'xhigh', 'max', 'ultra'], 'medium', 'openai-effort');
+  if (/^gpt-6.*astra/.test(id)) return pick(['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], 'medium', 'openai-effort');
+  if (/^gpt-6/.test(id)) return pick(['none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'], 'medium', 'openai-effort');
   if (/^gpt-5\.5/.test(id)) {
     if (/-pro/.test(id)) return pick(['medium', 'high', 'xhigh'], 'high', 'openai-effort');
     return pick(['none', 'low', 'medium', 'high', 'xhigh'], 'medium', 'openai-effort');
@@ -108,7 +172,8 @@ function xaiProfile(id) {
 function openProfile(id) {
   if (/gpt-oss|gpt_oss/.test(id)) return pick(['low', 'medium', 'high'], 'medium', 'openai-effort');
   if (/qwen3|qwq|deepseek-r1|reasoner|thinking/.test(id)) return fixed('Always on');
-  if (/^(llama|mixtral|mistral|gemma|qwen(?!3)|phi|deepseek-v|yi|jamba|fuyu|nemotron)/.test(id)) return off();
+  if (/^(deepseek-v|deepseek-chat-v)/.test(id)) return pick(FULL, 'medium', 'openai-effort');
+  if (/^(llama|mixtral|mistral|gemma|qwen(?!3)|phi|yi|jamba|fuyu|nemotron)/.test(id)) return off();
   return null;
 }
 
@@ -160,30 +225,43 @@ function mistralProfile(id) {
   return null;
 }
 
+function customProfile(id, hint) {
+  const hinted = profileFromHint(hint);
+  if (hinted) return hinted;
+  /* A custom endpoint may not document itself. Keep only stages that are
+     universally understood by OpenAI-compatible effort parameters, and let
+     the background probe replace this guess with the endpoint's real set. */
+  if (/gpt-oss|gpt_oss/.test(id)) return { ...pick(['low', 'medium', 'high'], 'medium', 'openai-effort'), source: 'fallback' };
+  if (/qwen3|qwq|deepseek-r1|reasoner|thinking/.test(id)) return { ...fixed('Always on'), source: 'fallback' };
+  return { ...pick(['low', 'medium', 'high'], 'medium', 'openai-effort'), source: 'fallback' };
+}
+
 /**
  * Returns the reasoning ladder for a model, or null when the model is
- * unknown and we cannot honestly offer a stage list.
+ * unknown and we cannot honestly offer a stage list. `hint` is capability
+ * metadata from the provider's /models response or a live effort probe.
  */
-function profileFor(providerId, modelId) {
+function profileFor(providerId, modelId, hint = null) {
   const pid = String(providerId || '').toLowerCase();
   const id = String(modelId || '').split('/').pop().toLowerCase();
   if (!id) return null;
-  if (pid === 'openai') return openaiProfile(id);
-  if (pid === 'anthropic') return anthropicProfile(id);
-  if (pid === 'google') return geminiProfile(id);
-  if (pid === 'openrouter') return openRouterProfile(String(modelId || '').toLowerCase());
-  if (pid === 'xai') return xaiProfile(id);
-  if (pid === 'deepseek') return deepseekProfile(id);
-  if (pid === 'mistral') return mistralProfile(id);
-  if (['groq', 'together', 'cerebras'].includes(pid)) return openProfile(id);
-  if (pid === 'ollama') {
-    if (/^gpt-oss/.test(id)) return pick(['low', 'medium', 'high'], 'medium', 'openai-effort');
-    if (/qwen3|qwq|deepseek-r1|reasoner|thinking/.test(id)) return fixed('Always on');
-    return off();
-  }
-  if (pid === 'lmstudio') return off();
-  if (pid.startsWith('custom_')) return openProfile(id);
-  return null;
+  if (pid.startsWith('custom_')) return customProfile(id, hint);
+  if (pid === 'openrouter') return profileFromHint(hint) || openRouterProfile(String(modelId || '').toLowerCase());
+  let native = null;
+  if (pid === 'openai') native = openaiProfile(id);
+  else if (pid === 'anthropic') native = anthropicProfile(id);
+  else if (pid === 'google') native = geminiProfile(id);
+  else if (pid === 'xai') native = xaiProfile(id);
+  else if (pid === 'deepseek') native = deepseekProfile(id);
+  else if (pid === 'mistral') native = mistralProfile(id);
+  else if (['groq', 'together', 'cerebras'].includes(pid)) native = openProfile(id);
+  else if (pid === 'ollama') {
+    if (/^gpt-oss/.test(id)) native = pick(['low', 'medium', 'high'], 'medium', 'openai-effort');
+    else if (/qwen3|qwq|deepseek-r1|reasoner|thinking/.test(id)) native = fixed('Always on');
+    else native = off();
+  } else if (pid === 'lmstudio') native = off();
+  if (native) return native;
+  return profileFromHint(hint);
 }
 
 function normalize(profile, value) {
@@ -207,5 +285,5 @@ function isEffort(value) {
 }
 
 module.exports = {
-  LEVELS, ORDER, EFFORTS, profileFor, normalize, isEffort,
+  LEVELS, ORDER, EFFORTS, normalizeLevel, profileFromHint, profileFor, normalize, isEffort,
 };

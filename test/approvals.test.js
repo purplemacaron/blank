@@ -101,6 +101,19 @@ test('every guarded action mode asks even for routine calls', () => {
   assert.equal(permissionFor('run_command', { command: 'ls' }, all).reason, 'policy');
 });
 
+test('no-approval mode runs every tool but keeps explicit blocks', () => {
+  const auto = ctx({ config: { approvals: { mode: 'auto' } } });
+  assert.equal(permissionFor('write_file', { path: '.env', content: 'x' }, auto).level, 'allow');
+  assert.equal(permissionFor('edit_file', { path: '.env.local' }, auto).level, 'allow');
+  assert.equal(permissionFor('run_command', { command: 'rm -rf dist' }, auto).level, 'allow');
+  assert.equal(permissionFor('run_command', { command: 'npm publish' }, auto).level, 'allow');
+  assert.equal(permissionFor('mcp__server__tool', {}, auto).level, 'allow');
+  assert.equal(permissionFor('computer_use', { action: 'click', x: 1, y: 1 }, auto).level, 'allow');
+
+  const blocked = ctx({ config: { approvals: { mode: 'auto' }, permissions: { run_command: 'deny' } } });
+  assert.equal(permissionFor('run_command', { command: 'npm test' }, blocked).level, 'deny');
+});
+
 test('explicit policy wins and blocked tools stay blocked', () => {
   const allowed = ctx({ config: { permissions: { run_command: 'allow' } } });
   assert.equal(permissionFor('run_command', { command: 'rm -rf dist' }, allowed).level, 'allow');

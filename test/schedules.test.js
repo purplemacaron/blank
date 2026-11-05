@@ -51,6 +51,37 @@ test('computeNext respects daily, hourly and weekday cadences', () => {
   assert.equal(weekdays(at(6, 18)), at(9, 9).toISOString());
 });
 
+test('one-time schedules target a local date and time exactly once', () => {
+  const once = (from) => schedules.computeNext({ cadence: 'once', date: '2026-11-06', time: '14:30' }, from);
+  assert.equal(once(at(4, 12)), at(6, 14, 30).toISOString());
+  assert.equal(once(at(6, 14, 30)), '');
+  assert.equal(once(at(7, 9)), '');
+
+  const created = schedules.saveSchedule({
+    title: 'Send the report',
+    prompt: 'Send the final report.',
+    cadence: 'once',
+    date: '2099-01-02',
+    time: '08:15',
+  });
+  assert.equal(created.cadence, 'once');
+  assert.equal(created.date, '2099-01-02');
+  assert.equal(created.nextRunAt, new Date(2099, 0, 2, 8, 15, 0, 0).toISOString());
+
+  assert.throws(() => schedules.saveSchedule({
+    title: 'Past run',
+    prompt: 'Too late.',
+    cadence: 'once',
+    date: '2000-01-02',
+    time: '08:15',
+  }), /future date/i);
+
+  const done = schedules.markRun(created.id, { status: 'ok', sessionId: 's_once' });
+  assert.equal(done.enabled, false);
+  assert.equal(done.nextRunAt, '');
+  assert.equal(done.lastStatus, 'ok');
+});
+
 test('updates keep identity while changing enabled state', () => {
   const created = schedules.saveSchedule({ title: 'Watch build', prompt: 'Check CI.', cadence: 'hourly', time: '07:30' });
   const updated = schedules.saveSchedule({ id: created.id, enabled: false, title: 'Watch CI' });

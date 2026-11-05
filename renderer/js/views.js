@@ -16,7 +16,7 @@
     team: { loading: false },
     automations: { schedules: [], running: [], loading: false, editing: '' },
     browserUrl: '',
-    settings: { remote: null, ssh: null, schedules: [], dictationOptions: null },
+    settings: { remote: null, ssh: null, schedules: [], dictationOptions: null, updates: null },
     paper: {
       loaded: false,
       items: [],
@@ -1694,10 +1694,21 @@ Start writing, or ask the agent to draft it.
   /* ------------------------------------------------------- code / console / team */
 
   function cadenceLabel(schedule) {
+    if (schedule.cadence === 'once') {
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(schedule.date || ''));
+      if (!match) return `Once at ${schedule.time || '09:00'}`;
+      const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+      return `Once · ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${schedule.time || '09:00'}`;
+    }
     if (schedule.cadence === 'interval') return `Every ${schedule.everyMinutes || 30} min`;
     if (schedule.cadence === 'hourly') return `Every hour at :${String(schedule.time || '09:00').slice(3, 5)}`;
     if (schedule.cadence === 'weekdays') return `Weekdays at ${schedule.time || '09:00'}`;
     return `Every day at ${schedule.time || '09:00'}`;
+  }
+
+  function localDateValue(date = new Date()) {
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   }
 
   function diffMarkup(text) {
@@ -1967,7 +1978,7 @@ Start writing, or ask the agent to draft it.
     host.innerHTML = `<div class="page-inner automations-page">
       ${UI.pageHeader({
         title: 'Automations',
-        description: 'Recurring prompts that run while blank is open.',
+        description: 'Recurring or one-time prompts that run while blank is open.',
         actions: `<button class="btn btn-secondary btn-sm" type="button" data-automation-refresh>${icon('refresh', 12)} Refresh</button>`,
         meta: `<span class="badge blue">${schedules.length} automation${schedules.length === 1 ? '' : 's'}</span>`,
       })}
@@ -1977,8 +1988,9 @@ Start writing, or ask the agent to draft it.
           <div class="setting-row schedule-compose-row">
             <input class="field-input" id="automation-title" maxlength="80" placeholder="Name, e.g. Morning brief" spellcheck="false" value="${U.attr(editing?.title || '')}" />
             <select class="setting-inline-input" id="automation-cadence">
-              ${[['interval', 'Every N minutes'], ['hourly', 'Every hour'], ['daily', 'Every day'], ['weekdays', 'Weekdays']].map(([id, label]) => `<option value="${id}" ${(editing?.cadence || 'daily') === id ? 'selected' : ''}>${label}</option>`).join('')}
+              ${[['interval', 'Every N minutes'], ['hourly', 'Every hour'], ['daily', 'Every day'], ['weekdays', 'Weekdays'], ['once', 'Just once']].map(([id, label]) => `<option value="${id}" ${(editing?.cadence || 'daily') === id ? 'selected' : ''}>${label}</option>`).join('')}
             </select>
+            <input class="setting-inline-input automation-date" id="automation-date" type="date" value="${U.attr(editing?.date || localDateValue())}" aria-label="One-time run date" />
             <input class="setting-inline-input" id="automation-time" type="time" value="${U.attr(editing?.time || '09:00')}" />
             <input class="setting-inline-input automation-every" id="automation-every" type="number" min="5" max="1440" step="5" value="${Number(editing?.everyMinutes) || 30}" title="Minutes between runs" />
           </div>
@@ -1993,11 +2005,12 @@ Start writing, or ask the agent to draft it.
       <div class="automation-list">
         ${schedules.length ? schedules.map((schedule) => {
           const next = schedule.nextRunAt ? new Date(schedule.nextRunAt) : null;
-          const nextText = next && !Number.isNaN(next.getTime()) ? next.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Paused';
+          const onceDone = schedule.cadence === 'once' && schedule.enabled === false && schedule.lastRunAt;
+          const nextText = next && !Number.isNaN(next.getTime()) ? next.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : onceDone ? 'done' : 'Paused';
           const lastText = schedule.lastRunAt ? new Date(schedule.lastRunAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
           return `<article class="automation-card ${schedule.running ? 'running' : ''}" data-automation-id="${U.attr(schedule.id)}">
             <div class="automation-head">
-              <div><div class="automation-title">${esc(schedule.title)}</div><div class="automation-meta"><span class="automation-cadence">${esc(cadenceLabel(schedule))}</span> · ${next ? `<span>next ${esc(nextText)}</span>` : '<span>paused</span>'}${lastText ? ` · <span>last ${esc(lastText)}</span>` : ''}</div></div>
+              <div><div class="automation-title">${esc(schedule.title)}</div><div class="automation-meta"><span class="automation-cadence">${esc(cadenceLabel(schedule))}</span> · ${next ? `<span>next ${esc(nextText)}</span>` : `<span>${onceDone ? 'done' : 'paused'}</span>`}${lastText ? ` · <span>last ${esc(lastText)}</span>` : ''}</div></div>
               <span class="badge ${schedule.running ? 'amber' : schedule.lastStatus === 'ok' ? 'green' : schedule.lastStatus === 'error' ? 'red' : 'gray'}">${schedule.running ? 'Running' : schedule.lastStatus === 'ok' ? 'OK' : schedule.lastStatus === 'error' ? 'Error' : 'Idle'}</span>
             </div>
             <p class="automation-prompt">${esc(U.truncate(schedule.prompt, 220))}</p>
@@ -2010,20 +2023,24 @@ Start writing, or ask the agent to draft it.
             <div class="automation-actions">
               <button class="btn btn-secondary btn-sm" type="button" data-automation-run="${U.attr(schedule.id)}" ${schedule.running ? 'disabled' : ''}>${icon('play', 11)} Run now</button>
               <button class="btn btn-ghost btn-sm" type="button" data-automation-edit="${U.attr(schedule.id)}">${icon('edit', 11)} Edit</button>
-              <label class="schedule-check"><input type="checkbox" data-automation-enabled="${U.attr(schedule.id)}" ${schedule.enabled !== false ? 'checked' : ''} /> Enabled</label>
+              ${schedule.cadence === 'once' ? '' : `<label class="schedule-check"><input type="checkbox" data-automation-enabled="${U.attr(schedule.id)}" ${schedule.enabled !== false ? 'checked' : ''} /> Enabled</label>`}
               <button class="mini-icon" type="button" data-automation-delete="${U.attr(schedule.id)}" title="Delete automation">${icon('trash', 13)}</button>
             </div>
           </article>`;
-        }).join('') : `<div class="empty-state"><div class="empty-icon">${icon('clock', 22)}</div><h3>Nothing scheduled</h3><p>Create a daily brief, an hourly watch or your own interval.</p></div>`}
+        }).join('') : `<div class="empty-state"><div class="empty-icon">${icon('clock', 22)}</div><h3>Nothing scheduled</h3><p>Create a daily brief, an hourly watch, a one-time run or your own interval.</p></div>`}
       </div>
     </div>`;
     const cadence = host.querySelector('#automation-cadence');
     const syncCadence = () => {
-      const interval = cadence?.value === 'interval';
+      const value = cadence?.value;
+      const interval = value === 'interval';
+      const once = value === 'once';
       const every = host.querySelector('#automation-every');
       const time = host.querySelector('#automation-time');
+      const date = host.querySelector('#automation-date');
       if (every) every.hidden = !interval;
       if (time) time.hidden = interval;
+      if (date) date.hidden = !once;
     };
     syncCadence();
     cadence?.addEventListener('change', syncCadence);
@@ -2043,6 +2060,7 @@ Start writing, or ask the agent to draft it.
           title: host.querySelector('#automation-title')?.value.trim() || '',
           prompt: host.querySelector('#automation-prompt')?.value.trim() || '',
           cadence: cadence?.value || 'daily',
+          date: host.querySelector('#automation-date')?.value || '',
           time: host.querySelector('#automation-time')?.value || '09:00',
           everyMinutes: Number(host.querySelector('#automation-every')?.value) || 30,
           allowTools: Boolean(host.querySelector('#automation-tools')?.checked),
@@ -2216,12 +2234,78 @@ Start writing, or ask the agent to draft it.
     if (hint) hint.innerHTML = dictationSuggestionsHtml(models);
   }
 
+  function updatePanelHtml(updates = {}) {
+    const status = String(updates.status || 'idle');
+    const current = String(updates.current || appState().info?.version || '');
+    const version = String(updates.version || '');
+    const percent = Math.max(0, Math.min(100, Number(updates.percent) || 0));
+    const titles = {
+      idle: 'Updates are checked automatically',
+      dev: 'Automatic updates run in the installed app',
+      unsupported: 'Automatic updates are not available on this platform',
+      checking: 'Checking for updates',
+      current: 'Up to date',
+      available: 'Update available',
+      downloading: 'Downloading update',
+      ready: 'Ready to install',
+      installing: 'Installing update',
+      error: 'Update check failed',
+    };
+    const descriptions = {
+      idle: 'blank reads the official GitHub releases at launch and every six hours.',
+      dev: 'This development build cannot update itself. Use an installed build to receive updates.',
+      unsupported: 'Download the latest build from the release page.',
+      checking: 'This only takes a moment.',
+      current: 'You are running the latest version.',
+      available: 'The new version is downloading in the background.',
+      downloading: 'Keep working; the update installs after it finishes.',
+      ready: 'Restart blank to finish installing.',
+      installing: 'blank will close and reopen when the installer finishes.',
+      error: 'Check your connection and try again.',
+    };
+    const tone = status === 'error'
+      ? 'error'
+      : status === 'ready'
+        ? 'ready'
+        : status === 'current'
+          ? 'ok'
+          : ['available', 'downloading'].includes(status) ? 'busy' : '';
+    const canCheck = updates.supported !== false && !['checking', 'downloading', 'installing', 'ready', 'dev', 'unsupported'].includes(status);
+    const badge = version && version !== current ? `v${version}` : (current ? `v${current}` : '');
+    const errorDetail = status === 'error' && updates.error ? String(updates.error) : '';
+    return `<div class="update-panel" id="update-panel"${errorDetail ? ` title="${U.attr(errorDetail)}"` : ''}>
+      <div class="update-head">
+        <span class="update-dot ${tone}"></span>
+        <div class="update-copy" aria-live="polite">
+          <div class="update-title">${esc(titles[status] || titles.idle)}</div>
+          <div class="update-desc">${esc(descriptions[status] || descriptions.idle)}</div>
+        </div>
+        ${badge ? `<span class="badge">${esc(badge)}</span>` : ''}
+      </div>
+      ${['available', 'downloading'].includes(status) ? `<progress class="update-progress" max="100" value="${percent}">${percent}%</progress><div class="update-progress-meta"><span>${percent}%</span>${updates.bytesPerSecond ? `<span>${esc(U.fmtBytes(updates.bytesPerSecond))}/s</span>` : ''}</div>` : ''}
+      <div class="update-actions">
+        <button class="btn btn-secondary btn-sm" type="button" data-update-check ${canCheck ? '' : 'disabled'}>${icon('refresh', 12)} ${esc('Check for updates')}</button>
+        ${status === 'ready' ? `<button class="btn btn-primary btn-sm" type="button" data-update-install>${icon('download', 12)} ${esc('Install update')}</button>` : ''}
+        <button class="link-btn" type="button" data-update-notes>${icon('external-link', 11)} ${esc('Release notes')}</button>
+      </div>
+    </div>`;
+  }
+
+  function applyUpdateStatus(status) {
+    if (!status || typeof status !== 'object') return;
+    vstate.settings.updates = status;
+    if (vstate.page !== 'settings' || !vstate.host) return;
+    const panel = vstate.host.querySelector('#update-panel');
+    if (!panel || !document.contains(panel)) return;
+    panel.outerHTML = updatePanelHtml(status);
+  }
+
   function paintSettings(host) {
     const config = currentConfig();
     const info = appState().info || {};
     const agent = config.agent || {};
     const permissions = config.permissions || {};
-    const approvalMode = config.approvals?.mode === 'all' ? 'all' : 'important';
+    const approvalMode = ['all', 'auto'].includes(config.approvals?.mode) ? config.approvals.mode : 'important';
     const providers = appState().catalog?.providers || vstate.models.providers;
     const runtime = appState().config?.runtime || info;
     const defaultModel = config.defaultModel || '';
@@ -2233,6 +2317,12 @@ Start writing, or ask the agent to draft it.
     const searchHasKey = Boolean(searchCfg.hasKey && searchCfg.hasKey[searchId]);
     const searchResults = Math.max(1, Math.min(10, Number(searchCfg.maxResults) || 6));
     const computerCfg = config.computer || {};
+    const updatesCfg = config.updates || {};
+    const updates = vstate.settings.updates || {
+      status: info.isDev ? 'dev' : 'idle',
+      current: info.version || runtime.version || '',
+      supported: !info.isDev,
+    };
     const remoteCfg = config.remote || vstate.settings.remote || {};
     const remoteState = vstate.settings.remote || {};
     const remoteRunning = Boolean(remoteState.running);
@@ -2275,6 +2365,7 @@ Start writing, or ask the agent to draft it.
       ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['pt', 'Portuguese'], ['ru', 'Russian'],
     ];
     const language = config.language === 'en' ? 'en' : 'ko';
+    const uiFont = ['noto', 'system', 'mono'].includes(config.ui?.font) ? config.ui.font : 'noto';
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
         title: 'Settings',
@@ -2294,6 +2385,7 @@ Start writing, or ask the agent to draft it.
           <button class="settings-nav-item" type="button" data-settings-go="computer">${icon('monitor', 13)} Computer</button>
           <button class="settings-nav-item" type="button" data-settings-go="remote">${icon('link', 13)} Remote</button>
           <button class="settings-nav-item" type="button" data-settings-go="data">${icon('database', 13)} Data & CLI</button>
+          <button class="settings-nav-item" type="button" data-settings-go="updates">${icon('download-cloud', 13)} Updates</button>
           <button class="settings-nav-item" type="button" data-settings-go="about">${icon('sparkles', 13)} About</button>
         </nav>
         <div class="settings-content">
@@ -2313,6 +2405,16 @@ Start writing, or ask the agent to draft it.
                   <button class="theme-option ${language === 'ko' ? 'active' : ''}" type="button" data-language="ko">한국어</button>
                   <button class="theme-option ${language === 'en' ? 'active' : ''}" type="button" data-language="en">English</button>
                 </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Interface font</div><div class="setting-desc">The typeface used across the app. Changes apply immediately.</div></div>
+                <div class="setting-control language-options">
+                  ${[['noto', 'Noto Sans KR'], ['system', 'System UI'], ['mono', 'Monospace']].map(([value, label]) => `<button class="theme-option ${uiFont === value ? 'active' : ''}" type="button" data-font="${value}">${label}</button>`).join('')}
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Desktop pet</div><div class="setting-desc">One paper follows the AI in use, plus one per blank Team member while the team works. Hover to see which AI or team a paper belongs to. Click a paper to type an instruction; drag it anywhere, right-click for more. Turn it off to hide every pet.</div></div>
+                <div class="setting-control">${UI.switchHtml(config.pet?.enabled !== false, 'data-pet-toggle')}</div>
               </div>
               <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Default model</div><div class="setting-desc">Used by new sessions and as the fallback for delegations.</div></div>
@@ -2457,7 +2559,7 @@ Start writing, or ask the agent to draft it.
 
           <section class="settings-section" id="settings-schedules">
             <h2>Schedules</h2>
-            <p>Run a prompt on a timer while blank is open. Each run becomes a normal session you can read and continue.</p>
+            <p>Run a prompt once or on a timer while blank is open. Each run becomes a normal session you can read and continue.</p>
             <div class="settings-group">
               <div class="setting-row schedule-compose-row">
                 <input class="field-input" id="schedule-title" maxlength="80" placeholder="Schedule name" spellcheck="false" />
@@ -2465,7 +2567,9 @@ Start writing, or ask the agent to draft it.
                   <option value="daily">Every day</option>
                   <option value="weekdays">Weekdays</option>
                   <option value="hourly">Every hour</option>
+                  <option value="once">Just once</option>
                 </select>
+                <input class="setting-inline-input" id="schedule-date" type="date" value="${localDateValue()}" aria-label="One-time run date" hidden />
                 <input class="setting-inline-input" id="schedule-time" type="time" value="09:00" />
               </div>
               <textarea class="settings-textarea" id="schedule-prompt" rows="3" placeholder="What should blank do when this runs?"></textarea>
@@ -2478,13 +2582,14 @@ Start writing, or ask the agent to draft it.
             <div class="schedule-list">
               ${schedules.length ? schedules.map((schedule) => {
                 const next = schedule.nextRunAt ? new Date(schedule.nextRunAt) : null;
-                const nextText = next && !Number.isNaN(next.getTime()) ? next.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Paused';
-                const cadence = schedule.cadence === 'hourly' ? `Every hour at :${String(schedule.time || '09:00').slice(3, 5)}` : schedule.cadence === 'weekdays' ? `Weekdays at ${schedule.time}` : `Every day at ${schedule.time}`;
+                const onceDone = schedule.cadence === 'once' && schedule.enabled === false && schedule.lastRunAt;
+                const nextText = next && !Number.isNaN(next.getTime()) ? next.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : onceDone ? 'done' : 'Paused';
+                const cadence = schedule.cadence === 'once' ? cadenceLabel(schedule) : schedule.cadence === 'hourly' ? `Every hour at :${String(schedule.time || '09:00').slice(3, 5)}` : schedule.cadence === 'weekdays' ? `Weekdays at ${schedule.time}` : `Every day at ${schedule.time}`;
                 const lastText = schedule.lastRunAt ? new Date(schedule.lastRunAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
                 return `<div class="schedule-row ${schedule.running ? 'running' : ''}" data-schedule-id="${U.attr(schedule.id)}">
                   <div class="schedule-copy">
                     <div class="schedule-head"><span class="schedule-title">${esc(schedule.title)}</span>${schedule.running ? '<span class="badge amber">Running</span>' : schedule.lastStatus === 'ok' ? '<span class="badge green">OK</span>' : schedule.lastStatus === 'error' ? '<span class="badge red">Error</span>' : ''}</div>
-                    <div class="schedule-meta"><span>${esc(cadence)}</span> · <span>${next ? `next ${esc(nextText)}` : 'Paused'}</span>${lastText ? ` · <span>last ${esc(lastText)}</span>` : ''}</div>
+                    <div class="schedule-meta"><span>${esc(cadence)}</span> · <span>${next ? `next ${esc(nextText)}` : onceDone ? 'done' : 'Paused'}</span>${lastText ? ` · <span>last ${esc(lastText)}</span>` : ''}</div>
                     <div class="schedule-prompt">${esc(U.truncate(schedule.prompt, 140))}</div>
                     ${schedule.lastError ? `<div class="schedule-error">${esc(U.truncate(schedule.lastError, 160))}</div>` : ''}
                   </div>
@@ -2532,12 +2637,13 @@ Start writing, or ask the agent to draft it.
               <div class="setting-row">
                 <div class="setting-copy">
                   <div class="setting-label">Confirmation level</div>
-                  <div class="setting-desc">Important only lets safe local work proceed. Every guarded action asks for each write, command, SSH call, MCP tool, screenshot and media job.</div>
+                  <div class="setting-desc">Important only lets safe local work proceed. Every guarded action asks for each write, command, SSH call, MCP tool, screenshot and media job. No approvals runs every action without asking.</div>
                 </div>
                 <div class="setting-control">
                   <select class="settings-select" id="approval-mode">
                     <option value="important" ${approvalMode === 'important' ? 'selected' : ''}>Important actions only</option>
                     <option value="all" ${approvalMode === 'all' ? 'selected' : ''}>Every guarded action</option>
+                    <option value="auto" ${approvalMode === 'auto' ? 'selected' : ''}>No approvals (auto-run)</option>
                   </select>
                 </div>
               </div>
@@ -2561,7 +2667,7 @@ Start writing, or ask the agent to draft it.
                 </div>`;
               }).join('')}
             </div>
-            <div class="settings-permission-note">${icon('shield', 12)} In Important only, “Ask first” still lets routine local work through. Blocked tools are removed from the model's tool list. Session approvals expire when the run ends.</div>
+            <div class="settings-permission-note">${icon('shield', 12)} In Important only, “Ask first” still lets routine local work through. No approvals skips every prompt, but Block overrides and machine-destroying commands still stop. Blocked tools are removed from the model's tool list. Session approvals expire when the run ends.</div>
           </section>
 
           <section class="settings-section" id="settings-search">
@@ -2606,7 +2712,7 @@ Start writing, or ask the agent to draft it.
             <p>Let the agent see your screen, click, type and scroll when a task needs a desktop app. Every action is still gated by Approvals.</p>
             <div class="settings-group">
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">Cursor overlay</div><div class="setting-desc">Draws a blue marker wherever the agent works. It is click-through, never takes focus, and hides itself after each action.</div></div>
+                <div class="setting-copy"><div class="setting-label">Cursor overlay</div><div class="setting-desc">The paper pet follows the cursor while the agent works. Click-through, never takes focus, and hides after each action.</div></div>
                 <div class="setting-control">${UI.switchHtml(computerCfg.showCursor !== false, 'data-computer-toggle="showCursor"')}</div>
               </div>
               <div class="setting-row">
@@ -2687,6 +2793,22 @@ Start writing, or ask the agent to draft it.
             </div>
           </section>
 
+          <section class="settings-section" id="settings-updates">
+            <h2>Updates</h2>
+            <p>blank updates itself from the official GitHub releases. Updates download in the background and install when you restart.</p>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <div class="setting-label">Automatic updates</div>
+                  <div class="setting-desc">Check at launch and every six hours, then download in the background.</div>
+                </div>
+                <div class="setting-control">${UI.switchHtml(updatesCfg.auto !== false, 'data-update-toggle')}</div>
+              </div>
+            </div>
+            ${updatePanelHtml(updates)}
+            <div class="settings-permission-note">${icon('shield', 12)} Downloads come only from github.com/purplemacaron/blank. The installer checksum is verified before blank offers to install it.</div>
+          </section>
+
           <section class="settings-section" id="settings-about">
             <h2>About</h2>
             <div class="card">
@@ -2749,6 +2871,78 @@ Start writing, or ask the agent to draft it.
           } catch {}
           const restore = previous === 'en' ? 'en' : previous === 'ko' ? 'ko' : (config.language === 'en' ? 'en' : 'ko');
           host.querySelectorAll('[data-language]').forEach((item) => item.classList.toggle('active', item.dataset.language === restore));
+          UI.toast(error.message, 'error');
+        }
+        return;
+      }
+      const font = event.target.closest('button[data-font]');
+      if (font) {
+        const value = ['noto', 'system', 'mono'].includes(font.dataset.font) ? font.dataset.font : 'noto';
+        host.querySelectorAll('button[data-font]').forEach((item) => item.classList.toggle('active', item === font));
+        try {
+          const updated = await API.config.update({ ui: { ...(config.ui || {}), font: value } });
+          applyConfig(updated);
+          if (window.App?.applyFont) App.applyFont(value);
+          UI.toast('Font updated.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      const updateToggle = event.target.closest('[data-update-toggle]');
+      if (updateToggle) {
+        const next = !updateToggle.classList.contains('on');
+        updateToggle.classList.toggle('on', next);
+        updateToggle.setAttribute('aria-checked', String(next));
+        try {
+          const updated = await API.config.update({ updates: { auto: next } });
+          applyConfig(updated);
+          UI.toast(next ? 'Automatic updates are on.' : 'Automatic updates are off.', 'success');
+        } catch (error) {
+          updateToggle.classList.toggle('on', !next);
+          updateToggle.setAttribute('aria-checked', String(!next));
+          UI.toast(error.message, 'error');
+        }
+        return;
+      }
+      const updateCheck = event.target.closest('[data-update-check]');
+      if (updateCheck) {
+        updateCheck.disabled = true;
+        try {
+          applyUpdateStatus(await API.updates.check());
+        } catch (error) {
+          UI.toast(error.message, 'error');
+          updateCheck.disabled = false;
+        }
+        return;
+      }
+      const updateInstall = event.target.closest('[data-update-install]');
+      if (updateInstall) {
+        updateInstall.disabled = true;
+        try {
+          applyUpdateStatus(await API.updates.install());
+        } catch (error) {
+          UI.toast(error.message, 'error');
+          updateInstall.disabled = false;
+        }
+        return;
+      }
+      const updateNotes = event.target.closest('[data-update-notes]');
+      if (updateNotes) {
+        API.app.openExternal('https://github.com/purplemacaron/blank/releases/latest')
+          .catch((error) => UI.toast(error.message, 'error'));
+        return;
+      }
+      const petToggle = event.target.closest('[data-pet-toggle]');
+      if (petToggle) {
+        const next = !petToggle.classList.contains('on');
+        petToggle.classList.toggle('on', next);
+        petToggle.setAttribute('aria-checked', String(next));
+        try {
+          const updated = await API.config.update({ pet: { enabled: next } });
+          applyConfig(updated);
+          UI.toast(next ? 'Desktop pets shown.' : 'Desktop pets hidden.', 'success');
+        } catch (error) {
+          petToggle.classList.toggle('on', !next);
+          petToggle.setAttribute('aria-checked', String(!next));
           UI.toast(error.message, 'error');
         }
         return;
@@ -2913,6 +3107,7 @@ Start writing, or ask the agent to draft it.
             title: host.querySelector('#schedule-title').value.trim() || 'Scheduled run',
             prompt,
             cadence: host.querySelector('#schedule-cadence').value,
+            date: host.querySelector('#schedule-date').value || '',
             time: host.querySelector('#schedule-time').value || '09:00',
             allowTools: host.querySelector('#schedule-tools').checked,
           });
@@ -3189,12 +3384,25 @@ Start writing, or ask the agent to draft it.
         applyDictationSuggestions(host, chosen?.models?.length ? chosen.models : ['whisper-1']);
         return;
       }
+      if (event.target && event.target.id === 'schedule-cadence') {
+        const date = host.querySelector('#schedule-date');
+        if (date) date.hidden = event.target.value !== 'once';
+        return;
+      }
       if (event.target && event.target.id === 'approval-mode') {
         try {
-          const mode = event.target.value === 'all' ? 'all' : 'important';
+          const value = event.target.value;
+          const mode = value === 'all' || value === 'auto' ? value : 'important';
           const updated = await API.config.update({ approvals: { mode } });
           applyConfig(updated);
-          UI.toast(mode === 'all' ? 'blank will ask before every guarded action.' : 'blank will ask only for important actions.', 'success');
+          UI.toast(
+            mode === 'auto'
+              ? 'No approvals. Every action runs until you switch back.'
+              : mode === 'all'
+                ? 'blank will ask before every guarded action.'
+                : 'blank will ask only for important actions.',
+            mode === 'auto' ? 'warn' : 'success',
+          );
         } catch (error) { UI.toast(error.message, 'error'); }
         return;
       }
@@ -3219,12 +3427,13 @@ Start writing, or ask the agent to draft it.
     vstate.host = host;
     host.innerHTML = pageLoading('Settings', 'Preferences, approvals and local data.');
     try {
-      const [config, storage, remote, schedules, dictationOptions] = await Promise.all([
+      const [config, storage, remote, schedules, dictationOptions, updates] = await Promise.all([
         API.config.get(),
         API.media.storage().catch(() => null),
         API.remote?.status ? API.remote.status().catch(() => null) : Promise.resolve(null),
         API.schedules?.list ? API.schedules.list().catch(() => null) : Promise.resolve(null),
         API.dictation?.options ? API.dictation.options().catch(() => null) : Promise.resolve(null),
+        API.updates?.status ? API.updates.status().catch(() => null) : Promise.resolve(null),
       ]);
       if (!alive(host, 'settings')) return;
       vstate.media.storage = storage || vstate.media.storage;
@@ -3232,6 +3441,7 @@ Start writing, or ask the agent to draft it.
       vstate.settings.schedules = schedules?.schedules || [];
       vstate.settings.ssh = config?.ssh || null;
       vstate.settings.dictationOptions = Array.isArray(dictationOptions?.providers) ? dictationOptions : null;
+      vstate.settings.updates = updates || null;
       applyConfig(config);
       paintSettings(host);
       if (vstate.settings.pending) {
@@ -5916,6 +6126,7 @@ Start writing, or ask the agent to draft it.
     openFilePreview,
     languageFor,
     openSettingsSection,
+    applyUpdateStatus,
     mediaCount,
   };
 })();

@@ -34,6 +34,12 @@ const api = {
     update: (patch) => invoke('config:update', patch),
   },
 
+  updates: {
+    status: () => invoke('updates:status'),
+    check: () => invoke('updates:check'),
+    install: () => invoke('updates:install'),
+  },
+
   models: {
     list: () => invoke('models:list'),
     setKey: (input) => invoke('providers:setKey', input),
@@ -45,6 +51,7 @@ const api = {
     test: (input) => invoke('providers:test', input),
     discover: (providerId) => invoke('providers:discover', { providerId }),
     discoverAll: () => invoke('models:discoverAll'),
+    reasoning: (input) => invoke('models:reasoning', input),
     addCustom: (input) => invoke('providers:addCustom', input),
     removeCustom: (providerId) => invoke('providers:removeCustom', providerId),
   },

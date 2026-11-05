@@ -44,6 +44,7 @@ node scripts/cdp-shot.js qa/shot.png
 - `electron/main.js` — window lifecycle, protocol handlers, permission policy, single-instance lock.
 - `electron/preload.js` — the only bridge exposed to the renderer as `window.API`.
 - `electron/ipc.js` — IPC handlers, config validation, run lifecycle, approval queues, remote service wiring.
+- `electron/updater.js` — electron-updater feed, background download and quit-to-install flow. Updates come from GitHub releases; the release assets must include `latest.yml` and the NSIS blockmap.
 - `src/core/agent.js` — model loop, tool dispatch, subagents, compaction, session persistence.
 - `src/core/tools.js` — tool specs, handlers, permission resolution.
 - `src/core/approvals.js` — risk classification for important-only confirmations.
@@ -108,5 +109,5 @@ node scripts/cdp-shot.js qa/shot.png
 3. Build the installer and verify the installed app plus `blank --version`.
 4. Commit with a focused message; do not commit secrets or generated output.
 5. Tag `vX.Y.Z`, push the tag and `main`.
-6. Wait for the installers and Pages workflows; verify the release assets and the live site.
+6. Wait for the installers and Pages workflows; verify the release assets, including `latest.yml` and the NSIS blockmap, and the live site.
 7. Report exactly what was verified and link the release and site.

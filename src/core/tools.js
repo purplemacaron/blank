@@ -1419,7 +1419,9 @@ function permissionFor(name, args, ctx) {
   if (!exactRisk && sessionAllows(name, ctx)) return { level: 'allow', reason: '' };
   if (configured === 'allow') return { level: 'allow', reason: '' };
 
-  const mode = ctx.config?.approvals?.mode === 'all' ? 'all' : 'important';
+  const configuredMode = ctx.config?.approvals?.mode;
+  const mode = configuredMode === 'auto' || configuredMode === 'all' ? configuredMode : 'important';
+  if (mode === 'auto') return { level: 'allow', reason: '' };
   if (mode === 'important' && risk?.level === 'allow') return { level: 'allow', reason: '' };
   return { level: 'ask', reason: risk?.reason || REASONS.policy };
 }

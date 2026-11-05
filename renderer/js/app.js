@@ -51,6 +51,8 @@
       expanded: new Set(),
       memory: [],
       mcpServers: [],
+      updates: null,
+      updateNotice: '',
       windowState: { maximized: false },
     },
   };
@@ -132,6 +134,12 @@
     document.documentElement.dataset.theme = resolvedTheme();
   }
 
+  function applyFont(font) {
+    const next = ['noto', 'system', 'mono'].includes(font) ? font : 'noto';
+    if (state.config?.ui) state.config.ui.font = next;
+    document.documentElement.dataset.font = next;
+  }
+
   function syncLanguage(config) {
     if (!config || !Object.prototype.hasOwnProperty.call(config, 'language')) return;
     const fromConfig = config.language === 'en' ? 'en' : 'ko';
@@ -184,14 +192,42 @@
     if (version) version.textContent = 'blank';
   }
 
+  function updatePetToggle() {
+    const button = $('pet-toggle');
+    if (!button) return;
+    const enabled = state.config?.pet?.enabled !== false;
+    button.classList.toggle('is-off', !enabled);
+    button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    button.title = enabled ? 'Hide desktop pets' : 'Show desktop pets';
+    button.setAttribute('aria-label', button.title);
+  }
+
+  async function togglePetEnabled() {
+    const next = state.config?.pet?.enabled === false;
+    const button = $('pet-toggle');
+    if (button) button.disabled = true;
+    try {
+      const config = await API.config.update({ pet: { enabled: next } });
+      if (config) setConfig(config);
+      updatePetToggle();
+      UI.toast(next ? 'Desktop pets shown.' : 'Desktop pets hidden.', 'success');
+    } catch (error) {
+      UI.toast(error.message, 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
   function setConfig(config, options = {}) {
     if (!config || typeof config !== 'object') return;
     state.config = { ...(state.config || {}), ...config };
     if (config.runtime) state.info = { ...(state.info || {}), ...config.runtime };
     syncLanguage(config);
     applyTheme(state.config.theme);
+    applyFont(state.config.ui?.font);
     refreshSidebarModel();
     updateRuntimePill();
+    updatePetToggle();
     updateWorkspaceChrome();
     if (window.ChatView?.onConfigChanged) ChatView.onConfigChanged();
     const railVisible = state.page === 'chat' && (isOverlayRail() ? state.railOverlay : state.railOpen);
@@ -202,6 +238,7 @@
 
   App.setConfig = setConfig;
   App.applyTheme = applyTheme;
+  App.applyFont = applyFont;
   App.refreshSidebarModel = refreshSidebarModel;
 
   function applyCatalog(data) {
@@ -1516,6 +1553,17 @@
       case 'paper:removed':
         refreshBadgesSoon();
         break;
+      case 'update:status': {
+        const status = event.status || null;
+        state.updates = status;
+        window.Views?.applyUpdateStatus?.(status);
+        const readyKey = status?.status === 'ready' ? String(status.version || status.current || '') : '';
+        if (readyKey && readyKey !== state.updateNotice) {
+          state.updateNotice = readyKey;
+          UI.toast(`blank ${readyKey} is ready to install. Open Settings → Updates.`, 'success', { timeout: 8000 });
+        }
+        break;
+      }
       case 'window:state':
         state.windowState = { maximized: Boolean(event.maximized), fullscreen: Boolean(event.fullscreen) };
         updateWindowControls();
@@ -1553,6 +1601,7 @@
     $('mobile-menu')?.addEventListener('click', toggleSidebar);
     $('mobile-scrim')?.addEventListener('click', closeMobilePanels);
     $('sidebar-model')?.addEventListener('click', () => openDefaultModelPicker($('sidebar-model')));
+    $('pet-toggle')?.addEventListener('click', togglePetEnabled);
 
     $('window-controls')?.addEventListener('click', (event) => {
       const button = event.target.closest('[data-win]');
@@ -1757,6 +1806,7 @@
     renderSessions();
     updateWorkspaceChrome();
     updateRuntimePill();
+    updatePetToggle();
     applyTheme(state.config?.theme || 'light');
     refreshSidebarModel();
     renderRail();

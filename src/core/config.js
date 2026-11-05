@@ -14,6 +14,7 @@ const DEFAULTS = {
   providers: {},
   customProviders: [],
   discoveredModels: {},
+  reasoningHints: {},
   permissions: {
     read_file: 'allow',
     list_dir: 'allow',
@@ -71,6 +72,7 @@ const DEFAULTS = {
     railOpen: true,
     sidebarOpen: true,
     density: 'comfy',
+    font: 'noto',
   },
   media: {
     keys: {},
@@ -91,6 +93,15 @@ const DEFAULTS = {
   },
   computer: {
     showCursor: true,
+  },
+  updates: {
+    auto: true,
+  },
+  pet: {
+    enabled: true,
+    x: null,
+    y: null,
+    positions: {},
   },
   remote: {
     port: 8787,
@@ -463,7 +474,7 @@ function publicConfig(config, catalog) {
     discoveredModels: config.discoveredModels,
     permissions: config.permissions,
     approvals: {
-      mode: config.approvals?.mode === 'all' ? 'all' : 'important',
+      mode: ['all', 'auto'].includes(config.approvals?.mode) ? config.approvals.mode : 'important',
     },
     agent: config.agent,
     dictation: {
@@ -485,6 +496,12 @@ function publicConfig(config, catalog) {
     search,
     computer: {
       showCursor: config.computer?.showCursor !== false,
+    },
+    updates: {
+      auto: config.updates?.auto !== false,
+    },
+    pet: {
+      enabled: config.pet?.enabled !== false,
     },
     remote: {
       port: Number(config.remote?.port) || 8787,

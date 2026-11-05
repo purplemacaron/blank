@@ -273,7 +273,7 @@
   function renderRelease(release) {
     state.release = release;
     setVersion(release);
-    setPill(release ? '최신 릴리스' : '아직 릴리스가 없습니다', release ? 'live' : 'warn');
+    setPill(release ? 'v' + versionLabel(release) + ' · 최신 릴리스' : '아직 릴리스가 없습니다', release ? 'live' : 'warn');
     state.assets = release ? pickAssets(release) : { windows: null, mac: null, macIntel: null, linux: null, all: [] };
     var recommendedAsset = state.assets[state.os] || null;
     if (recommendedAsset) {

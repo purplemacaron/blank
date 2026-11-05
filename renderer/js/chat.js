@@ -66,6 +66,29 @@
     return MODES[mode] || MODES.agent;
   }
 
+  /* Custom and local endpoints report their stages late (capability probe).
+     Share one request per model for the whole app session. */
+  const reasoningChecks = new Map();
+  function reasoningCheckable(model, profile) {
+    return Boolean(model && profile?.source === 'fallback'
+      && (String(model.providerId || '').startsWith('custom_')
+        || ['ollama', 'lmstudio'].includes(String(model.providerId || ''))));
+  }
+  function requestReasoningCheck(force = false) {
+    const model = U.modelOf(catalog(), currentModel());
+    const profile = model ? U.reasoningProfile(catalog(), model.fullId) : null;
+    if (!reasoningCheckable(model, profile)) return null;
+    if (!force && reasoningChecks.has(model.fullId)) return reasoningChecks.get(model.fullId);
+    const promise = API.models.reasoning({ model: model.fullId, force })
+      .then((result) => (result?.ok ? result.profile || null : null))
+      .catch(() => null);
+    reasoningChecks.set(model.fullId, promise);
+    promise.finally(() => {
+      setTimeout(() => { if (reasoningChecks.get(model.fullId) === promise) reasoningChecks.delete(model.fullId); }, 10 * 60 * 1000);
+    });
+    return promise;
+  }
+
   function assistantHead(modelId) {
     return `<div class="assistant-head">
       <span class="assistant-name">blank</span>
@@ -574,6 +597,17 @@
       reasoningButton.innerHTML = `${icon('brain', 13)}<span>${U.esc(label)}</span>${adjustable ? `<span class="ws-caret">${icon('chevron-updown', 10)}</span>` : ''}`;
       reasoningButton.title = profile ? `Reasoning · ${label}` : 'Reasoning · this model does not expose stages';
       reasoningButton.classList.toggle('active', adjustable && effort !== 'none');
+      if (profile?.source === 'fallback') requestReasoningCheck();
+    }
+    const approvalButton = document.getElementById('composer-approval');
+    if (approvalButton) {
+      const preset = approvalPreset();
+      const meta = APPROVAL_PRESETS[preset];
+      approvalButton.classList.toggle('is-auto', preset === 'auto');
+      approvalButton.classList.toggle('is-all', preset === 'all');
+      approvalButton.innerHTML = `${icon(meta.icon, 13)}<span class="approval-mode-label">${U.esc(meta.label)}</span>`;
+      approvalButton.title = meta.title;
+      approvalButton.setAttribute('aria-label', meta.title);
     }
     const modelButton = document.getElementById('composer-model');
     if (modelButton) {
@@ -597,13 +631,17 @@
       const perms = App.state.config?.permissions || {};
       const guarded = ['write_file', 'edit_file', 'run_command', 'ssh_run', 'mcp', 'computer_use', 'generate_media', 'edit_media']
         .filter((tool) => (perms[tool] || 'ask') !== 'allow');
-      const mode = App.state.config?.approvals?.mode === 'all' ? 'all' : 'important';
-      hint.innerHTML = !guarded.length
-        ? `${icon('shield', 11)}<span>Auto-approved by your policy</span>`
-        : mode === 'all'
-          ? `${icon('shield', 11)}<span>Asks before every guarded action</span>`
-          : `${icon('shield', 11)}<span>Asks only for important actions</span>`;
-      hint.classList.toggle('warn', guarded.length > 0 && mode === 'all');
+      const mode = ['all', 'auto'].includes(App.state.config?.approvals?.mode)
+        ? App.state.config.approvals.mode
+        : 'important';
+      hint.innerHTML = mode === 'auto'
+        ? `${icon('zap', 11)}<span>No approvals · every action runs</span>`
+        : !guarded.length
+          ? `${icon('shield', 11)}<span>Auto-approved by your policy</span>`
+          : mode === 'all'
+            ? `${icon('shield', 11)}<span>Asks before every guarded action</span>`
+            : `${icon('shield', 11)}<span>Asks only for important actions</span>`;
+      hint.classList.toggle('warn', mode === 'auto' || (guarded.length > 0 && mode === 'all'));
     }
     if (send) {
       if (Chat.running) {
@@ -634,7 +672,8 @@
     }
     const enterHint = document.getElementById('composer-enter-hint');
     if (enterHint) {
-      enterHint.innerHTML = `<kbd>Enter</kbd> ${Chat.running ? 'queue' : 'send'}`;
+      const sendKey = U.isMac ? '⌘ Enter' : 'Ctrl Enter';
+      enterHint.innerHTML = `<kbd>Enter</kbd> / <kbd>${sendKey}</kbd> ${Chat.running ? 'queue' : 'send'}`;
       window.__blankI18n?.translate?.(enterHint);
     }
     renderQueue();
@@ -1331,6 +1370,13 @@
 
   function handleComposerKeydown(event) {
     const input = event.target;
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      Chat.slashOpen = false;
+      document.querySelector('.slash-menu')?.remove();
+      sendOrStop();
+      return;
+    }
     if (Chat.slashOpen) {
       const query = activeSlashQuery() || '';
       const matches = COMMANDS.filter((command) => command.name.startsWith(query) || command.description.toLowerCase().includes(query));
@@ -1532,45 +1578,77 @@
     });
   }
 
+  const APPROVAL_PRESETS = {
+    important: { icon: 'shield', label: 'Important only', title: 'Approvals · important actions ask first' },
+    all: { icon: 'shield-alert', label: 'Ask for all', title: 'Approvals · every guarded action asks first' },
+    auto: { icon: 'zap', label: 'No approvals', title: 'Approvals · every action runs without asking' },
+  };
+
   function approvalPreset() {
-    return App.state.config?.approvals?.mode === 'all' ? 'all' : 'important';
+    const mode = App.state.config?.approvals?.mode;
+    return mode === 'all' || mode === 'auto' ? mode : 'important';
   }
 
   async function setApprovalPreset(preset) {
-    const mode = preset === 'all' ? 'all' : 'important';
+    const mode = preset === 'all' || preset === 'auto' ? preset : 'important';
     try {
       await API.config.update({ approvals: { mode } });
       if (App.state.config) App.state.config.approvals = { ...(App.state.config.approvals || {}), mode };
       updateComposer();
-      UI.toast(mode === 'all' ? 'blank will ask before every guarded action.' : 'blank will ask only for important actions.', 'success');
+      UI.toast(
+        mode === 'auto'
+          ? 'No approvals. Every action runs until you switch back.'
+          : mode === 'all'
+            ? 'blank will ask before every guarded action.'
+            : 'blank will ask only for important actions.',
+        mode === 'auto' ? 'warn' : 'success',
+      );
     } catch (error) { UI.toast(error.message, 'error'); }
+  }
+
+  function openApprovalPicker(anchor) {
+    if (!anchor) return;
+    const current = approvalPreset();
+    const content = document.createElement('div');
+    content.className = 'mode-picker approval-picker';
+    content.innerHTML = `<div class="mode-picker-head">Approvals</div>
+      <button class="mode-choice ${current === 'important' ? 'selected' : ''}" type="button" data-approval="important">
+        <span class="mode-choice-icon">${icon('shield', 15)}</span>
+        <span class="mode-choice-name">Important only<span class="mode-choice-hint">Routine work runs. Risky actions ask.</span></span>
+        ${current === 'important' ? `<span class="mode-choice-check">${icon('check', 13)}</span>` : ''}
+      </button>
+      <button class="mode-choice ${current === 'all' ? 'selected' : ''}" type="button" data-approval="all">
+        <span class="mode-choice-icon">${icon('shield-alert', 15)}</span>
+        <span class="mode-choice-name">Ask for all<span class="mode-choice-hint">Every guarded tool call asks first.</span></span>
+        ${current === 'all' ? `<span class="mode-choice-check">${icon('check', 13)}</span>` : ''}
+      </button>
+      <button class="mode-choice approval-auto ${current === 'auto' ? 'selected' : ''}" type="button" data-approval="auto">
+        <span class="mode-choice-icon">${icon('zap', 15)}</span>
+        <span class="mode-choice-name">No approvals<span class="mode-choice-hint">Every action runs until you switch back.</span></span>
+        ${current === 'auto' ? `<span class="mode-choice-check">${icon('check', 13)}</span>` : ''}
+      </button>
+      <div class="approval-picker-note">Blocks in Settings and machine-destroying commands still stop.</div>`;
+    const pop = UI.popover(anchor, content, { width: 276, align: 'end', placement: 'top' });
+    content.addEventListener('click', (event) => {
+      const choice = event.target.closest('[data-approval]');
+      if (!choice) return;
+      pop.close();
+      setApprovalPreset(choice.dataset.approval);
+    });
   }
 
   function openModePicker(anchor) {
     if (!anchor) return;
     const current = currentMode();
-    const approvals = approvalPreset();
     const content = document.createElement('div');
     content.className = 'mode-picker';
     content.innerHTML = `<div class="mode-picker-head">Mode</div>${Object.entries(MODES).map(([value, mode]) => `<button class="mode-choice ${value === current ? 'selected' : ''}" type="button" data-mode="${value}">
       <span class="mode-choice-icon">${icon(mode.icon, 15)}</span>
       <span class="mode-choice-name">${U.esc(mode.label)}</span>
       ${value === current ? `<span class="mode-choice-check">${icon('check', 13)}</span>` : ''}
-    </button>`).join('')}
-    <div class="mode-picker-sep"></div>
-    <div class="mode-picker-head">Approvals</div>
-    <div class="approval-preset">
-      <button class="approval-choice ${approvals === 'important' ? 'selected' : ''}" type="button" data-approval="important">${icon('check-circle', 13)}<span>Important only</span></button>
-      <button class="approval-choice ${approvals === 'all' ? 'selected' : ''}" type="button" data-approval="all">${icon('shield-alert', 13)}<span>Ask for all</span></button>
-    </div>`;
+    </button>`).join('')}`;
     const pop = UI.popover(anchor, content, { width: 208 });
     content.addEventListener('click', (event) => {
-      const approval = event.target.closest('[data-approval]');
-      if (approval) {
-        pop.close();
-        setApprovalPreset(approval.dataset.approval);
-        return;
-      }
       const button = event.target.closest('.mode-choice');
       if (!button) return;
       const mode = button.dataset.mode;
@@ -1589,30 +1667,44 @@
 
   function openReasoningPicker(anchor) {
     if (!anchor) return;
-    const profile = reasoningProfile();
-    if (!profile || profile.levels.length <= 1) {
-      const reason = !currentModel()
-        ? 'Choose a model first.'
-        : profile?.fixedLabel
-          ? 'This model always reasons; the stage is fixed.'
-          : 'This model does not expose reasoning stages.';
-      const note = document.createElement('div');
-      note.className = 'mode-picker';
-      note.innerHTML = `<div class="mode-picker-head">Reasoning</div><div class="mode-picker-note">${U.esc(reason)}</div>`;
-      UI.popover(anchor, note, { width: 232 });
-      return;
-    }
-    const current = currentReasoning();
+    let profile = reasoningProfile();
+    const model = U.modelOf(catalog(), currentModel());
+    const checkable = reasoningCheckable(model, profile);
     const content = document.createElement('div');
     content.className = 'mode-picker';
-    content.innerHTML = `<div class="mode-picker-head">Reasoning</div>${profile.levels.map((value) => {
-      const item = U.REASONING_LEVELS[value] || { label: value, hint: '' };
-      return `<button class="mode-choice ${value === current ? 'selected' : ''}" type="button" data-reasoning="${value}">
+    let checking = checkable;
+    let noteExtra = '';
+
+    function noteText() {
+      if (checking) return "Checking this endpoint's stages…";
+      if (noteExtra) return noteExtra;
+      return 'Only the stages this model supports.';
+    }
+
+    function render() {
+      if (!profile || profile.levels.length <= 1) {
+        const reason = !currentModel()
+          ? 'Choose a model first.'
+          : profile?.fixedLabel
+            ? 'This model always reasons; the stage is fixed.'
+            : 'This model does not expose reasoning stages.';
+        content.innerHTML = `<div class="mode-picker-head">Reasoning</div><div class="mode-picker-note">${U.esc(reason)}</div>
+          ${checkable ? `<div class="mode-picker-note">${U.esc(noteText())}</div>` : ''}`;
+        return;
+      }
+      const stored = Chat.session?.reasoningEffort || Chat.draftReasoning || App.state.config?.agent?.reasoningEffort || '';
+      const current = U.normalizeReasoning(profile, stored);
+      content.innerHTML = `<div class="mode-picker-head">Reasoning</div>${profile.levels.map((value) => {
+        const item = U.REASONING_LEVELS[value] || { label: value, hint: '' };
+        return `<button class="mode-choice ${value === current ? 'selected' : ''}" type="button" data-reasoning="${value}">
       <span class="mode-choice-icon">${icon(value === 'none' ? 'sparkles' : 'brain', 15)}</span>
       <span class="mode-choice-name">${U.esc(item.label)}<span class="mode-choice-hint">${U.esc(item.hint)}</span></span>
       ${value === current ? `<span class="mode-choice-check">${icon('check', 13)}</span>` : ''}
     </button>`;
-    }).join('')}<div class="mode-picker-note">Only the stages this model supports.</div>`;
+      }).join('')}<div class="mode-picker-note">${U.esc(noteText())}</div>`;
+    }
+
+    render();
     const pop = UI.popover(anchor, content, { width: 232 });
     content.addEventListener('click', (event) => {
       const button = event.target.closest('[data-reasoning]');
@@ -1629,6 +1721,22 @@
       renderHead();
       UI.toast(`Reasoning: ${U.reasoningLabel(profile, value)}`, 'success');
     });
+
+    if (checkable) {
+      requestReasoningCheck().then((fresh) => {
+        checking = false;
+        if (fresh) profile = fresh;
+        else noteExtra = 'This endpoint did not report its stages; showing the standard set.';
+        if (!content.isConnected) return;
+        render();
+        pop.reposition();
+        updateComposer();
+      }).catch(() => {
+        checking = false;
+        noteExtra = 'Could not check this endpoint; showing the standard set.';
+        if (content.isConnected) { render(); pop.reposition(); }
+      });
+    }
   }
 
   /* ----------------------------------------------------------------- session */
@@ -2012,6 +2120,7 @@
                 <span class="spacer"></span>
                 <button class="context-chip" id="composer-context" type="button" data-action="usage" title="Context usage" aria-label="Context usage"></button>
                 <button class="composer-tool composer-dictate" id="composer-dictate" type="button" data-action="dictate" title="Dictate with your voice" aria-label="Dictate with your voice">${icon('mic', 15)}</button>
+                <button class="composer-tool composer-approval" id="composer-approval" type="button" data-action="pick-approvals" title="Approvals">${icon('shield', 13)}<span class="approval-mode-label">Important only</span></button>
                 <button class="stop-btn" id="composer-stop" type="button" data-action="stop-run" title="Stop run" hidden>${icon('stop', 12)}</button>
                 <button class="send-btn" id="composer-send" type="button" data-action="send" disabled title="Send">${icon('arrow-up', 15)}</button>
               </div>
@@ -2019,7 +2128,7 @@
             <div class="composer-hints">
               <div class="hints-left">
                 <span class="approval-hint" id="composer-approval-hint"></span>
-                <span class="hint-item" id="composer-enter-hint"><kbd>Enter</kbd> send</span>
+                <span class="hint-item" id="composer-enter-hint"><kbd>Enter</kbd> / <kbd>${U.isMac ? '⌘ Enter' : 'Ctrl Enter'}</kbd> send</span>
                 <span class="hint-item"><kbd>Shift Enter</kbd> newline</span>
               </div>
               <span class="hint-item"><kbd>/</kbd> commands</span>
@@ -2082,6 +2191,7 @@
       }
       if (action === 'pick-model') { openModelPicker(actionNode); return; }
       if (action === 'pick-mode') { openModePicker(actionNode); return; }
+      if (action === 'pick-approvals') { openApprovalPicker(actionNode); return; }
       if (action === 'pick-reasoning') { openReasoningPicker(actionNode); return; }
       if (action === 'usage') { openUsagePanel(actionNode); return; }
       if (action === 'session-menu' || action === 'open-session-menu') { openSessionMenu(actionNode); return; }

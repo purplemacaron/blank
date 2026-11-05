@@ -41,6 +41,9 @@ jobs:
             dist/*.exe
             dist/*.dmg
             dist/*.AppImage
+            dist/latest.yml
+            dist/latest-linux.yml
+            dist/*.exe.blockmap
           if-no-files-found: error
           retention-days: 5
 

@@ -224,10 +224,12 @@
     low: { label: 'Low', hint: 'Fast, shallow' },
     medium: { label: 'Medium', hint: 'Balanced' },
     high: { label: 'High', hint: 'Deeper, slower' },
-    xhigh: { label: 'Max', hint: 'Very deep thinking' },
-    max: { label: 'Ultra', hint: 'Maximum effort and cost' },
+    xhigh: { label: 'xHigh', hint: 'Very deep thinking' },
+    max: { label: 'Max', hint: 'Maximum reasoning' },
+    ultra: { label: 'Ultra', hint: 'Highest effort and cost' },
   };
-  const REASONING_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+  const REASONING_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+  const REASONING_FULL = ['none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 
   function reasoningFallback(fullId) {
     const value = String(fullId || '');
@@ -237,13 +239,19 @@
     const id = value.slice(slash + 1).toLowerCase();
     if (!id) return null;
     if (/gpt-oss|gpt_oss/.test(id)) {
-      return { levels: ['low', 'medium', 'high'], default: 'medium', transport: 'openai-effort', fixed: false };
+      return { levels: ['low', 'medium', 'high'], default: 'medium', transport: 'openai-effort', fixed: false, source: providerId.startsWith('custom_') ? 'fallback' : 'model' };
     }
     if (/qwen3|qwq|deepseek-r1|reasoner|thinking/.test(id)) {
-      return { levels: [], default: '', transport: 'none', fixed: true, fixedLabel: 'Always on' };
+      return { levels: [], default: '', transport: 'none', fixed: true, fixedLabel: 'Always on', source: providerId.startsWith('custom_') ? 'fallback' : 'model' };
     }
-    if (providerId === 'ollama' || providerId === 'lmstudio' || providerId.startsWith('custom_')) {
-      return { levels: ['none'], default: 'none', transport: 'none', fixed: true };
+    if (providerId.startsWith('custom_')) {
+      return { levels: ['low', 'medium', 'high'], default: 'medium', transport: 'openai-effort', fixed: false, source: 'fallback' };
+    }
+    if (/^(deepseek-v|deepseek-chat-v)/.test(id)) {
+      return { levels: REASONING_FULL, default: 'medium', transport: 'openai-effort', fixed: false, source: 'model' };
+    }
+    if (providerId === 'ollama' || providerId === 'lmstudio') {
+      return { levels: ['none'], default: 'none', transport: 'none', fixed: true, source: 'model' };
     }
     return null;
   }

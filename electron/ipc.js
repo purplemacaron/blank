@@ -17,6 +17,9 @@ const search = require('../src/core/search');
 const computer = require('../src/core/computer');
 const { createRemoteService } = require('../src/core/remote');
 const { createComputerOverlay } = require('./computer-overlay');
+const { createPet } = require('./pet');
+const { petPalette } = require('./pet-palette');
+const { createUpdater } = require('./updater');
 const plugins = require('../src/core/plugins');
 const schedulesModule = require('../src/core/schedules');
 const oauthModule = require('../src/core/oauth');
@@ -67,6 +70,131 @@ function registerIpc({ mcp, getWindow }) {
 
   const broadcast = (payload) => {
     for (const win of BrowserWindow.getAllWindows()) sendEvent(win, payload);
+  };
+
+  const updater = createUpdater();
+  updater.configure({
+    auto: configModule.loadConfig().updates?.auto !== false,
+    onState: (status, previous) => {
+      broadcast({ type: 'update:status', status });
+      if (status.status === 'ready' && previous !== 'ready') {
+        notifications.notify({
+          title: `blank ${status.version || ''}`.trim(),
+          body: 'An update is ready. Open Settings → Updates to install it.',
+          key: `update:${status.version || status.current}`,
+        });
+      }
+    },
+  });
+  updater.start();
+
+  const petModels = () => {
+    try {
+      const sessions = store.listSessions()
+        .slice()
+        .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+      const models = [];
+      for (const session of sessions) {
+        const id = String(session.model || '').trim();
+        if (!id || models.includes(id)) continue;
+        models.push(id);
+        if (models.length >= 6) break;
+      }
+      return models;
+    } catch {
+      return [];
+    }
+  };
+
+  const pet = createPet({
+    getConfig: () => configModule.loadConfig(),
+    getWindow: () => getWindow(),
+    getModels: petModels,
+    savePosition: (key, point, isPrimary) => {
+      const config = configModule.loadConfig();
+      const current = config.pet && typeof config.pet === 'object' ? config.pet : {};
+      const positions = { ...(current.positions && typeof current.positions === 'object' ? current.positions : {}) };
+      positions[key] = { x: point.x, y: point.y };
+      config.pet = { ...current, positions };
+      if (isPrimary) {
+        config.pet.x = point.x;
+        config.pet.y = point.y;
+      }
+      configModule.saveConfig(config);
+    },
+  });
+  setImmediate(() => {
+    try { pet.sync(); } catch {}
+  });
+
+  const sendPet = (payload) => {
+    try { pet.send(payload); } catch {}
+  };
+
+  /** The pets only need the shape of a run, never transcript or tool payloads. */
+  const sendPetEvent = (payload = {}) => {
+    const common = { runId: payload.runId, sessionId: payload.sessionId };
+    switch (payload.type) {
+      case 'run:start':
+        sendPet({ type: 'run:start', ...common, model: payload.model });
+        break;
+      case 'tool:start':
+        sendPet({ type: 'tool:start', ...common, name: payload.name });
+        break;
+      case 'tool:end':
+        sendPet({ type: 'tool:end', ...common, name: payload.name });
+        break;
+      case 'agent:start': {
+        const agent = payload.agent && typeof payload.agent === 'object' ? payload.agent : {};
+        if (agent.team) {
+          pet.sendTeam(
+            { id: agent.memberId, name: agent.name, teamName: 'blank Team', model: agent.model, runId: payload.runId },
+            { type: 'agent:start', ...common, team: true, name: agent.name, model: agent.model },
+            { ensure: true },
+          );
+        }
+        sendPet({ type: 'agent:start', ...common });
+        break;
+      }
+      case 'agent:end': {
+        const agent = payload.agent && typeof payload.agent === 'object' ? payload.agent : {};
+        if (agent.team) {
+          pet.sendTeam(
+            { id: agent.memberId, name: agent.name, teamName: 'blank Team', model: agent.model, runId: payload.runId },
+            {
+              type: 'run:done',
+              ...common,
+              outcome: agent.status === 'error' ? { ok: false, error: true } : { ok: true },
+            },
+            { retire: 6500 },
+          );
+        }
+        break;
+      }
+      case 'approval':
+        sendPet({ type: 'approval', ...common, approvalId: payload.approvalId });
+        break;
+      case 'approval:resolved':
+        sendPet({ type: 'approval:resolved', ...common, approvalId: payload.approvalId, decision: payload.decision });
+        break;
+      case 'approval:expired':
+        sendPet({ type: 'approval:expired', ...common, approvalId: payload.approvalId });
+        break;
+      case 'error':
+        sendPet({ type: 'error', ...common });
+        break;
+      case 'run:done': {
+        const outcome = payload.outcome || {};
+        sendPet({
+          type: 'run:done',
+          ...common,
+          outcome: { ok: Boolean(outcome.ok), stopped: Boolean(outcome.stopped), error: Boolean(outcome.error) },
+        });
+        break;
+      }
+      default:
+        break;
+    }
   };
 
   let mediaModule = null;
@@ -149,6 +277,7 @@ function registerIpc({ mcp, getWindow }) {
   const remote = createRemoteService();
   const overlay = createComputerOverlay({
     isEnabled: () => configModule.loadConfig().computer?.showCursor !== false,
+    isPetEnabled: () => configModule.loadConfig().pet?.enabled !== false,
   });
   computer.onActivity((activity) => overlay.flash(activity));
 
@@ -181,6 +310,7 @@ function registerIpc({ mcp, getWindow }) {
     };
     sendEvent(approval.win, payload);
     if (getWindow() && getWindow() !== approval.win) sendEvent(getWindow(), payload);
+    sendPetEvent(payload);
     return { ok: true };
   }
 
@@ -230,7 +360,9 @@ function registerIpc({ mcp, getWindow }) {
         clearTimeout(approval.timer);
         approval.resolve('deny');
         state.approvals.delete(id);
-        sendEvent(approval.win, { type: 'approval:expired', approvalId: id, sessionId: approval.sessionId, runId: approval.runId });
+        const expired = { type: 'approval:expired', approvalId: id, sessionId: approval.sessionId, runId: approval.runId };
+        sendEvent(approval.win, expired);
+        sendPetEvent(expired);
       }
     }
   }
@@ -293,8 +425,12 @@ function registerIpc({ mcp, getWindow }) {
 
   require('electron').ipcMain.handle('config:get', async () => configWithRuntime(configModule.loadConfig()));
 
+  require('electron').ipcMain.handle('updates:status', async () => updater.status());
+  require('electron').ipcMain.handle('updates:check', async () => updater.check());
+  require('electron').ipcMain.handle('updates:install', async () => updater.install());
+
   require('electron').ipcMain.handle('config:update', async (_event, patch = {}) => {
-    const allowed = ['defaultModel', 'fallbackModel', 'theme', 'language', 'onboarded', 'agent', 'ui', 'customInstructions', 'disabledSkills', 'media', 'permissions', 'approvals', 'search', 'computer', 'team', 'notifications', 'dictation'];
+    const allowed = ['defaultModel', 'fallbackModel', 'theme', 'language', 'onboarded', 'agent', 'ui', 'customInstructions', 'disabledSkills', 'media', 'permissions', 'approvals', 'search', 'computer', 'pet', 'team', 'notifications', 'dictation', 'updates'];
     const clean = {};
     for (const key of allowed) {
       if (patch[key] === undefined) continue;
@@ -314,8 +450,37 @@ function registerIpc({ mcp, getWindow }) {
     if (clean.computer) {
       clean.computer = { showCursor: clean.computer.showCursor !== false };
     }
+    if (clean.pet) {
+      const incoming = clean.pet && typeof clean.pet === 'object' ? clean.pet : {};
+      const current = configModule.loadConfig().pet || {};
+      const coord = (value, fallback) => {
+        if (value === null) return null;
+        if (value === undefined) return Number.isFinite(fallback) ? fallback : null;
+        const number = Number(value);
+        if (!Number.isFinite(number)) return Number.isFinite(fallback) ? fallback : null;
+        return Math.max(-100000, Math.min(100000, Math.round(number)));
+      };
+      const positions = {};
+      const source = incoming.positions !== undefined ? incoming.positions : current.positions;
+      if (source && typeof source === 'object') {
+        for (const [key, value] of Object.entries(source).slice(0, 24)) {
+          if (typeof key !== 'string' || !key || key.length > 160) continue;
+          const x = coord(value?.x, null);
+          const y = coord(value?.y, null);
+          if (x === null || y === null) continue;
+          positions[key] = { x, y };
+        }
+      }
+      clean.pet = {
+        enabled: incoming.enabled === undefined ? current.enabled !== false : Boolean(incoming.enabled),
+        x: coord(incoming.x, current.x),
+        y: coord(incoming.y, current.y),
+        positions,
+      };
+    }
     if (clean.approvals) {
-      clean.approvals = { mode: clean.approvals.mode === 'all' ? 'all' : 'important' };
+      const mode = clean.approvals.mode;
+      clean.approvals = { mode: mode === 'all' || mode === 'auto' ? mode : 'important' };
     }
     if (clean.defaultModel) {
       if (!catalog.findModel(clean.defaultModel, configModule.loadConfig())) throw new Error('Unknown model.');
@@ -325,6 +490,16 @@ function registerIpc({ mcp, getWindow }) {
     }
     if (clean.theme && !['light', 'dark', 'system'].includes(clean.theme)) delete clean.theme;
     if (clean.language && !['ko', 'en'].includes(clean.language)) delete clean.language;
+    if (clean.ui) {
+      const incoming = clean.ui && typeof clean.ui === 'object' ? clean.ui : {};
+      const current = configModule.loadConfig().ui || {};
+      const next = { ...current, ...incoming };
+      if (incoming.railOpen !== undefined) next.railOpen = Boolean(incoming.railOpen);
+      if (incoming.sidebarOpen !== undefined) next.sidebarOpen = Boolean(incoming.sidebarOpen);
+      if (incoming.density !== undefined) next.density = ['comfy', 'compact'].includes(incoming.density) ? incoming.density : current.density;
+      if (incoming.font !== undefined) next.font = ['noto', 'system', 'mono'].includes(incoming.font) ? incoming.font : 'noto';
+      clean.ui = next;
+    }
     if (clean.team) {
       const team = clean.team && typeof clean.team === 'object' ? clean.team : {};
       const next = { enabled: Boolean(team.enabled) };
@@ -393,6 +568,13 @@ function registerIpc({ mcp, getWindow }) {
         schedules: incoming.schedules === undefined ? current.schedules !== false : Boolean(incoming.schedules),
       };
     }
+    if (clean.updates) {
+      const incoming = clean.updates && typeof clean.updates === 'object' ? clean.updates : {};
+      const current = configModule.loadConfig().updates || {};
+      clean.updates = {
+        auto: incoming.auto === undefined ? current.auto !== false : Boolean(incoming.auto),
+      };
+    }
     if (clean.permissions) {
       const levels = ['allow', 'ask', 'deny'];
       const safe = {};
@@ -403,8 +585,133 @@ function registerIpc({ mcp, getWindow }) {
     }
     const next = configModule.patchConfig(clean);
     if (clean.theme) nativeTheme.themeSource = clean.theme;
+    if (clean.pet) pet.sync();
+    if (clean.updates) updater.configure({ auto: next.updates?.auto !== false });
     broadcast({ type: 'config:updated' });
     return configWithRuntime(next);
+  });
+
+  /* ------------------------------------------------------------------- pet */
+
+  const fromPet = (event) => pet.identify(event.sender);
+
+  ipcMainHandle('pet:init', async (event) => {
+    const entry = fromPet(event);
+    if (!entry) throw new Error('Only a desktop pet can call this.');
+    const config = configModule.loadConfig();
+    const theme = config.theme === 'dark' ? 'dark' : 'light';
+    const model = String(entry.model || '').trim();
+    let modelName = model;
+    let providerName = '';
+    if (model) {
+      try {
+        let found = catalog.findModel(model, config);
+        if (!found) {
+          const bare = model.includes('/') ? model.slice(model.indexOf('/') + 1) : model;
+          found = catalog.allModels(config).find(
+            (item) => item.fullId === model || item.id === model || item.id === bare,
+          ) || null;
+        }
+        if (found) {
+          modelName = found.name || model;
+          providerName = found.providerName || '';
+        }
+      } catch {}
+    }
+    return {
+      language: config.language === 'en' ? 'en' : 'ko',
+      theme,
+      enabled: config.pet?.enabled !== false,
+      position: pet.position(entry.key),
+      key: entry.key,
+      kind: entry.kind,
+      model,
+      modelName,
+      providerName,
+      name: entry.name,
+      teamName: entry.teamName || '',
+      palette: petPalette(entry.model, theme),
+    };
+  });
+
+  ipcMainHandle('pet:palette', async (event, model, theme) => {
+    if (!fromPet(event)) throw new Error('Only a desktop pet can call this.');
+    return petPalette(String(model || '').slice(0, 200), theme === 'dark' ? 'dark' : 'light');
+  });
+
+  ipcMainHandle('pet:focus', async (event, value) => {
+    const entry = fromPet(event);
+    if (!entry) throw new Error('Only a desktop pet can call this.');
+    return pet.focus(entry.key, Boolean(value));
+  });
+
+  ipcMainHandle('pet:prompt', async (event, raw) => {
+    const entry = fromPet(event);
+    if (!entry) throw new Error('Only a desktop pet can call this.');
+    const text = String(raw || '').replace(/\r/g, '').trim().slice(0, 4000);
+    if (!text) throw new Error('Instruction is empty.');
+    const config = configModule.loadConfig();
+    const model = entry.model || config.defaultModel;
+    if (!model || !catalog.findModel(model, config)) {
+      return { ok: false, code: 'no-model' };
+    }
+    const main = getWindow();
+    try {
+      const result = startChatRun({
+        win: main || event.sender,
+        input: { text, model },
+        source: 'pet',
+      });
+      return { ok: true, sessionId: result.sessionId, runId: result.runId, title: result.title };
+    } catch {
+      return { ok: false, code: 'failed' };
+    }
+  });
+
+  ipcMainHandle('pet:position', async (event) => {
+    const entry = fromPet(event);
+    if (!entry) throw new Error('Only a desktop pet can call this.');
+    return pet.position(entry.key);
+  });
+
+  ipcMainHandle('pet:move', async (event, point = {}) => {
+    const entry = fromPet(event);
+    if (!entry) throw new Error('Only a desktop pet can call this.');
+    return pet.move(entry.key, point);
+  });
+
+  ipcMainHandle('pet:save', async (event, point = {}) => {
+    const entry = fromPet(event);
+    if (!entry) throw new Error('Only a desktop pet can call this.');
+    return pet.save(entry.key, point);
+  });
+
+  ipcMainHandle('pet:reset', async (event) => {
+    const entry = fromPet(event);
+    if (!entry) throw new Error('Only a desktop pet can call this.');
+    return pet.reset(entry.key);
+  });
+
+  ipcMainHandle('pet:interactive', async (event, value) => {
+    const entry = fromPet(event);
+    if (!entry) throw new Error('Only a desktop pet can call this.');
+    pet.setInteractive(entry.key, Boolean(value));
+    return true;
+  });
+
+  ipcMainHandle('pet:open', async (event) => {
+    if (!fromPet(event)) throw new Error('Only a desktop pet can call this.');
+    return pet.openApp();
+  });
+
+  ipcMainHandle('pet:hide', async (event) => {
+    if (!fromPet(event)) throw new Error('Only a desktop pet can call this.');
+    const config = configModule.loadConfig();
+    config.pet = { ...(config.pet || {}), enabled: false };
+    configModule.saveConfig(config);
+    pet.sync();
+    broadcast({ type: 'config:updated' });
+    return { ok: true };
   });
 
   require('electron').ipcMain.handle('config:openDataFolder', async () => {
@@ -473,12 +780,17 @@ function registerIpc({ mcp, getWindow }) {
     const provider = catalog.getProvider(providerId, config);
     if (!provider) throw new Error('Unknown provider.');
     const models = await providers.listModels({ providerId, config });
-    const entries = models.slice(0, 300).map((model) => ({
-      id: String(model.id),
-      name: String(model.name || model.id),
-      context: Number(model.context) || 128000,
-      tags: [],
-    }));
+    const entries = models.slice(0, 300).map((model) => {
+      const entry = {
+        id: String(model.id),
+        name: String(model.name || model.id),
+        context: Number(model.context) || 128000,
+        tags: [],
+      };
+      if (model.reasoningHint) entry.reasoningHint = model.reasoningHint;
+      if (typeof model.vision === 'boolean') entry.vision = model.vision;
+      return entry;
+    });
     config.discoveredModels = config.discoveredModels || {};
     config.discoveredModels[providerId] = entries;
     return entries;
@@ -501,6 +813,38 @@ function registerIpc({ mcp, getWindow }) {
     configModule.saveConfig(config);
     broadcast({ type: 'config:updated' });
     return { ok: true, results };
+  });
+
+  require('electron').ipcMain.handle('models:reasoning', async (_event, input = {}) => {
+    const config = configModule.loadConfig();
+    const fullId = String(input.model || input.fullId || '');
+    const resolved = catalog.findModel(fullId, config);
+    if (!resolved) return { ok: false, error: 'Unknown model.' };
+    const provider = catalog.getProvider(resolved.providerId, config);
+    const probeable = provider && provider.protocol === 'openai'
+      && (String(provider.id).startsWith('custom_') || ['ollama', 'lmstudio'].includes(provider.id));
+    if (!probeable) return { ok: true, profile: resolved.reasoning, cached: true };
+    const cached = config.reasoningHints?.[fullId];
+    const age = Date.now() - Date.parse(cached?.checkedAt || 0);
+    if (!input.force && cached && age < 7 * 24 * 60 * 60 * 1000) {
+      return { ok: true, profile: resolved.reasoning, cached: true };
+    }
+    try {
+      const hint = await providers.probeModelReasoning({
+        providerId: resolved.providerId,
+        modelId: resolved.modelId || fullId.slice(resolved.providerId.length + 1),
+        config,
+      });
+      if (!hint) return { ok: true, profile: resolved.reasoning, cached: false, unknown: true };
+      config.reasoningHints = config.reasoningHints || {};
+      config.reasoningHints[fullId] = hint;
+      configModule.saveConfig(config);
+      broadcast({ type: 'config:updated' });
+      const fresh = catalog.findModel(fullId, config);
+      return { ok: true, profile: fresh?.reasoning || resolved.reasoning, cached: false };
+    } catch (error) {
+      return { ok: false, error: error.message, profile: resolved.reasoning };
+    }
   });
 
   require('electron').ipcMain.handle('providers:setKey', async (_event, input = {}) => {
@@ -909,7 +1253,7 @@ function registerIpc({ mcp, getWindow }) {
     const runId = uid('run_');
     const controller = new AbortController();
     const model = catalog.findModel(session.model || config.defaultModel, config);
-    try { computer.setActor(model?.name || model?.id || ''); } catch {}
+    try { computer.setActor(model?.id || model?.name || ''); } catch {}
     state.runs.set(runId, { controller, win, sessionId: session.id });
     state.sessionRuns.set(session.id, runId);
 
@@ -918,6 +1262,7 @@ function registerIpc({ mcp, getWindow }) {
       sendEvent(win, enriched);
       const main = getWindow();
       if (main && main !== win) sendEvent(main, enriched);
+      sendPetEvent(enriched);
       remote.publish(enriched);
     };
 
@@ -929,6 +1274,7 @@ function registerIpc({ mcp, getWindow }) {
         sendEvent(win, expired);
         const main = getWindow();
         if (main && main !== win) sendEvent(main, expired);
+        sendPetEvent(expired);
         resolve('deny');
       }, 300000);
       state.approvals.set(approvalId, {
@@ -956,6 +1302,7 @@ function registerIpc({ mcp, getWindow }) {
       sendEvent(win, payload);
       const main = getWindow();
       if (main && main !== win) sendEvent(main, payload);
+      sendPetEvent(payload);
       remote.publish({ ...payload, type: 'tool:start', summary: payload.summary });
       notifications.approval({ label: payload.label, summary: payload.summary, sessionId: session.id });
     });
@@ -2159,7 +2506,7 @@ ${commands}
       reasoningEffort: schedule.reasoningEffort,
     });
     const scheduleModel = catalog.findModel(model, config);
-    try { computer.setActor(scheduleModel?.name || scheduleModel?.id || ''); } catch {}
+    try { computer.setActor(scheduleModel?.id || scheduleModel?.name || ''); } catch {}
     session.title = schedule.title;
     session.titleSource = 'manual';
     const message = { id: uid('msg_'), role: 'user', content: schedule.prompt, at: new Date().toISOString(), source: 'schedule' };
@@ -2303,6 +2650,7 @@ ${commands}
 
   function dispose() {
     state.disposed = true;
+    try { updater.dispose(); } catch {}
     stopTerminal();
     if (state.scheduleTimer) clearInterval(state.scheduleTimer);
     for (const run of state.scheduleRuns.values()) {
@@ -2316,6 +2664,7 @@ ${commands}
     state.sessionRuns.clear();
     state.queues.clear();
     try { remote.stop(); } catch {}
+    try { pet.dispose(); } catch {}
     try { overlay.dispose(); } catch {}
     try { computer.onActivity(null); } catch {}
     for (const job of getMedia().listJobs()) {

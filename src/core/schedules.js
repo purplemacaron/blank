@@ -3,7 +3,7 @@
 const { appPaths, readJSON, writeJSON, uid } = require('./paths');
 const { isEffort } = require('./reasoning');
 
-const CADENCES = ['interval', 'hourly', 'daily', 'weekdays'];
+const CADENCES = ['interval', 'hourly', 'daily', 'weekdays', 'once'];
 const MODES = ['agent', 'coding', 'design', 'plan', 'ask'];
 const HISTORY_LIMIT = 12;
 
@@ -17,11 +17,28 @@ function parseTime(value) {
   return { hours: Number(match[1]), minutes: Number(match[2]) };
 }
 
+function localDate(now = new Date()) {
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+function onceTarget(schedule) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(schedule.date || ''));
+  if (!match) return null;
+  const { hours, minutes } = parseTime(schedule.time);
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), hours, minutes, 0, 0);
+}
+
 function computeNext(schedule, from = new Date()) {
   const { hours, minutes } = parseTime(schedule.time);
   const base = from instanceof Date ? from : new Date(from);
   const next = new Date(base.getTime());
   next.setSeconds(0, 0);
+  if (schedule.cadence === 'once') {
+    const target = onceTarget(schedule);
+    if (!target || Number.isNaN(target.getTime()) || target.getTime() <= base.getTime()) return '';
+    return target.toISOString();
+  }
   if (schedule.cadence === 'interval') {
     const every = Math.max(5, Math.min(1440, Number(schedule.everyMinutes) || 30));
     return new Date(base.getTime() + every * 60_000).toISOString();
@@ -52,6 +69,9 @@ function sanitize(input, existing = {}, now = new Date()) {
     title: String(input.title ?? existing.title ?? '').trim().slice(0, 80) || 'Scheduled run',
     prompt: String(input.prompt ?? existing.prompt ?? '').trim().slice(0, 4000),
     cadence,
+    date: /^\d{4}-\d{2}-\d{2}$/.test(String(input.date ?? existing.date ?? ''))
+      ? String(input.date ?? existing.date)
+      : cadence === 'once' ? localDate(now) : '',
     time: /^([01]?\d|2[0-3]):([0-5]\d)$/.test(String(input.time ?? existing.time ?? '')) ? String(input.time ?? existing.time) : existing.time || '09:00',
     everyMinutes: Math.max(5, Math.min(1440, Number(input.everyMinutes ?? existing.everyMinutes) || 30)),
     enabled: input.enabled === undefined ? existing.enabled !== false : Boolean(input.enabled),
@@ -73,6 +93,9 @@ function sanitize(input, existing = {}, now = new Date()) {
   };
   if (!schedule.prompt) throw new Error('A prompt is required for a scheduled run.');
   schedule.nextRunAt = schedule.enabled ? computeNext(schedule, now) : '';
+  if (cadence === 'once' && schedule.enabled && !schedule.nextRunAt) {
+    throw new Error('Pick a future date and time for a one-time run.');
+  }
   return schedule;
 }
 
@@ -136,7 +159,12 @@ function markRun(id, patch = {}) {
     ].slice(0, HISTORY_LIMIT);
   }
   schedule.runCount = (Number(schedule.runCount) || 0) + (patch.status && patch.status !== 'running' ? 1 : 0);
-  schedule.nextRunAt = schedule.enabled ? computeNext(schedule, new Date()) : '';
+  if (schedule.cadence === 'once' && patch.status) {
+    schedule.enabled = false;
+    schedule.nextRunAt = '';
+  } else {
+    schedule.nextRunAt = schedule.enabled ? computeNext(schedule, new Date()) : '';
+  }
   saveSchedules(list);
   return schedule;
 }

@@ -6,8 +6,9 @@
  */
 
 const { BrowserWindow, screen } = require('electron');
+const { petPalette } = require('./pet-palette');
 
-const SIZE = 210;
+const SIZE = 160;
 const LABELS = {
   move: 'Cursor',
   click: 'Click',
@@ -31,48 +32,57 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8">
   .cross{position:absolute;left:50%;top:50%;width:54px;height:1px;margin:0 0 0 -27px;background:linear-gradient(90deg,transparent,rgba(47,107,255,.55),transparent);opacity:0}
   .cross.v{width:1px;height:54px;margin:-27px 0 0 0;background:linear-gradient(180deg,transparent,rgba(47,107,255,.55),transparent)}
   .ripple{position:absolute;inset:0;border-radius:50%;border:2px solid rgba(47,107,255,.7);opacity:0;transform:scale(.4)}
-  #pill{position:absolute;left:50%;top:calc(50% + 42px);transform:translateX(-50%);display:flex;align-items:center;gap:5px;padding:4px 9px 4px 7px;border-radius:999px;background:rgba(16,24,40,.88);color:#fff;font-size:10.5px;font-weight:600;letter-spacing:.01em;white-space:nowrap;opacity:0;box-shadow:0 6px 20px rgba(15,23,42,.25)}
-  #pill .mini{width:12px;height:12px;border-radius:4px;background:#2F6BFF;display:inline-flex;align-items:center;justify-content:center}
-  #pill .mini i{width:4px;height:4px;border-radius:50%;background:#fff;display:block}
-  #pill .sub{font-weight:450;color:rgba(255,255,255,.72)}
+  #pet{position:absolute;left:50%;top:50%;width:38px;height:36px;margin:-48px 0 0 -19px;border:1px solid var(--paper-edge,#d5dbe6);border-radius:9px 9px 10px 7px;background:var(--paper-bg,#fff);box-shadow:0 9px 22px rgba(15,23,42,.24);opacity:0;transform:rotate(-4deg) scale(.72);transform-origin:50% 100%}
+  #pet .fold{position:absolute;top:0;right:0;width:10px;height:10px;background:var(--paper-fold,#eef1f6);clip-path:polygon(0 0,100% 0,100% 100%);border-radius:0 8px 0 0}
+  #pet .eye{position:absolute;top:50%;width:3.6px;height:4.8px;margin-top:-2.4px;border-radius:50%;background:var(--paper-ink,#263041)}
+  #pet .eye.l{left:12px}
+  #pet .eye.r{right:12px}
+  body.nopet #pet{display:none}
   body.show .ring{animation:ring .5s cubic-bezier(.2,.8,.2,1) forwards}
   body.show .dot{animation:fade .18s ease forwards}
   body.show .halo{animation:halo .9s ease-out forwards}
   body.show .cross{animation:fade .15s ease .04s forwards}
-  body.show #pill{animation:pill .2s ease .05s forwards}
+  body.show:not(.nopet) #pet{animation:petIn .26s cubic-bezier(.2,.9,.25,1.2) forwards,bob 2.8s ease-in-out .26s infinite}
   body.click .ripple{animation:ripple .55s cubic-bezier(.2,.8,.2,1) forwards}
   @keyframes ring{0%{opacity:0;transform:scale(.55)}55%{opacity:1;transform:scale(1.06)}100%{opacity:1;transform:scale(1)}}
   @keyframes dot{to{opacity:1}}
   @keyframes fade{to{opacity:1}}
   @keyframes halo{0%{opacity:0;transform:scale(.5)}40%{opacity:1}100%{opacity:0;transform:scale(1.25)}}
-  @keyframes pill{to{opacity:1}}
   @keyframes ripple{0%{opacity:.85;transform:scale(.4)}100%{opacity:0;transform:scale(2.1)}}
-  body.out #stage,body.out #pill{transition:opacity .18s ease;opacity:0}
+  @keyframes petIn{0%{opacity:0;transform:translateY(6px) rotate(-4deg) scale(.72)}100%{opacity:1;transform:translateY(0) rotate(-4deg) scale(1)}}
+  @keyframes bob{0%,100%{transform:translateY(0) rotate(-4deg) scale(1)}50%{transform:translateY(-2px) rotate(-3deg) scale(1)}}
+  body.out #stage{transition:opacity .18s ease;opacity:0}
+  @media (prefers-reduced-motion: reduce){*{animation-duration:.001ms !important;animation-iteration-count:1 !important}}
 </style></head><body>
   <div id="stage">
     <span class="halo"></span><span class="cross"></span><span class="cross v"></span>
     <span class="ring"></span><span class="ripple"></span><span class="dot"></span>
+    <div id="pet" aria-hidden="true"><span class="fold"></span><span class="eye l"></span><span class="eye r"></span></div>
   </div>
-  <div id="pill"><span class="mini"><i></i></span><span id="label">blank</span><span class="sub" id="detail"></span></div>
 <script>
-  window.__mark = function (kind, detail, actor) {
-    document.body.classList.remove('show', 'click', 'out');
-    document.getElementById('label').textContent = String(actor || 'blank').slice(0, 32);
-    const sub = document.getElementById('detail');
-    const parts = [];
-    if (kind) parts.push(String(kind).slice(0, 24));
-    if (detail && detail !== String(kind || '').toLowerCase()) parts.push(String(detail).slice(0, 32));
-    sub.textContent = parts.length ? '· ' + parts.join(' · ') : '';
+  window.__mark = function (kind, palette) {
+    document.body.classList.remove('show', 'click', 'out', 'nopet');
+    if (palette) {
+      const root = document.documentElement.style;
+      root.setProperty('--paper-bg', palette.paper);
+      root.setProperty('--paper-fold', palette.fold);
+      root.setProperty('--paper-edge', palette.edge);
+      root.setProperty('--paper-ink', palette.ink);
+    } else {
+      document.body.classList.add('nopet');
+    }
     void document.body.offsetWidth;
     document.body.classList.add('show');
-    if (kind === 'Click' || kind === 'Drag' || kind === 'Screenshot') document.body.classList.add('click');
+    if (kind === 'Click' || kind === 'click' || kind === 'Drag' || kind === 'drag' || kind === 'Screenshot' || kind === 'screenshot') {
+      document.body.classList.add('click');
+    }
     clearTimeout(window.__t);
-    window.__t = setTimeout(function () { document.body.classList.add('out'); }, kind === 'Screenshot' ? 650 : 1150);
+    window.__t = setTimeout(function () { document.body.classList.add('out'); }, kind === 'Screenshot' || kind === 'screenshot' ? 750 : 1400);
   };
   window.__hide = function () { document.body.classList.remove('show', 'click'); document.body.classList.add('out'); };
 </script></body></html>`;
 
-function createComputerOverlay({ isEnabled } = {}) {
+function createComputerOverlay({ isEnabled, isPetEnabled } = {}) {
   let win = null;
   let lastPoint = null;
   let hideTimer = null;
@@ -142,10 +152,11 @@ function createComputerOverlay({ isEnabled } = {}) {
     const target = ensure();
     if (!target) return;
     const label = LABELS[kind] || 'Cursor';
+    const palette = isPetEnabled && !isPetEnabled() ? null : petPalette(actor, 'light');
     const run = () => {
       if (target.isDestroyed()) return;
       target.webContents.executeJavaScript(
-        `window.__mark(${JSON.stringify(label)}, ${JSON.stringify(detail || '')}, ${JSON.stringify(actor || '')})`,
+        `window.__mark(${JSON.stringify(label)}, ${JSON.stringify(palette)})`,
       ).catch(() => {});
       if (!target.isVisible()) target.showInactive();
     };

@@ -203,13 +203,24 @@ async function runAgent({
     try { saveSession(session); } catch {}
   }
 
-  async function runWorker({ task, label, write, steps, system, modelId }) {
+  async function runWorker({ task, label, write, steps, system, modelId, member = null }) {
     const text = String(task || '').trim();
     const name = String(label || '').trim() || (write ? 'Work worker' : 'Research worker');
     if (!text) return { report: 'A task is required for the sub-agent.', usage: { input: 0, output: 0 } };
     const id = uid('sub_');
     const startedAt = new Date().toISOString();
-    const record = { id, name, task: text.slice(0, 240), write: Boolean(write), status: 'running', at: startedAt };
+    const record = {
+      id,
+      name,
+      task: text.slice(0, 240),
+      write: Boolean(write),
+      status: 'running',
+      at: startedAt,
+      model: String(modelId || activeModel || ''),
+      team: Boolean(member),
+      memberId: member?.id || '',
+      memberName: member?.name || '',
+    };
     saveAgentRecord(record);
     emit({ type: 'agent:start', agent: record });
     emit({ type: 'notice', level: 'info', text: `${name} working${write ? ' · can edit and run' : ' · read-only'}.` });
@@ -308,6 +319,7 @@ async function runAgent({
         label: member.name,
         write: Boolean(member.write),
         modelId: member.model || activeModel,
+        member,
         system: `You are ${member.name}, a specialist on blank's agent team. Work independently and do not ask the user questions.\n\nRole: ${member.role || 'Investigate the task and report concrete findings.'}`,
       })));
       emit({ type: 'notice', level: 'info', text: `Agent team finished · ${results.length} report${results.length === 1 ? '' : 's'}.` });

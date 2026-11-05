@@ -227,11 +227,12 @@ async function* anthropicStream({ resolved, apiKey, system, messages, tools, opt
     const effort = options.reasoningEffort;
     if (options.reasoningTransport === 'anthropic-effort') {
       body.output_config = { effort };
-      if (effort === 'max') body.max_tokens = Math.max(body.max_tokens, 32000);
+      if (effort === 'ultra') body.max_tokens = Math.max(body.max_tokens, 48000);
+      else if (effort === 'max') body.max_tokens = Math.max(body.max_tokens, 32000);
       else if (effort === 'xhigh') body.max_tokens = Math.max(body.max_tokens, 24000);
       else if (effort === 'high') body.max_tokens = Math.max(body.max_tokens, 16000);
     } else if (options.reasoningTransport === 'anthropic-budget') {
-      const budget = { low: 2048, medium: 8192, high: 16384 }[effort] || 8192;
+      const budget = { low: 2048, medium: 8192, high: 16384, xhigh: 24576, max: 32768, ultra: 49152 }[effort] || 8192;
       body.thinking = { type: 'enabled', budget_tokens: budget };
       body.max_tokens = Math.max(body.max_tokens, budget + 2048);
     }
@@ -374,7 +375,7 @@ async function* geminiStream({ resolved, apiKey, system, messages, tools, option
     if (options.reasoningTransport === 'gemini-level') {
       body.generationConfig.thinkingConfig = { thinkingLevel: options.reasoningEffort };
     } else if (options.reasoningTransport === 'gemini-budget') {
-      const budget = { none: 0, minimal: 512, low: 1024, medium: 8192, high: 24576 }[options.reasoningEffort];
+      const budget = { none: 0, minimal: 512, low: 1024, medium: 8192, high: 24576, xhigh: 32768, max: 49152, ultra: 65536 }[options.reasoningEffort];
       body.generationConfig.thinkingConfig = { thinkingBudget: Number.isFinite(budget) ? budget : 8192 };
     }
   }
@@ -529,6 +530,93 @@ async function completeText({ modelId, config, system, messages, signal, maxToke
   return text.trim();
 }
 
+function firstList(...values) {
+  for (const value of values) {
+    if (Array.isArray(value) && value.length) return value;
+  }
+  return null;
+}
+
+function readEfforts(source) {
+  if (!source || typeof source !== 'object') return null;
+  const list = firstList(
+    source.supported_efforts,
+    source.efforts,
+    source.levels,
+    source.supported_levels,
+    source.reasoning_efforts,
+  );
+  if (!list) return null;
+  return list.map((value) => reasoning.normalizeLevel(value)).filter(Boolean);
+}
+
+/**
+ * Read per-model reasoning capability from whatever shape the endpoint uses.
+ * OpenRouter publishes `reasoning.supported_efforts`; other servers expose a
+ * boolean or a list under `capabilities`. Nothing is assumed when absent.
+ */
+function reasoningHintFrom(entry = {}) {
+  const hint = {};
+  const params = Array.isArray(entry.supported_parameters)
+    ? entry.supported_parameters.map((value) => String(value).toLowerCase())
+    : null;
+  if (params && params.some((value) => ['reasoning', 'include_reasoning', 'reasoning_effort', 'thinking'].includes(value))) {
+    hint.supported = true;
+  }
+  const detail = entry.reasoning;
+  if (detail && typeof detail === 'object') {
+    if (typeof detail.supported === 'boolean') hint.supported = detail.supported;
+    if (typeof detail.supports_effort === 'boolean') hint.supported = detail.supports_effort || hint.supported === true;
+    if (detail.mandatory === true || detail.always_on === true) hint.mandatory = true;
+    const levels = readEfforts(detail);
+    if (levels) {
+      hint.levels = levels;
+      hint.supported = true;
+    }
+    const fallback = detail.default_effort ?? detail.default ?? detail.default_level;
+    if (fallback) hint.default = reasoning.normalizeLevel(fallback);
+  } else if (typeof entry.reasoning === 'boolean') {
+    hint.supported = entry.reasoning;
+  }
+  const caps = entry.capabilities && typeof entry.capabilities === 'object' ? entry.capabilities : {};
+  for (const key of ['reasoning', 'thinking', 'reasoning_effort']) {
+    const value = caps[key];
+    if (typeof value === 'boolean') hint.supported = value;
+    else if (value && typeof value === 'object') {
+      if (typeof value.supported === 'boolean') hint.supported = value.supported;
+      if (value.mandatory === true) hint.mandatory = true;
+      const levels = readEfforts(value);
+      if (levels) {
+        hint.levels = levels;
+        hint.supported = true;
+      }
+    }
+  }
+  for (const key of ['supports_reasoning', 'supports_reasoning_effort', 'reasoning_supported']) {
+    if (typeof entry[key] === 'boolean') hint.supported = entry[key];
+  }
+  const levels = readEfforts(entry);
+  if (levels) {
+    hint.levels = levels;
+    hint.supported = true;
+  }
+  if (typeof entry.thinking === 'boolean') hint.supported = entry.thinking;
+  if (!hint.supported && !hint.mandatory && !hint.levels?.length) return null;
+  hint.source = 'api';
+  return hint;
+}
+
+function visionHintFrom(entry = {}) {
+  const modalities = entry.architecture?.input_modalities || entry.input_modalities;
+  if (Array.isArray(modalities)) {
+    return modalities.some((value) => String(value).toLowerCase() === 'image');
+  }
+  if (typeof entry.supports_vision === 'boolean') return entry.supports_vision;
+  if (typeof entry.capabilities?.vision === 'boolean') return entry.capabilities.vision;
+  if (typeof entry.capabilities?.image_input === 'boolean') return entry.capabilities.image_input;
+  return undefined;
+}
+
 async function listModelsAt({ baseUrl: rawBaseUrl, apiKey, protocol = 'openai' }) {
   const baseUrl = trimBase(rawBaseUrl);
   if (!/^https?:\/\//i.test(baseUrl)) throw new Error('A valid http(s) base URL is required.');
@@ -549,14 +637,113 @@ async function listModelsAt({ baseUrl: rawBaseUrl, apiKey, protocol = 'openai' }
   return raw
     .map((entry) => {
       const id = String(entry.id || entry.name || '').replace(/^models\//, '');
-      return {
+      const model = {
         id,
         name: entry.display_name || entry.displayName || entry.name || id,
         context: entry.context_window || entry.context_length || entry.inputTokenLimit || 128000,
         discovered: true,
       };
+      const reasoningHint = reasoningHintFrom(entry);
+      if (reasoningHint) model.reasoningHint = reasoningHint;
+      const vision = visionHintFrom(entry);
+      if (vision !== undefined) model.vision = vision;
+      return model;
     })
     .filter((entry) => entry.id);
+}
+
+/**
+ * Ask an OpenAI-compatible endpoint which effort values it accepts. Each trial
+ * is a tiny chat completion; a rejected parameter is the signal. Metadata wins
+ * when an endpoint publishes it, and the answer is cached by the caller.
+ */
+async function probeReasoningAt({ baseUrl: rawBaseUrl, apiKey, protocol = 'openai', modelId }) {
+  const baseUrl = trimBase(rawBaseUrl);
+  if (protocol !== 'openai' || !modelId || !/^https?:\/\//i.test(baseUrl)) return null;
+  const headers = { 'content-type': 'application/json', accept: 'application/json' };
+  if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+  const deadline = Date.now() + 45000;
+
+  async function attempt(effort) {
+    const body = {
+      model: modelId,
+      messages: [{ role: 'user', content: effort ? 'What is 2 + 2? Reply with only the number.' : 'What is 2 + 2?' }],
+      max_tokens: 32,
+      temperature: 0,
+      stream: false,
+    };
+    if (effort) body.reasoning_effort = effort;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      let json = null;
+      try { json = JSON.parse(text); } catch {}
+      return { status: response.status, ok: response.ok, text: text.slice(0, 2000), json };
+    } catch (err) {
+      return { status: 0, ok: false, network: true, text: err.name === 'AbortError' ? 'timeout' : '' };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function showsReasoning(json) {
+    const message = json?.choices?.[0]?.message || {};
+    if (String(message.reasoning_content || message.reasoning || '').trim()) return true;
+    const details = json?.usage?.completion_tokens_details || {};
+    return Number(details.reasoning_tokens || json?.usage?.reasoning_tokens || 0) > 0;
+  }
+
+  function blamesReasoning(text) {
+    return /reasoning[\s_-]?effort|reasoning|thinking|effort/i.test(String(text || ''));
+  }
+
+  const baseline = await attempt(null);
+  if (baseline.network || baseline.status === 404) return null;
+  if (!baseline.ok && baseline.status !== 400 && baseline.status !== 422) return null;
+  const levels = [];
+  let rejected = 0;
+  for (const effort of ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']) {
+    if (Date.now() > deadline) break;
+    const result = await attempt(effort);
+    if (result.ok) levels.push(effort);
+    else if ((result.status === 400 || result.status === 422) && blamesReasoning(result.text)) rejected += 1;
+  }
+  if (levels.length) {
+    const fallback = levels.includes('medium') ? 'medium' : levels.includes('high') ? 'high' : levels[0];
+    return {
+      supported: true,
+      levels,
+      default: fallback,
+      source: 'probe',
+      checkedAt: new Date().toISOString(),
+    };
+  }
+  if (rejected >= 2 && baseline.ok) {
+    return {
+      supported: false,
+      alwaysOn: showsReasoning(baseline.json),
+      source: 'probe',
+      checkedAt: new Date().toISOString(),
+    };
+  }
+  return null;
+}
+
+async function probeModelReasoning({ providerId, modelId, config }) {
+  const provider = getProvider(providerId, config);
+  if (!provider) throw new Error('Unknown provider.');
+  if (provider.protocol !== 'openai') return null;
+  const baseUrl = config.providers?.[providerId]?.baseUrl || provider.baseUrl;
+  const apiKey = resolveKey(config, providerId, provider);
+  if (provider.keyEnv && !apiKey) throw new Error('Add an API key first.');
+  return probeReasoningAt({ baseUrl, apiKey, protocol: provider.protocol, modelId });
 }
 
 async function listModels({ providerId, config, apiKey: overrideKey, keyId }) {
@@ -571,4 +758,5 @@ async function listModels({ providerId, config, apiKey: overrideKey, keyId }) {
 module.exports = {
   streamChat, completeText, listModels, listModelsAt, resolveRequest, contentForModel,
   anthropicMessages, geminiContents, cleanGeminiSchema, isKeyRotationError,
+  reasoningHintFrom, visionHintFrom, probeReasoningAt, probeModelReasoning,
 };

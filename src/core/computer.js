@@ -85,13 +85,27 @@ public static class BlankNative {
   [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, int dx, int dy, int dwData, UIntPtr dwExtraInfo);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+  [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
 }
 "@
+try { [BlankNative]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch { [BlankNative]::SetProcessDPIAware() | Out-Null }
 $spec = Get-Content -Raw -LiteralPath $SpecPath | ConvertFrom-Json
 $action = [string]$spec.action
-function Move-To([int]$x, [int]$y) { [BlankNative]::SetCursorPos($x, $y) | Out-Null; Start-Sleep -Milliseconds 30 }
+function Move-To([int]$x, [int]$y) {
+  [BlankNative]::SetCursorPos($x, $y) | Out-Null
+  Start-Sleep -Milliseconds 45
+  $p = New-Object BlankNative+POINT
+  if ([BlankNative]::GetCursorPos([ref]$p)) {
+    if ([Math]::Abs($p.X - $x) -gt 2 -or [Math]::Abs($p.Y - $y) -gt 2) { [BlankNative]::SetCursorPos($x, $y) | Out-Null }
+  }
+  Start-Sleep -Milliseconds 25
+}
 function Mouse-Down([string]$button) { $flag = if ($button -eq 'right') { 0x0008 } elseif ($button -eq 'middle') { 0x0020 } else { 0x0002 }; [BlankNative]::mouse_event($flag, 0, 0, 0, [UIntPtr]::Zero) }
 function Mouse-Up([string]$button) { $flag = if ($button -eq 'right') { 0x0010 } elseif ($button -eq 'middle') { 0x0040 } else { 0x0004 }; [BlankNative]::mouse_event($flag, 0, 0, 0, [UIntPtr]::Zero) }
 function Escape-SendKeys([string]$text) {
