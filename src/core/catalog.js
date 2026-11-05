@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Blank's provider catalog.
+ * blank's provider catalog.
  *
  * Only user-entered custom models are hard-coded.
  * Every hosted and local provider is populated from its own /models endpoint:

@@ -53,13 +53,16 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8">
     <span class="halo"></span><span class="cross"></span><span class="cross v"></span>
     <span class="ring"></span><span class="ripple"></span><span class="dot"></span>
   </div>
-  <div id="pill"><span class="mini"><i></i></span><span id="label">Blank</span><span class="sub" id="detail"></span></div>
+  <div id="pill"><span class="mini"><i></i></span><span id="label">blank</span><span class="sub" id="detail"></span></div>
 <script>
-  window.__mark = function (kind, detail) {
+  window.__mark = function (kind, detail, actor) {
     document.body.classList.remove('show', 'click', 'out');
-    document.getElementById('label').textContent = kind || 'Cursor';
+    document.getElementById('label').textContent = String(actor || 'blank').slice(0, 32);
     const sub = document.getElementById('detail');
-    sub.textContent = detail ? '· ' + String(detail).slice(0, 32) : '';
+    const parts = [];
+    if (kind) parts.push(String(kind).slice(0, 24));
+    if (detail && detail !== String(kind || '').toLowerCase()) parts.push(String(detail).slice(0, 32));
+    sub.textContent = parts.length ? '· ' + parts.join(' · ') : '';
     void document.body.offsetWidth;
     document.body.classList.add('show');
     if (kind === 'Click' || kind === 'Drag' || kind === 'Screenshot') document.body.classList.add('click');
@@ -134,14 +137,16 @@ function createComputerOverlay({ isEnabled } = {}) {
     } catch {}
   }
 
-  function mark(kind, detail) {
+  function mark(kind, detail, actor) {
     if (isEnabled && !isEnabled()) return;
     const target = ensure();
     if (!target) return;
-    const label = LABELS[kind] || 'Blank';
+    const label = LABELS[kind] || 'Cursor';
     const run = () => {
       if (target.isDestroyed()) return;
-      target.webContents.executeJavaScript(`window.__mark(${JSON.stringify(label)}, ${JSON.stringify(detail || '')})`).catch(() => {});
+      target.webContents.executeJavaScript(
+        `window.__mark(${JSON.stringify(label)}, ${JSON.stringify(detail || '')}, ${JSON.stringify(actor || '')})`,
+      ).catch(() => {});
       if (!target.isVisible()) target.showInactive();
     };
     if (target.webContents.isLoading()) target.webContents.once('did-finish-load', run);
@@ -170,7 +175,7 @@ function createComputerOverlay({ isEnabled } = {}) {
       : activity.kind === 'drag'
         ? 'drag'
         : activity.detail || '';
-    mark(activity.kind === 'screenshot' ? 'screenshot' : activity.kind, detail);
+    mark(activity.kind === 'screenshot' ? 'screenshot' : activity.kind, detail, activity.actor);
     if (activity.kind === 'drag' && Number.isFinite(activity.toX) && Number.isFinite(activity.toY)) {
       setTimeout(() => moveTo({ x: activity.toX, y: activity.toY }), 120);
     }

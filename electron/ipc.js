@@ -23,6 +23,9 @@ const oauthModule = require('../src/core/oauth');
 const paperStore = require('../src/core/paper');
 const notifications = require('./notifications');
 const dictation = require('../src/core/dictation');
+const codeModule = require('../src/core/code');
+const apisModule = require('../src/core/apis');
+const { runConsoleCommand, createTerminal } = require('../src/core/console');
 
 const APP_ROOT = path.join(__dirname, '..');
 const isWin = process.platform === 'win32';
@@ -82,6 +85,29 @@ function registerIpc({ mcp, getWindow }) {
   let sshModule = null;
   const getSsh = () => (sshModule || (sshModule = require('../src/core/ssh')));
 
+  let terminalSession = null;
+  const stopTerminal = () => {
+    if (!terminalSession) return;
+    try { terminalSession.stop(); } catch {}
+    terminalSession = null;
+  };
+  const startTerminal = () => {
+    const config = configModule.loadConfig();
+    if (!config.workspace) throw new Error('Open a workspace folder before opening a terminal.');
+    if (terminalSession) {
+      const current = terminalSession.state();
+      if (current.workspace === config.workspace) return current;
+      stopTerminal();
+    }
+    terminalSession = createTerminal({
+      workspace: config.workspace,
+      onData: (text) => broadcast({ type: 'console:data', text }),
+      onState: (payload) => broadcast({ type: 'console:state', ...payload }),
+      onExit: (payload) => broadcast({ type: 'console:exit', ...payload }),
+    });
+    return terminalSession.state();
+  };
+
   const configWithRuntime = (config) => {
     const publicConfig = configModule.publicConfig(config, catalog);
     return {
@@ -109,6 +135,8 @@ function registerIpc({ mcp, getWindow }) {
     model: session.model,
     mode: session.mode,
     pinned: Boolean(session.pinned),
+    archived: Boolean(session.archived),
+    subagents: (session.subagents || []).slice(-12),
     workspace: session.workspace,
   });
 
@@ -251,7 +279,7 @@ function registerIpc({ mcp, getWindow }) {
   /* ---------------------------------------------------------------- app/config */
 
   require('electron').ipcMain.handle('app:info', async () => ({
-    name: 'Blank',
+    name: 'blank',
     version: app.getVersion(),
     platform: process.platform,
     arch: process.arch,
@@ -312,6 +340,7 @@ function registerIpc({ mcp, getWindow }) {
             role: String(member?.role || '').trim().slice(0, 600),
             model: String(member?.model || '').trim().slice(0, 160),
             enabled: member?.enabled !== false,
+            write: Boolean(member?.write),
           };
         }).filter((member) => member.name);
       }
@@ -666,7 +695,7 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('search:test', async (_event, input = {}) => {
     const config = configModule.loadConfig();
     try {
-      const payload = await search.searchWeb(input.query || 'Blank agent harness', {
+      const payload = await search.searchWeb(input.query || 'blank agent harness', {
         config,
         count: 5,
       });
@@ -804,6 +833,10 @@ function registerIpc({ mcp, getWindow }) {
       session.titleSource = 'manual';
     }
     if (input.pinned !== undefined) session.pinned = Boolean(input.pinned);
+    if (input.archived !== undefined) {
+      session.archived = Boolean(input.archived);
+      if (session.archived) session.pinned = false;
+    }
     if (input.model !== undefined) {
       const config = configModule.loadConfig();
       if (!catalog.findModel(input.model, config)) throw new Error('Unknown model.');
@@ -875,6 +908,8 @@ function registerIpc({ mcp, getWindow }) {
   function launchRun({ session, config, win }) {
     const runId = uid('run_');
     const controller = new AbortController();
+    const model = catalog.findModel(session.model || config.defaultModel, config);
+    try { computer.setActor(model?.name || model?.id || ''); } catch {}
     state.runs.set(runId, { controller, win, sessionId: session.id });
     state.sessionRuns.set(session.id, runId);
 
@@ -1241,7 +1276,7 @@ function registerIpc({ mcp, getWindow }) {
     } catch {}
     const content = `# AGENTS.md
 
-Guidance for coding agents working in this repository. Blank reads this file automatically.
+Guidance for coding agents working in this repository. blank reads this file automatically.
 
 ## Working agreements
 
@@ -1371,6 +1406,130 @@ ${commands}
     await mcp.ensure(config, { force: true });
     broadcast({ type: 'config:updated' });
     return { removed, servers: mcp.statuses(config) };
+  });
+
+  /* ------------------------------------------------------------ console & code */
+
+  ipcMainHandle('console:run', async (_event, input = {}) => {
+    const config = configModule.loadConfig();
+    if (!config.workspace) throw new Error('Open a workspace folder before running commands.');
+    const command = String(input.command || '').slice(0, 4000);
+    if (!command.trim()) throw new Error('Enter a command to run.');
+    return runConsoleCommand({
+      workspace: config.workspace,
+      command,
+      timeout: Number(input.timeout) || undefined,
+    });
+  });
+
+  ipcMainHandle('console:terminalStart', async () => startTerminal());
+
+  ipcMainHandle('console:terminalState', async () => {
+    if (!terminalSession) return { running: false, buffer: '', cwd: '', workspace: '', busy: false };
+    return terminalSession.state();
+  });
+
+  ipcMainHandle('console:terminalWrite', async (_event, input = {}) => {
+    if (!terminalSession) startTerminal();
+    if (!terminalSession) throw new Error('The terminal is not running.');
+    const text = String(input.data || '');
+    if (!text.trim()) return { ok: true, skipped: true };
+    return { ok: terminalSession.write(text) };
+  });
+
+  ipcMainHandle('console:terminalStop', async () => {
+    stopTerminal();
+    return { ok: true };
+  });
+
+  ipcMainHandle('console:terminalRestart', async () => {
+    stopTerminal();
+    return startTerminal();
+  });
+
+  ipcMainHandle('console:terminalClear', async () => {
+    if (terminalSession) terminalSession.clear();
+    return { ok: true };
+  });
+
+  ipcMainHandle('code:overview', async () => {
+    const config = configModule.loadConfig();
+    return codeModule.overview(config.workspace);
+  });
+
+  ipcMainHandle('code:diff', async (_event, input = {}) => {
+    const config = configModule.loadConfig();
+    if (!config.workspace) throw new Error('Open a workspace folder first.');
+    return codeModule.gitDiff(config.workspace, {
+      file: String(input.file || ''),
+      staged: Boolean(input.staged),
+    });
+  });
+
+  ipcMainHandle('code:checks', async () => {
+    const config = configModule.loadConfig();
+    return { checks: codeModule.detectChecks(config.workspace) };
+  });
+
+  ipcMainHandle('code:runCheck', async (_event, input = {}) => {
+    const config = configModule.loadConfig();
+    if (!config.workspace) throw new Error('Open a workspace folder first.');
+    return codeModule.runCheck(config.workspace, String(input.id || ''));
+  });
+
+  /* ------------------------------------------------------------------- APIs */
+
+  ipcMainHandle('apis:list', async () => {
+    const config = configModule.loadConfig();
+    return { apis: apisModule.publicApis(config) };
+  });
+
+  ipcMainHandle('apis:save', async (_event, input = {}) => {
+    const config = configModule.loadConfig();
+    const existing = input.id ? (config.apis || []).find((api) => api.id === input.id) || null : null;
+    if (input.id && !existing) throw new Error('That API connector no longer exists.');
+    const api = apisModule.sanitizeApi(input, existing);
+    config.apis = [...(config.apis || []).filter((entry) => entry.id !== api.id), api];
+    configModule.saveConfig(config);
+    broadcast({ type: 'config:updated' });
+    return { apis: apisModule.publicApis(config) };
+  });
+
+  ipcMainHandle('apis:delete', async (_event, input = {}) => {
+    const config = configModule.loadConfig();
+    const before = (config.apis || []).length;
+    config.apis = (config.apis || []).filter((api) => api.id !== input.id);
+    if (config.apis.length !== before) {
+      configModule.saveConfig(config);
+      broadcast({ type: 'config:updated' });
+    }
+    return { deleted: config.apis.length !== before, apis: apisModule.publicApis(config) };
+  });
+
+  ipcMainHandle('apis:test', async (_event, input = {}) => {
+    const config = configModule.loadConfig();
+    const api = apisModule.findApi(config, input.id || input.name);
+    if (!api) throw new Error('API connector not found.');
+    try {
+      const result = await apisModule.requestApi(api, {
+        path: String(input.path || '/').slice(0, 2000),
+        method: input.method || 'GET',
+        timeout: 20_000,
+      });
+      return {
+        ok: result.ok,
+        status: result.status,
+        statusText: result.statusText,
+        contentType: result.contentType,
+        durationMs: result.durationMs,
+        body: String(result.body || '').slice(0, 4000),
+        truncated: result.truncated || String(result.body || '').length > 4000,
+      };
+    } catch (err) {
+      const secret = String(api.key || '');
+      const message = secret ? String(err.message || err).split(secret).join('••••') : String(err.message || err);
+      throw new Error(message);
+    }
   });
 
   /* ----------------------------------------------------------------- plugins */
@@ -1790,7 +1949,7 @@ ${commands}
   ipcMainHandle('media:import', async (event) => {
     const win = winFromEvent(event);
     const picked = await dialog.showOpenDialog(win, {
-      title: 'Import media into Blank',
+      title: 'Import media into blank',
       properties: ['openFile', 'multiSelections'],
       filters: [
         { name: 'Media', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'svg', 'mp4', 'webm', 'mov', 'm4v', 'mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'obj', 'stl', 'glb', 'gltf', 'mtl'] },
@@ -1999,6 +2158,8 @@ ${commands}
       mode: schedule.mode,
       reasoningEffort: schedule.reasoningEffort,
     });
+    const scheduleModel = catalog.findModel(model, config);
+    try { computer.setActor(scheduleModel?.name || scheduleModel?.id || ''); } catch {}
     session.title = schedule.title;
     session.titleSource = 'manual';
     const message = { id: uid('msg_'), role: 'user', content: schedule.prompt, at: new Date().toISOString(), source: 'schedule' };
@@ -2142,6 +2303,7 @@ ${commands}
 
   function dispose() {
     state.disposed = true;
+    stopTerminal();
     if (state.scheduleTimer) clearInterval(state.scheduleTimer);
     for (const run of state.scheduleRuns.values()) {
       try { run.controller.abort(); } catch {}

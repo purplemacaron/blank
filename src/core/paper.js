@@ -1,6 +1,6 @@
 'use strict';
 
-/* Blank Paper — small, live documents the user or the agent can keep.
+/* blank Paper — small, live documents the user or the agent can keep.
    Each paper is a folder under ~/.blank/papers with metadata plus a single
    content file. HTML and SVG papers are served to the sandboxed preview
    through the blank-paper protocol; documents and code render in the app. */
@@ -316,11 +316,11 @@ function exportFileName(paper) {
   const extension = meta.kind === 'code'
     ? LANGUAGE_EXTENSIONS[meta.language] || kind.extension
     : kind.extension;
-  const base = String(meta.title || 'Blank paper')
+  const base = String(meta.title || 'blank paper')
     .replace(/[\\/:*?"<>|]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 80) || 'Blank paper';
+    .slice(0, 80) || 'blank paper';
   return `${base}${extension}`;
 }
 

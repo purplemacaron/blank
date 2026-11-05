@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: blank-media:; media-src 'self' data: blob: blank-media:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'self'; frame-src 'self' blank-paper:;" />
-  <title>Blank</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: blank-media:; media-src 'self' data: blob: blank-media:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'self'; frame-src 'self' blank-paper: https: http:;" />
+  <title>blank</title>
   <link rel="icon" type="image/png" sizes="512x512" href="../assets/icon.png" />
   <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
   <style>html[data-i18n-pending] body { visibility: hidden; }</style>
@@ -19,8 +19,8 @@
         <button class="titlebar-menu-btn" id="mobile-menu" type="button" aria-label="Open navigation">
           <span data-icon="layout"></span>
         </button>
-        <div class="brand" data-action="home" title="Blank">
-          <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+        <div class="brand" data-action="home" title="blank">
+          <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#2F6BFF"/><path d="M8.6 4.4h4.6l4 4v9.2c0 .9-.7 1.6-1.6 1.6H8.6c-.9 0-1.6-.7-1.6-1.6V6c0-.9.7-1.6 1.6-1.6Z" fill="#fff"/><path d="M13.2 4.4v4h4Z" fill="#DCE7FF"/></svg>
           <span class="brand-word">blank</span>
         </div>
         <span class="titlebar-sep" aria-hidden="true"></span>
@@ -74,6 +74,21 @@
               <span class="nav-icon" data-icon="book"></span><span class="nav-label">Paper</span>
               <span class="nav-count" id="badge-paper"></span>
             </button>
+            <button class="nav-item" data-page="code" type="button">
+              <span class="nav-icon" data-icon="code"></span><span class="nav-label">Code</span>
+            </button>
+            <button class="nav-item" data-page="browser" type="button">
+              <span class="nav-icon" data-icon="globe"></span><span class="nav-label">Browser</span>
+            </button>
+            <button class="nav-item" data-page="console" type="button">
+              <span class="nav-icon" data-icon="terminal"></span><span class="nav-label">Console</span>
+            </button>
+            <button class="nav-item" data-page="team" type="button">
+              <span class="nav-icon" data-icon="bot"></span><span class="nav-label">Team</span>
+            </button>
+            <button class="nav-item" data-page="automations" type="button">
+              <span class="nav-icon" data-icon="clock"></span><span class="nav-label">Automations</span>
+            </button>
             <button class="nav-item" data-page="models" type="button">
               <span class="nav-icon" data-icon="sparkles"></span><span class="nav-label">Models</span>
               <span class="nav-badge" id="badge-models" hidden></span>
@@ -91,7 +106,7 @@
               <span class="nav-count" id="badge-mcp"></span>
             </button>
             <button class="nav-item" data-page="plugins" type="button">
-              <span class="nav-icon" data-icon="grid"></span><span class="nav-label">Plugins</span>
+              <span class="nav-icon" data-icon="link"></span><span class="nav-label">APIs</span>
             </button>
             <button class="nav-item" data-page="learning" type="button">
               <span class="nav-icon" data-icon="zap"></span><span class="nav-label">Learning</span>
@@ -112,6 +127,9 @@
               <button class="mini-icon" id="session-search-clear" type="button" title="Clear"><span data-icon="x"></span></button>
             </div>
             <div class="session-list" id="session-list"></div>
+            <button class="archive-toggle" id="archive-toggle" type="button" hidden>
+              <span data-icon="inbox"></span><span id="archive-label">Archived</span>
+            </button>
           </div>
         </div>
         <div class="sidebar-footer">
@@ -128,7 +146,7 @@
             <span class="nav-count" id="badge-updates" hidden></span>
           </button>
           <div class="sidebar-footnote">
-            <span id="sidebar-version">Blank</span>
+            <span id="sidebar-version">blank</span>
           </div>
         </div>
       </aside>
@@ -141,10 +159,16 @@
       <aside class="rail" id="rail" aria-label="Session context">
         <div class="rail-head">
           <div class="rail-tabs" id="rail-tabs" role="tablist">
-            <button class="rail-tab active" data-rail="plan" role="tab" type="button">Plan <span class="tab-count" id="rail-plan-count">0</span></button>
-            <button class="rail-tab" data-rail="files" role="tab" type="button">Files <span class="tab-count" id="rail-files-count">0</span></button>
-            <button class="rail-tab" data-rail="context" role="tab" type="button">Context</button>
+            <button class="rail-tab active" data-rail="plan" role="tab" type="button" title="Plan" aria-label="Plan"><span data-icon="checklist"></span><span class="rail-tab-label">Plan</span> <span class="tab-count" id="rail-plan-count">0</span></button>
+            <button class="rail-tab" data-rail="agents" role="tab" type="button" title="Agents" aria-label="Agents"><span data-icon="bot"></span><span class="rail-tab-label">Agents</span> <span class="tab-count" id="rail-agents-count">0</span></button>
+            <button class="rail-tab" data-rail="files" role="tab" type="button" title="Files" aria-label="Files"><span data-icon="folder"></span><span class="rail-tab-label">Files</span> <span class="tab-count" id="rail-files-count">0</span></button>
+            <button class="rail-tab" data-rail="context" role="tab" type="button" title="Context" aria-label="Context"><span data-icon="layers"></span><span class="rail-tab-label">Context</span></button>
+            <button class="rail-tab rail-tab-icon" data-rail="terminal" role="tab" type="button" title="Terminal" aria-label="Terminal"><span data-icon="terminal"></span></button>
+            <button class="rail-tab rail-tab-icon" data-rail="browser" role="tab" type="button" title="Browser" aria-label="Browser"><span data-icon="globe"></span></button>
           </div>
+          <button class="mini-icon rail-expand" id="rail-expand" type="button" title="Expand panel">
+            <span data-icon="maximize"></span>
+          </button>
           <button class="mini-icon rail-close" id="rail-close" type="button" title="Hide panel">
             <span data-icon="panel-right"></span>
           </button>
@@ -177,6 +201,7 @@
   <script src="js/components.js"></script>
   <script src="js/viewer3d.js"></script>
   <script src="js/chat.js"></script>
+  <script src="js/terminal.js"></script>
   <script src="js/views.js"></script>
   <script src="js/app.js"></script>
 </body>

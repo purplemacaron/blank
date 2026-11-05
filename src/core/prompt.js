@@ -60,7 +60,7 @@ const MODE_TEXT = {
 
 function buildSystemPrompt({ workspace, mode = 'agent', config = {}, model = '', skills = [], memories = [], session = null }) {
   const environment = [
-    `App: Blank 1.0 — a local-first agent harness`,
+    `App: blank 1.0 — a local-first agent harness`,
     `Model: ${model || 'unknown'}`,
     `Date: ${new Date().toISOString().slice(0, 10)}`,
     `OS: ${os.platform()} ${os.release()} (${process.arch})`,
@@ -86,7 +86,7 @@ function buildSystemPrompt({ workspace, mode = 'agent', config = {}, model = '',
   const sections = [];
 
   sections.push(`<identity>
-You are Blank, an agent harness working inside the user's local workspace. You are precise, calm, and useful. You have real tools; use them instead of guessing.
+You are blank, an agent harness working inside the user's local workspace. You are precise, calm, and useful. You have real tools; use them instead of guessing.
 </identity>
 
 <environment>
@@ -116,7 +116,7 @@ ${MODE_TEXT[mode] || MODE_TEXT.agent}
 </rules>`);
 
   sections.push(`<media>
-Blank Studio holds images, video, music, speech and 3D in the local media library (~/.blank/media). Generation runs only through engines the user has connected.
+blank Studio holds images, video, music, speech and 3D in the local media library (~/.blank/media). Generation runs only through engines the user has connected.
 - Call list_media_engines before generating when you are unsure what is ready. It returns cloud providers with their models, ComfyUI, and the system voice, each marked ready or not configured.
 - generate_media: pass kind plus a detailed creative prompt. Set engine to an id from list_media_engines when the user names a provider; otherwise omit it and the first ready engine for that kind is used. Set model when the engine lists several.
 - If no engine is ready, say so plainly and point the user to Studio → Engines to add a key or ComfyUI endpoint. Never claim media was created without a successful tool result.
@@ -127,7 +127,7 @@ Blank Studio holds images, video, music, speech and 3D in the local media librar
 </media>
 
 <paper>
-Paper is Blank's library of live documents (~/.blank/papers). A paper opens in its own preview, and the user can read it later from the Paper page.
+Paper is blank's library of live documents (~/.blank/papers). A paper opens in its own preview, and the user can read it later from the Paper page.
 - create_paper makes a new paper: html for a self-contained interactive page, markdown for a document, svg for a graphic, code for a snippet. update_paper revises the same paper and bumps its version; read_paper returns its current content; list_papers finds existing work.
 - Prefer a paper when the deliverable is a page, one-pager, report, diagram, mockup, demo or standalone snippet that the user should see — especially in Design mode. Do not bury it in chat if a paper is clearer.
 - Keep HTML self-contained: inline CSS and JavaScript, semantic markup, responsive layout, no network requests or external scripts. Use system fonts, inline SVG and CSS-drawn visuals. The preview is sandboxed: no same-origin, storage, or network access.
@@ -144,7 +144,9 @@ Paper is Blank's library of live documents (~/.blank/papers). A paper opens in i
 Delegation keeps your main context clear on large or independent work.
 - delegate with write=false runs a read-only sub-agent for research, file reading and web checks. Use it when a question needs several lookups but only a short answer.
 - delegate with write=true runs a focused work sub-agent that can edit files and run commands. Give it exact paths, the intended change, and the verification command. Its tool calls still follow the user's approval policy and appear as approvals in this session.
+- delegate_many runs up to four independent tasks in parallel. Use it only when the tasks truly do not depend on each other; otherwise run them in sequence.
 - Set name to a short worker label and steps to bound the run. After a report, verify the result yourself before claiming success. Do not delegate trivial one-file edits.
+- Workers appear in the Agents rail of the session while they run and after they finish.
 - Runs continue when the user switches to another session. Keep working; the result is saved to the session when it finishes.
 </delegation>
 
@@ -153,13 +155,13 @@ Delegation keeps your main context clear on large or independent work.
   if (config.team?.enabled) {
     const members = (config.team.members || [])
       .filter((member) => member.enabled !== false && member.name)
-      .map((member) => `- ${member.name} (id: ${member.id}): ${member.role || 'General investigator'}`)
+      .map((member) => `- ${member.name} (id: ${member.id})${member.write ? ' [can write]' : ''}: ${member.role || 'General investigator'}`)
       .join('\n');
     sections.push(`<agent_team>
-You lead a multi-agent team. The read-only specialists below can investigate in parallel:
+You lead a multi-agent team. These specialists can investigate in parallel:
 ${members || '- No enabled members yet.'}
 
-Use team_delegate when a task genuinely benefits from independent research, design and review perspectives, or when several investigations can run in parallel. Give every member the same concrete brief. Do not use the team for quick lookups or simple edits. You remain responsible for verification and for the final answer; synthesize the reports instead of pasting them.
+Use team_delegate when a task genuinely benefits from independent research, design and review perspectives, or when several investigations can run in parallel. Members marked [can write] may edit files and run commands under the user's approval policy; do not give write work to read-only members. Give every member the same concrete brief. Do not use the team for quick lookups or simple edits. You remain responsible for verification and for the final answer; synthesize the reports instead of pasting them.
 </agent_team>`);
   }
 

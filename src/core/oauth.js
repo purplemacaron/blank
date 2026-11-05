@@ -161,7 +161,7 @@ function startCallbackServer({ port = 0, path = '/callback', advertisedHost = '1
       }
       const params = Object.fromEntries(url.searchParams.entries());
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      res.end('<!doctype html><meta charset="utf-8"><title>Blank</title><style>body{font:14px ui-sans-serif,system-ui;display:grid;place-items:center;height:100vh;margin:0;color:#101828;background:#fff}div{text-align:center}p{color:#667085}</style><div><h2>Blank is connected.</h2><p>You can close this tab and return to the app.</p></div><script>setTimeout(function(){window.close()},900)</script>');
+      res.end('<!doctype html><meta charset="utf-8"><title>blank</title><style>body{font:14px ui-sans-serif,system-ui;display:grid;place-items:center;height:100vh;margin:0;color:#101828;background:#fff}div{text-align:center}p{color:#667085}</style><div><h2>blank is connected.</h2><p>You can close this tab and return to the app.</p></div><script>setTimeout(function(){window.close()},900)</script>');
       finish(params);
     });
     server.on('error', (err) => {
@@ -188,7 +188,7 @@ async function registerClient(metadata, redirectUri, server) {
   const method = metadata.token_endpoint_auth_methods_supported;
   const authMethod = Array.isArray(method) && method.includes('client_secret_post') ? 'client_secret_post' : 'none';
   const body = {
-    client_name: 'Blank',
+    client_name: 'blank',
     application_type: 'native',
     redirect_uris: [redirectUri],
     grant_types: ['authorization_code', 'refresh_token'],

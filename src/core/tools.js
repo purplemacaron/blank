@@ -8,6 +8,7 @@ const {
   createCheckpoint, isTextFile,
 } = require('./store');
 const { assessToolCall, hasExactApproval, REASONS } = require('./approvals');
+const { runConsoleCommand } = require('./console');
 /* Heavy or platform-specific modules load on first use. Chat, planning and
    file edits never pay for sharp, ffmpeg or ssh2 in memory. */
 let mediaCache = null;
@@ -15,11 +16,15 @@ let searchCache = null;
 let computerCache = null;
 let sshCache = null;
 let paperCache = null;
+let codeCache = null;
+let apisCache = null;
 const mediaLibrary = () => (mediaCache || (mediaCache = require('./media')));
 const papers = () => (paperCache || (paperCache = require('./paper')));
 const search = () => (searchCache || (searchCache = require('./search')));
 const computer = () => (computerCache || (computerCache = require('./computer')));
 const ssh = () => (sshCache || (sshCache = require('./ssh')));
+const codeTools = () => (codeCache || (codeCache = require('./code')));
+const apiTools = () => (apisCache || (apisCache = require('./apis')));
 
 const MAX_RESULT = 40000;
 const BINARY_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.zip', '.gz', '.tar', '.7z', '.exe', '.dll', '.so', '.dylib', '.mp3', '.mp4', '.mov', '.woff', '.woff2', '.ttf', '.otf', '.class', '.jar', '.wasm', '.bin']);
@@ -144,6 +149,63 @@ const TOOL_SPECS = [
     mutating: true,
   },
   {
+    name: 'project_map',
+    label: 'Map project',
+    description: 'Summarize the workspace: file counts, top languages, package scripts, detected checks, git branch and changed files. Call this before coding work in an unfamiliar repository.',
+    parameters: {
+      type: 'object',
+      properties: {
+        max_files: { type: 'integer', description: 'How many files to scan (default 400, max 1200).' },
+      },
+    },
+    planSafe: true,
+  },
+  {
+    name: 'git_diff',
+    label: 'Read git diff',
+    description: 'Show the current git diff for the workspace or one file, including untracked files. Use to review changes before reporting or committing.',
+    parameters: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', description: 'Optional workspace-relative file.' },
+        staged: { type: 'boolean', description: 'Read the staged diff instead of the working tree.' },
+        max_chars: { type: 'integer', description: 'Maximum characters (default 20000).' },
+      },
+    },
+    planSafe: true,
+  },
+  {
+    name: 'run_checks',
+    label: 'Run project checks',
+    description: 'Run the project\'s detected test, lint, typecheck or build script and return the output. Omit check to list what is available; pass "all" to run every detected check in order.',
+    parameters: {
+      type: 'object',
+      properties: {
+        check: { type: 'string', description: 'Check id such as test, lint, typecheck, build, or "all".' },
+        timeout_ms: { type: 'integer', description: 'Timeout in ms (default 300000, max 600000).' },
+      },
+    },
+    mutating: true,
+  },
+  {
+    name: 'api_request',
+    label: 'Call saved API',
+    description: 'Call an HTTP API connector saved in the APIs page. The saved key is attached in the main process and never returned. Use for service integrations the user configured.',
+    parameters: {
+      type: 'object',
+      properties: {
+        api: { type: 'string', description: 'Connector id or name.' },
+        path: { type: 'string', description: 'Path appended to the base URL, e.g. "/v1/items".' },
+        method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], description: 'HTTP method (default GET).' },
+        query: { type: 'object', description: 'Optional query string values.' },
+        headers: { type: 'object', description: 'Optional extra request headers.' },
+        body: { type: 'string', description: 'Optional request body. Objects are sent as JSON.' },
+        timeout_ms: { type: 'integer', description: 'Timeout in ms (default 30000, max 120000).' },
+      },
+      required: ['api'],
+    },
+  },
+  {
     name: 'web_fetch',
     label: 'Fetch URL',
     description: 'Fetch a URL and return readable text. Use for documentation or references. HTML is reduced to plain text.',
@@ -174,7 +236,7 @@ const TOOL_SPECS = [
   {
     name: 'computer_screenshot',
     label: 'Capture screen',
-    description: 'Capture the screen to a PNG in the Blank data folder and return its path. Use this to see what the user is looking at before suggesting or performing UI actions. Screen contents are sensitive; each capture asks by default.',
+    description: 'Capture the screen to a PNG in the blank data folder and return its path. Use this to see what the user is looking at before suggesting or performing UI actions. Screen contents are sensitive; each capture asks by default.',
     parameters: {
       type: 'object',
       properties: {},
@@ -287,7 +349,7 @@ const TOOL_SPECS = [
   {
     name: 'team_delegate',
     label: 'Run agent team',
-    description: 'Fan one investigation out to the enabled specialist agents in parallel, then return each report. Use for complex work that benefits from independent research, design and review perspectives. All members are read-only.',
+    description: 'Fan one investigation out to the enabled specialist agents in parallel, then return each report. Use for complex work that benefits from independent research, design and review perspectives. Members marked for write work can edit files; their calls still follow your approval policy.',
     parameters: {
       type: 'object',
       properties: {
@@ -298,6 +360,32 @@ const TOOL_SPECS = [
     },
     planSafe: true,
     requiresTeam: true,
+  },
+  {
+    name: 'delegate_many',
+    label: 'Delegate in parallel',
+    description: 'Run up to four independent sub-agent tasks at the same time and return every report. Use when separate investigations or work packages do not depend on each other. Set write on individual tasks when that worker should edit files.',
+    parameters: {
+      type: 'object',
+      properties: {
+        tasks: {
+          type: 'array',
+          description: 'Independent tasks (1-4).',
+          items: {
+            type: 'object',
+            properties: {
+              task: { type: 'string', description: 'Precise task with expected output and paths.' },
+              name: { type: 'string', description: 'Optional short worker label.' },
+              write: { type: 'boolean', description: 'Allow this worker to edit files and run commands.' },
+              steps: { type: 'integer', description: 'Maximum steps for this worker.' },
+            },
+            required: ['task'],
+          },
+        },
+      },
+      required: ['tasks'],
+    },
+    planSafe: true,
   },
   {
     name: 'ssh_run',
@@ -318,7 +406,7 @@ const TOOL_SPECS = [
   {
     name: 'list_media',
     label: 'Browse media',
-    description: 'List images, video, music and 3D assets in the Blank media library. Returns asset ids you can reference with edit_media.',
+    description: 'List images, video, music and 3D assets in the blank media library. Returns asset ids you can reference with edit_media.',
     parameters: {
       type: 'object',
       properties: {
@@ -386,7 +474,7 @@ const TOOL_SPECS = [
   {
     name: 'create_paper',
     label: 'Create paper',
-    description: 'Create a Paper — a live document kept in the Blank Paper library and shown to the user as a paper card. Use html for a self-contained interactive page, markdown for a document, svg for a graphic, or code for a snippet. Keep HTML self-contained: inline CSS and JS, no network requests, no external scripts. Returns the paper id; revise it later with update_paper.',
+    description: 'Create a Paper — a live document kept in the blank Paper library and shown to the user as a paper card. Use html for a self-contained interactive page, markdown for a document, svg for a graphic, or code for a snippet. Keep HTML self-contained: inline CSS and JS, no network requests, no external scripts. Returns the paper id; revise it later with update_paper.',
     parameters: {
       type: 'object',
       properties: {
@@ -433,7 +521,7 @@ const TOOL_SPECS = [
   {
     name: 'list_papers',
     label: 'Browse papers',
-    description: 'List Papers in the Blank Paper library, newest first. Returns ids, titles, kinds and versions.',
+    description: 'List Papers in the blank Paper library, newest first. Returns ids, titles, kinds and versions.',
     parameters: {
       type: 'object',
       properties: {
@@ -757,7 +845,7 @@ async function toolRunCommand(args, ctx) {
   const command = String(args.command || '').trim();
   if (!command) return { content: 'command is required.', isError: true };
   if (DANGEROUS.some((rx) => rx.test(command))) {
-    return { content: 'Blocked by Blank’s safety policy: this command could destroy the machine. Ask the user to run it manually if it is truly intended.', isError: true };
+    return { content: 'Blocked by blank’s safety policy: this command could destroy the machine. Ask the user to run it manually if it is truly intended.', isError: true };
   }
   const timeout = Math.min(600000, Math.max(1000, Number(args.timeout_ms) || 120000));
   return await new Promise((resolve) => {
@@ -814,7 +902,7 @@ async function toolWebFetch(args, ctx) {
   const maxChars = Math.min(60000, Math.max(1000, Number(args.max_chars) || 20000));
   try {
     const response = await fetch(url, {
-      headers: { 'user-agent': 'Blank/1.0 (+https://blank.dev)', accept: 'text/html,application/json,text/plain;q=0.9,*/*;q=0.8' },
+      headers: { 'user-agent': 'blank/1.0 (+https://blank.dev)', accept: 'text/html,application/json,text/plain;q=0.9,*/*;q=0.8' },
       redirect: 'follow',
       signal: AbortSignal.timeout(25000),
     });
@@ -860,7 +948,7 @@ async function toolComputerScreenshot(args, ctx) {
     const shot = await computer().screenshot();
     const kb = (shot.bytes / 1024).toFixed(0);
     return {
-      content: `Screenshot saved: ${shot.path}\nDisplay: ${shot.display || 'unknown'} · ${kb} KB\n\nThe file is outside the workspace in Blank's data folder. Coordinates used by computer_use refer to absolute screen pixels.`,
+      content: `Screenshot saved: ${shot.path}\nDisplay: ${shot.display || 'unknown'} · ${kb} KB\n\nThe file is outside the workspace in blank's data folder. Coordinates used by computer_use refer to absolute screen pixels.`,
       meta: { path: shot.path, width: shot.width, height: shot.height, bytes: shot.bytes },
     };
   } catch (err) {
@@ -969,7 +1057,7 @@ async function collectMediaResults(job, args, ctx) {
   }
   const lines = [job.mode === 'edit' ? 'Created an edited copy:' : 'Generated media:'];
   assets.forEach((asset, index) => lines.push(describeMediaAsset(asset, saved[index])));
-  lines.push('Assets are in the Blank media library (Studio). Use list_media to find ids, or edit_media to make a copy.');
+  lines.push('Assets are in the blank media library (Studio). Use list_media to find ids, or edit_media to make a copy.');
   return {
     content: lines.join('\n'),
     meta: { media: assets, jobId: job.id, saved },
@@ -1155,6 +1243,98 @@ async function toolSshRun(args, ctx) {
   }
 }
 
+async function toolProjectMap(args, ctx) {
+  if (!ctx.workspace) return { content: 'Open a workspace folder first.', isError: true };
+  const info = await codeTools().overview(ctx.workspace);
+  const text = await codeTools().projectMapText(ctx.workspace, info);
+  return { content: text, meta: { workspace: ctx.workspace, files: info.files, checks: info.checks.length } };
+}
+
+async function toolGitDiff(args, ctx) {
+  if (!ctx.workspace) return { content: 'Open a workspace folder first.', isError: true };
+  const maxChars = Math.max(1000, Math.min(32000, Number(args.max_chars) || 20000));
+  const result = await codeTools().gitDiff(ctx.workspace, {
+    file: String(args.file || '').trim(),
+    staged: Boolean(args.staged),
+    maxBytes: maxChars,
+  });
+  if (result.error) return { content: result.error, isError: true };
+  const label = result.file ? `${result.file}${result.staged ? ' (staged)' : ''}` : result.staged ? 'Staged changes' : 'Working tree';
+  const body = result.diff.trim() || 'No changes.';
+  return {
+    content: `${label}${result.untracked ? ' · untracked file' : ''}\n${body}${result.truncated ? '\n…diff truncated.' : ''}`,
+    meta: { file: result.file, staged: result.staged, truncated: result.truncated },
+  };
+}
+
+async function toolRunChecks(args, ctx) {
+  if (!ctx.workspace) return { content: 'Open a workspace folder first.', isError: true };
+  const checks = codeTools().detectChecks(ctx.workspace);
+  const wanted = String(args.check || '').trim().toLowerCase();
+  if (!wanted) {
+    if (!checks.length) {
+      return { content: 'No test, lint, typecheck or build script was found in package.json. Run a custom command with run_command instead.' };
+    }
+    return {
+      content: `Available checks:\n${checks.map((check) => `- ${check.id} (${check.label}): ${check.command}`).join('\n')}\n\nCall run_checks with a check id, or "all".`,
+      meta: { checks },
+    };
+  }
+  const timeout = Math.max(10_000, Math.min(600_000, Number(args.timeout_ms) || 300_000));
+  const selected = wanted === 'all' ? checks : checks.filter((check) => check.id === wanted || check.script === wanted);
+  if (!selected.length) return { content: `No check named “${wanted}”.`, isError: true };
+  const lines = [];
+  let failed = 0;
+  for (const check of selected) {
+    const result = await runConsoleCommand({ workspace: ctx.workspace, command: check.command, timeout });
+    if (!result.ok) failed += 1;
+    const parts = [
+      `## ${check.label} — ${check.command} (exit ${result.code}${result.timedOut ? ', timed out' : ''}, ${result.durationMs}ms)`,
+      result.stdout.trim() ? result.stdout.trim() : '',
+      result.stderr.trim() ? `stderr:\n${result.stderr.trim()}` : '',
+      result.truncated ? '(output was truncated)' : '',
+    ].filter(Boolean);
+    lines.push(parts.join('\n'));
+  }
+  return {
+    content: lines.join('\n\n'),
+    isError: failed > 0,
+    meta: { checks: selected.map((check) => check.id), failed },
+  };
+}
+
+async function toolApiRequest(args, ctx) {
+  const api = apiTools().findApi(ctx.config, args.api);
+  if (!api) {
+    const names = apiTools().listApis(ctx.config).map((entry) => entry.name).join(', ');
+    return { content: names ? `No connector named “${args.api}”. Saved: ${names}.` : 'No API connectors are saved. Add one in the APIs page.', isError: true };
+  }
+  let body = args.body;
+  if (body && typeof body === 'object') {
+    // Keep objects as JSON; requestApi serializes them.
+  } else if (typeof body === 'string' && body.trim()) {
+    try { body = JSON.parse(body); } catch { /* plain text body */ }
+  }
+  const result = await apiTools().requestApi(api, {
+    path: String(args.path || '/'),
+    method: String(args.method || 'GET'),
+    query: args.query && typeof args.query === 'object' ? args.query : null,
+    headers: args.headers && typeof args.headers === 'object' ? args.headers : null,
+    body: body === null || body === undefined || body === '' ? null : body,
+    timeout: Number(args.timeout_ms) || 30_000,
+  });
+  const contentType = result.contentType || '';
+  let preview = result.body || '';
+  if (contentType.includes('json')) {
+    try { preview = JSON.stringify(JSON.parse(preview), null, 2); } catch { /* keep raw */ }
+  }
+  return {
+    content: `${result.api} · ${result.method} ${result.path} → ${result.status} ${result.statusText} (${result.durationMs}ms)\n${preview.slice(0, 24000)}${result.truncated ? '\n…response truncated.' : ''}`,
+    isError: !result.ok,
+    meta: { status: result.status, api: api.id, bytes: result.body.length },
+  };
+}
+
 const HANDLERS = {
   read_file: toolReadFile,
   write_file: toolWriteFile,
@@ -1173,6 +1353,10 @@ const HANDLERS = {
   memory_search: toolMemorySearch,
   read_skill: toolReadSkill,
   ssh_run: toolSshRun,
+  project_map: toolProjectMap,
+  git_diff: toolGitDiff,
+  run_checks: toolRunChecks,
+  api_request: toolApiRequest,
   list_media: toolListMedia,
   list_media_engines: toolListMediaEngines,
   generate_media: toolGenerateMedia,
@@ -1259,7 +1443,7 @@ async function executeTool(call, ctx) {
   if (permission.level === 'deny') {
     return { content: `Tool "${name}" is blocked in Settings.`, isError: true };
   }
-  if (permission.level === 'ask' && name !== 'delegate') {
+  if (permission.level === 'ask' && name !== 'delegate' && name !== 'delegate_many') {
     if (!ctx.requestApproval) return { content: 'Approval is required but unavailable.', isError: true };
     const decision = await ctx.requestApproval({
       tool: name,
@@ -1277,6 +1461,21 @@ async function executeTool(call, ctx) {
       if (!ctx.teamDelegate) return { content: 'The agent team is not available in this runner.', isError: true };
       const output = await ctx.teamDelegate(String(args.task || ''), Array.isArray(args.members) ? args.members : []);
       return { content: output, meta: { delegated: true, team: true } };
+    }
+    if (name === 'delegate_many') {
+      if (!ctx.delegateMany) return { content: 'Sub-agents are unavailable in this runner.', isError: true };
+      const tasks = (Array.isArray(args.tasks) ? args.tasks : []).slice(0, 4);
+      if (!tasks.length) return { content: 'Give at least one task.', isError: true };
+      if (mode === 'plan' && tasks.some((task) => task.write)) {
+        return { content: 'Plan mode is read-only. Delegate research without write, or switch to Agent mode to hand out write work.', isError: true };
+      }
+      const output = await ctx.delegateMany(tasks.map((task) => ({
+        task: String(task?.task || ''),
+        write: Boolean(task?.write),
+        name: String(task?.name || '').trim(),
+        steps: Number(task?.steps) || 0,
+      })));
+      return { content: output, meta: { delegated: true, count: tasks.length } };
     }
     if (name === 'delegate') {
       if (!ctx.delegate) return { content: 'Sub-agents are unavailable in this runner.', isError: true };
@@ -1324,7 +1523,12 @@ function summarizeArgs(name, args = {}) {
   if (name === 'todo_write') return `${(args.todos || []).length} items`;
   if (name === 'remember') return args.text || '';
   if (name === 'delegate') return `${args.write ? 'write worker · ' : ''}${args.task || ''}`;
+  if (name === 'delegate_many') return `${(args.tasks || []).length} parallel workers · ${(args.tasks || []).map((task) => task.task || '').join(' / ')}`;
   if (name === 'team_delegate') return `${(args.members || []).length || 'all'} agents · ${args.task || ''}`;
+  if (name === 'project_map') return 'workspace overview';
+  if (name === 'git_diff') return `${args.staged ? 'staged' : 'working tree'}${args.file ? ` · ${args.file}` : ''}`;
+  if (name === 'run_checks') return args.check || 'list checks';
+  if (name === 'api_request') return `${args.method || 'GET'} ${args.api || ''}${args.path || ''}`;
   if (name === 'ssh_run') return `${args.host || ''} · ${args.command || ''}`;
   if (name === 'generate_media') return `${args.kind || 'image'} · ${args.prompt || ''}`;
   if (name === 'deliver_file') return args.title || args.path || '';

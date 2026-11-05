@@ -20,7 +20,7 @@ const CATALOG = [
     category: 'Built in',
     icon: 'globe',
     tagline: 'Search the live web, then read and cite the best pages.',
-    description: 'Blank ships web_search and web_fetch. DuckDuckGo works with no key; Brave, Tavily, Exa, Serper and SearXNG can be connected in Settings.',
+    description: 'blank ships web_search and web_fetch. DuckDuckGo works with no key; Brave, Tavily, Exa, Serper and SearXNG can be connected in Settings.',
     kind: 'builtin',
     action: 'settings-web',
     tags: ['No setup', 'Citations'],

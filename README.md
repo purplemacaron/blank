@@ -1,8 +1,8 @@
-# Blank
+# blank
 
 A quiet, local-first agent harness for your desktop. White by default, blue accent, keyboard friendly, and built to span chat, code, tools, media, Paper, and remote control — not just one of them.
 
-[Download Blank](https://purplemacaron.github.io/blank/) · [Source](https://github.com/purplemacaron/blank) · [Releases](https://github.com/purplemacaron/blank/releases)
+[Download blank](https://purplemacaron.github.io/blank/) · [Source](https://github.com/purplemacaron/blank) · [Releases](https://github.com/purplemacaron/blank/releases)
 
 ```
 npm install
@@ -61,7 +61,7 @@ Press send during a run and the message is queued in the composer tray. The queu
 | --- | --- |
 | `npm start` | Launch the desktop app |
 | `npm run dev` | Launch with developer tooling |
-| `npm run cli` | Use Blank from a terminal (`bin/blank.js`) |
+| `npm run cli` | Use blank from a terminal (`bin/blank.js`) |
 | `npm test` | Run the Node test suite |
 | `npm run dist` | Build an installer with electron-builder (NSIS, DMG, AppImage) |
 

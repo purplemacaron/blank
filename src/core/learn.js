@@ -97,7 +97,7 @@ async function reflectNow({ config, workspace, signal, modelId }) {
   const skills = listSkills(workspace, config);
   const stats = getStats(workspace);
 
-  const system = `You are Blank's reflection engine. You read past agent sessions and propose durable improvements. You are conservative and high-signal: it is normal to return zero insights.
+  const system = `You are blank's reflection engine. You read past agent sessions and propose durable improvements. You are conservative and high-signal: it is normal to return zero insights.
 
 Return JSON only, matching:
 {"insights":[

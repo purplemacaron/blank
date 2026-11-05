@@ -33,7 +33,7 @@ app.setAppUserModelId('dev.blank.harness');
 
 // A dev window runs beside an installed copy instead of fighting its lock.
 if (process.argv.includes('--dev')) {
-  app.setPath('userData', path.join(app.getPath('appData'), 'Blank Dev'));
+  app.setPath('userData', path.join(app.getPath('appData'), 'blank Dev'));
 }
 
 /* Keep the renderer heap honest and avoid a spare renderer process. The cap
@@ -120,7 +120,7 @@ function registerPaperProtocol() {
 function ensureWorkspace() {
   const config = loadConfig();
   if (config.workspace && fs.existsSync(config.workspace)) return config.workspace;
-  const dir = path.join(app.getPath('documents'), 'Blank Workspace');
+  const dir = path.join(app.getPath('documents'), 'blank Workspace');
   try {
     fs.mkdirSync(dir, { recursive: true });
     config.workspace = dir;
@@ -157,13 +157,14 @@ function createWindow() {
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     trafficLightPosition: isMac ? { x: 18, y: 15 } : undefined,
     backgroundColor: config.theme === 'dark' ? '#0E1014' : '#FFFFFF',
-    title: 'Blank',
+    title: 'blank',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      webviewTag: true,
       spellcheck: false,
       backgroundThrottling: true,
     },
@@ -187,6 +188,31 @@ function createWindow() {
     if (target.protocol === 'file:') return;
     event.preventDefault();
     if (/^https?:/i.test(url)) shell.openExternal(url);
+  });
+
+  /* The built-in browser is a sandboxed webview. Strip preload access and deny
+     anything that is not plain http(s), then keep popups from escaping the app. */
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    delete webPreferences.preload;
+    delete webPreferences.preloadURL;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+    webPreferences.webSecurity = true;
+    if (!/^https?:\/\//i.test(String(params.src || ''))) event.preventDefault();
+  });
+
+  mainWindow.webContents.on('did-attach-webview', (_event, contents) => {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+      return { action: 'deny' };
+    });
+    contents.on('will-navigate', (event, url) => {
+      if (!/^https?:\/\//i.test(String(url || ''))) event.preventDefault();
+    });
+    contents.on('will-redirect', (event, url) => {
+      if (!/^https?:\/\//i.test(String(url || ''))) event.preventDefault();
+    });
   });
 
   const allowMediaRequest = (permission, requestingUrl, mediaTypes) => {
@@ -225,7 +251,7 @@ function createWindow() {
   });
 
   mainWindow.on('unresponsive', () => {
-    dialog.showErrorBox('Blank is unresponsive', 'The window stopped responding. You can close it and restart Blank.');
+    dialog.showErrorBox('blank is unresponsive', 'The window stopped responding. You can close it and restart blank.');
   });
 
   mainWindow.on('minimize', () => {

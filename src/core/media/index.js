@@ -1,6 +1,6 @@
 'use strict';
 
-/* Blank media library — one pipeline for images, video, music and 3D.
+/* blank media library — one pipeline for images, video, music and 3D.
    Generation runs only through engines the user has actually connected:
    cloud providers with saved keys, a ComfyUI endpoint, or installed system
    voices for speech. Local sharp/ffmpeg tools remain for non-destructive

@@ -100,7 +100,7 @@ function workflowFor({ checkpoint, prompt, width, height, seed }) {
     6: { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ['4', 1] } },
     7: { class_type: 'CLIPTextEncode', inputs: { text: 'blurry, watermark, text, low quality', clip: ['4', 1] } },
     8: { class_type: 'VAEDecode', inputs: { samples: ['3', 0], vae: ['4', 2] } },
-    9: { class_type: 'SaveImage', inputs: { filename_prefix: 'Blank', images: ['8', 0] } },
+    9: { class_type: 'SaveImage', inputs: { filename_prefix: 'blank', images: ['8', 0] } },
   };
 }
 

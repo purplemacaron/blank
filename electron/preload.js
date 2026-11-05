@@ -131,6 +131,32 @@ const api = {
     run: (id) => invoke('schedules:run', { id }),
   },
 
+  console: {
+    run: (input) => invoke('console:run', input),
+    terminal: {
+      start: () => invoke('console:terminalStart'),
+      state: () => invoke('console:terminalState'),
+      write: (data) => invoke('console:terminalWrite', { data }),
+      stop: () => invoke('console:terminalStop'),
+      restart: () => invoke('console:terminalRestart'),
+      clear: () => invoke('console:terminalClear'),
+    },
+  },
+
+  code: {
+    overview: () => invoke('code:overview'),
+    diff: (input) => invoke('code:diff', input),
+    checks: () => invoke('code:checks'),
+    runCheck: (input) => invoke('code:runCheck', input),
+  },
+
+  apis: {
+    list: () => invoke('apis:list'),
+    save: (input) => invoke('apis:save', input),
+    remove: (id) => invoke('apis:delete', { id }),
+    test: (input) => invoke('apis:test', input),
+  },
+
   notifications: {
     status: () => invoke('notifications:status'),
     test: () => invoke('notifications:test'),

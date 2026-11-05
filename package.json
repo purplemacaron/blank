@@ -1,11 +1,11 @@
 {
   "name": "blank",
-  "productName": "Blank",
-  "version": "1.1.9",
+  "productName": "blank",
+  "version": "1.2.0",
   "description": "A quiet, local-first agent harness for your workspace.",
   "main": "electron/main.js",
   "license": "MIT",
-  "author": "Blank",
+  "author": "blank",
   "bin": {
     "blank": "bin/blank.js"
   },
@@ -22,7 +22,7 @@
   },
   "build": {
     "appId": "dev.blank.harness",
-    "productName": "Blank",
+    "productName": "blank",
     "files": [
       "electron/**/*",
       "renderer/**/*",

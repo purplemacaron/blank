@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify tag matches package version
         run: |
-          node -e "const v=require('./package.json').version;const tag=process.env.GITHUB_REF_NAME.replace(/^v/,'');if(v!==tag){console.error('Tag v'+tag+' does not match package.json version '+v);process.exit(1)}console.log('Releasing Blank v'+v)"
+          node -e "const v=require('./package.json').version;const tag=process.env.GITHUB_REF_NAME.replace(/^v/,'');if(v!==tag){console.error('Tag v'+tag+' does not match package.json version '+v);process.exit(1)}console.log('Releasing blank v'+v)"
       - uses: actions/download-artifact@v4
         with:
           path: installers

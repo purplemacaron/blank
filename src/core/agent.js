@@ -77,13 +77,13 @@ async function runSubagent({ task, parentSession, config, modelId, workspace, si
   const write = Boolean(allowWrite);
   const role = name || (write ? 'a work sub-agent' : 'a read-only research sub-agent');
   const guidance = write
-    ? `You are ${role} inside Blank. You can read and edit files and run commands in the workspace. Work independently, make the smallest correct changes, and verify them with a focused test or build when practical. Every write or command follows the user's approval policy, so do not ask questions. Finish with a compact report: what changed, file paths, and what you verified. Do not delegate further.`
-    : `You are ${role} inside Blank. You have file and web tools, but cannot write or run commands. Investigate the task efficiently, using at most a few targeted tool calls. Return a compact report with concrete findings and file:line references. Do not restate the task. Do not ask questions.`;
+    ? `You are ${role} inside blank. You can read and edit files and run commands in the workspace. Work independently, make the smallest correct changes, and verify them with a focused test or build when practical. Every write or command follows the user's approval policy, so do not ask questions. Finish with a compact report: what changed, file paths, and what you verified. Do not delegate further.`
+    : `You are ${role} inside blank. You have file and web tools, but cannot write or run commands. Investigate the task efficiently, using at most a few targeted tool calls. Return a compact report with concrete findings and file:line references. Do not restate the task. Do not ask questions.`;
   const prompt = system ? `${system}\n\n${guidance}` : guidance;
   const messages = [{ role: 'user', content: task }];
   const wanted = write
-    ? ['read_file', 'write_file', 'edit_file', 'list_dir', 'glob', 'grep', 'run_command', 'web_search', 'web_fetch', 'read_skill', 'memory_search']
-    : ['read_file', 'list_dir', 'glob', 'grep', 'web_search', 'web_fetch'];
+    ? ['read_file', 'write_file', 'edit_file', 'list_dir', 'glob', 'grep', 'run_command', 'run_checks', 'project_map', 'git_diff', 'api_request', 'web_search', 'web_fetch', 'read_skill', 'memory_search']
+    : ['read_file', 'list_dir', 'glob', 'grep', 'project_map', 'git_diff', 'web_search', 'web_fetch'];
   const tools = getToolDefinitions({ mode: write ? 'agent' : 'plan', config }).filter((tool) => wanted.includes(tool.name));
   const limit = Math.max(4, Math.min(24, Number(maxSteps) || (write ? 14 : 8)));
   let final = '';
@@ -194,6 +194,65 @@ async function runAgent({
     return decision === 'deny' ? 'deny' : 'allow';
   }
 
+  function saveAgentRecord(entry) {
+    session.subagents = Array.isArray(session.subagents) ? session.subagents : [];
+    const index = session.subagents.findIndex((item) => item.id === entry.id);
+    if (index >= 0) session.subagents[index] = { ...session.subagents[index], ...entry };
+    else session.subagents.push(entry);
+    if (session.subagents.length > 24) session.subagents = session.subagents.slice(-24);
+    try { saveSession(session); } catch {}
+  }
+
+  async function runWorker({ task, label, write, steps, system, modelId }) {
+    const text = String(task || '').trim();
+    const name = String(label || '').trim() || (write ? 'Work worker' : 'Research worker');
+    if (!text) return { report: 'A task is required for the sub-agent.', usage: { input: 0, output: 0 } };
+    const id = uid('sub_');
+    const startedAt = new Date().toISOString();
+    const record = { id, name, task: text.slice(0, 240), write: Boolean(write), status: 'running', at: startedAt };
+    saveAgentRecord(record);
+    emit({ type: 'agent:start', agent: record });
+    emit({ type: 'notice', level: 'info', text: `${name} working${write ? ' · can edit and run' : ' · read-only'}.` });
+    const usageOut = { input: 0, output: 0 };
+    const started = Date.now();
+    let report;
+    let status = 'ok';
+    try {
+      report = await runSubagent({
+        task: text,
+        parentSession: session,
+        config,
+        modelId: modelId || activeModel,
+        workspace,
+        signal,
+        usageOut,
+        system,
+        name,
+        allowWrite: Boolean(write),
+        requestApproval: approve,
+        maxSteps: steps,
+      });
+      if (/^(Sub-agent failed|Member failed)/i.test(report)) status = 'error';
+    } catch (err) {
+      report = `Sub-agent failed: ${err.message}`;
+      status = 'error';
+    }
+    session.usage.input += usageOut.input;
+    session.usage.output += usageOut.output;
+    emit({ type: 'usage', usage: { ...session.usage } });
+    const finished = {
+      ...record,
+      status,
+      report: String(report || '').slice(0, 2000),
+      durationMs: Date.now() - started,
+      finishedAt: new Date().toISOString(),
+    };
+    saveAgentRecord(finished);
+    emit({ type: 'agent:end', agent: finished });
+    emit({ type: 'notice', level: status === 'ok' ? 'info' : 'warn', text: `${name} ${status === 'ok' ? 'finished' : 'failed'}.` });
+    return { report, usage: usageOut, name, status };
+  }
+
   const toolCtx = {
     workspace,
     session,
@@ -206,33 +265,30 @@ async function runAgent({
     delegate: async (task, options = {}) => {
       const write = Boolean(options.write);
       const label = String(options.name || '').trim() || (write ? 'work worker' : 'research sub-agent');
-      const text = String(task || '').trim();
-      if (!text) return 'A task is required for the sub-agent.';
-      emit({ type: 'notice', level: 'info', text: `${label} working${write ? ' · can edit and run' : ' · read-only'}.` });
-      const usageOut = { input: 0, output: 0 };
-      let report;
-      try {
-        report = await runSubagent({
-          task: text,
-          parentSession: session,
-          config,
-          modelId: activeModel,
-          workspace,
-          signal,
-          usageOut,
-          name: label,
-          allowWrite: write,
-          requestApproval: approve,
-          maxSteps: options.steps,
-        });
-      } catch (err) {
-        report = `Sub-agent failed: ${err.message}`;
+      const result = await runWorker({
+        task,
+        label,
+        write,
+        steps: options.steps,
+      });
+      return result.report;
+    },
+    delegateMany: async (tasks = []) => {
+      const list = (Array.isArray(tasks) ? tasks : []).slice(0, 4).filter((task) => String(task?.task || '').trim());
+      if (!list.length) return 'A task is required for each sub-agent.';
+      if (list.length === 1) {
+        const only = list[0];
+        const result = await runWorker({ task: only.task, label: only.name, write: only.write, steps: only.steps });
+        return `## ${result.name}\n${String(result.report || '').trim() || 'No findings.'}`;
       }
-      session.usage.input += usageOut.input;
-      session.usage.output += usageOut.output;
-      emit({ type: 'usage', usage: { ...session.usage } });
-      emit({ type: 'notice', level: 'info', text: `${label} finished.` });
-      return report;
+      emit({ type: 'notice', level: 'info', text: `${list.length} sub-agents working in parallel.` });
+      const results = await Promise.all(list.map((task) => runWorker({
+        task: task.task,
+        label: task.name,
+        write: task.write,
+        steps: task.steps,
+      })));
+      return results.map((result) => `## ${result.name}\n${String(result.report || '').trim() || 'No findings.'}`).join('\n\n').slice(0, 40000);
     },
     teamDelegate: async (task, wanted = []) => {
       const team = config.team || {};
@@ -247,31 +303,15 @@ async function runAgent({
       if (!members.length) return 'No enabled team members matched. Check Settings → Team.';
       if (members.length > 6) return 'Run at most six specialists at once.';
       emit({ type: 'notice', level: 'info', text: `Agent team · ${members.map((member) => member.name).join(', ')} working in parallel.` });
-      const reports = await Promise.all(members.map(async (member) => {
-        const usageOut = { input: 0, output: 0 };
-        let report;
-        try {
-          report = await runSubagent({
-            task: text,
-            parentSession: session,
-            config,
-            modelId: member.model || activeModel,
-            workspace,
-            signal,
-            usageOut,
-            name: member.name,
-            system: `You are ${member.name}, a specialist on Blank's agent team. Work independently and do not ask the user questions.\n\nRole: ${member.role || 'Investigate the task and report concrete findings.'}`,
-          });
-        } catch (err) {
-          report = `Member failed: ${err.message}`;
-        }
-        session.usage.input += usageOut.input;
-        session.usage.output += usageOut.output;
-        return { member, report };
-      }));
-      emit({ type: 'usage', usage: { ...session.usage } });
-      emit({ type: 'notice', level: 'info', text: `Agent team finished · ${reports.length} report${reports.length === 1 ? '' : 's'}.` });
-      return reports.map(({ member, report }) => `## ${member.name}\n${String(report || '').trim() || 'No findings.'}`).join('\n\n').slice(0, 40000);
+      const results = await Promise.all(members.map((member) => runWorker({
+        task: text,
+        label: member.name,
+        write: Boolean(member.write),
+        modelId: member.model || activeModel,
+        system: `You are ${member.name}, a specialist on blank's agent team. Work independently and do not ask the user questions.\n\nRole: ${member.role || 'Investigate the task and report concrete findings.'}`,
+      })));
+      emit({ type: 'notice', level: 'info', text: `Agent team finished · ${results.length} report${results.length === 1 ? '' : 's'}.` });
+      return results.map((result) => `## ${result.name}\n${String(result.report || '').trim() || 'No findings.'}`).join('\n\n').slice(0, 40000);
     },
   };
 

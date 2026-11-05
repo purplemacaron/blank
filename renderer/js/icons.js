@@ -1,4 +1,4 @@
-/* Blank icons — hand-tuned 24px stroke set, no external dependencies. */
+/* blank icons — hand-tuned 24px stroke set, no external dependencies. */
 (function () {
   'use strict';
 

@@ -68,7 +68,7 @@
 
   function assistantHead(modelId) {
     return `<div class="assistant-head">
-      <span class="assistant-name">Blank</span>
+      <span class="assistant-name">blank</span>
       <span class="assistant-model">${U.esc(modelName(modelId))}</span>
       <span class="assistant-time"></span>
     </div>`;
@@ -356,7 +356,7 @@
       <div class="approval-head">
         <span class="approval-icon">${icon('shield-alert', 14)}</span>
         <div class="approval-copy">
-          <div class="approval-title">Blank wants to <b>${U.esc(friendly.toLowerCase())}</b><span class="approval-reason">${U.esc(reason)}</span></div>
+          <div class="approval-title">blank wants to <b>${U.esc(friendly.toLowerCase())}</b><span class="approval-reason">${U.esc(reason)}</span></div>
           <div class="approval-sub">${U.esc(payload.summary || summarizeTool(tool, payload.args) || tool)}</div>
         </div>
       </div>
@@ -548,7 +548,7 @@
           <div class="usage-row"><span>Output</span><b>${U.fmtNumber(snapshot.output)}</b></div>
           <div class="usage-row"><span>Context limit</span><b>${U.fmtNumber(snapshot.limit)}</b></div>
         </div>
-        <div class="usage-foot">${icon('info', 10)}<span>Blank summarizes earlier turns near the limit.</span></div>`;
+        <div class="usage-foot">${icon('info', 10)}<span>blank summarizes earlier turns near the limit.</span></div>`;
     }
     UI.popover(anchor, content, { width: 252, align: 'end', placement: 'top' });
   }
@@ -590,8 +590,8 @@
         : mode === 'design'
           ? 'Describe the interface you want to design…'
           : mode === 'coding'
-            ? 'Describe the code change. Blank will read, edit, and run checks…'
-            : 'Ask Blank to build, debug, or explain…';
+            ? 'Describe the code change. blank will read, edit, and run checks…'
+            : 'Ask blank to build, debug, or explain…';
     if (context) context.innerHTML = contextChip();
     if (hint) {
       const perms = App.state.config?.permissions || {};
@@ -884,7 +884,7 @@
       </div>`}
       <div class="hero">
         <div class="hero-brand" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+          <svg viewBox="0 0 24 24"><rect width="24" height="24" rx="6" fill="#2F6BFF"/><path d="M8.6 4.4h4.6l4 4v9.2c0 .9-.7 1.6-1.6 1.6H8.6c-.9 0-1.6-.7-1.6-1.6V6c0-.9.7-1.6 1.6-1.6Z" fill="#fff"/><path d="M13.2 4.4v4h4Z" fill="#DCE7FF"/></svg>
         </div>
         <h1>What should we build?</h1>
         <div class="suggestion-grid">
@@ -914,7 +914,7 @@
           </button>
         </div>
         <div class="hero-foot">
-          <span>${modelId ? `${U.esc(provider ? provider.name : 'Blank')} · ${U.esc(modelName(modelId))}` : 'No model connected'}</span>
+          <span>${modelId ? `${U.esc(provider ? provider.name : 'blank')} · ${U.esc(modelName(modelId))}` : 'No model connected'}</span>
           <span>·</span>
           <span><kbd>${U.kbd('Ctrl K')}</kbd> commands</span>
         </div>
@@ -1542,7 +1542,7 @@
       await API.config.update({ approvals: { mode } });
       if (App.state.config) App.state.config.approvals = { ...(App.state.config.approvals || {}), mode };
       updateComposer();
-      UI.toast(mode === 'all' ? 'Blank will ask before every guarded action.' : 'Blank will ask only for important actions.', 'success');
+      UI.toast(mode === 'all' ? 'blank will ask before every guarded action.' : 'blank will ask only for important actions.', 'success');
     } catch (error) { UI.toast(error.message, 'error'); }
   }
 
@@ -1634,7 +1634,7 @@
   /* ----------------------------------------------------------------- session */
 
   function transcriptMarkdown(session) {
-    const lines = [`# ${session.title || 'Blank session'}`, ''];
+    const lines = [`# ${session.title || 'blank session'}`, ''];
     lines.push(`- Model: ${session.model || 'unknown'}`);
     lines.push(`- Mode: ${session.mode || 'agent'}`);
     lines.push(`- Created: ${session.createdAt ? new Date(session.createdAt).toLocaleString() : ''}`);
@@ -1644,7 +1644,7 @@
         lines.push('## You', '', message.content || '', '');
         if (message.attachments?.length) lines.push(`_Attachments: ${message.attachments.map((file) => file.name).join(', ')}_`, '');
       } else if (message.role === 'assistant') {
-        lines.push('## Blank', '', message.content || '', '');
+        lines.push('## blank', '', message.content || '', '');
         for (const call of message.toolCalls || []) {
           lines.push(`> Tool · ${call.name} — ${summarizeTool(call.name, call.args)}`, '');
         }
@@ -1780,7 +1780,7 @@
     if (payload.type === 'approval') {
       if (Chat.session?.id && payload.sessionId !== Chat.session.id) {
         UI.toast('Approval requested in another session.', 'warn', {
-          title: 'Blank needs you', timeout: 8000, actionLabel: 'Open session',
+          title: 'blank needs you', timeout: 8000, actionLabel: 'Open session',
           onAction: () => App.loadSession(payload.sessionId),
         });
         return;
@@ -2000,7 +2000,7 @@
             <div class="composer" id="composer">
               <div class="composer-attachments" id="composer-attachments"></div>
               <div class="composer-input-row">
-                <textarea class="composer-input" id="composer-input" rows="1" spellcheck="false" aria-label="Message Blank"></textarea>
+                <textarea class="composer-input" id="composer-input" rows="1" spellcheck="false" aria-label="Message blank"></textarea>
               </div>
               <div class="composer-tools">
                 <button class="composer-tool" type="button" data-action="attach-files" title="Attach text files">${icon('paperclip', 13)}<span>Attach</span></button>

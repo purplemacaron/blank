@@ -8,21 +8,65 @@
     js: 'const let var function return if else for while do switch case break continue new class extends import from export default async await try catch finally throw typeof instanceof in of delete void yield static get set this super null undefined true false',
     ts: 'const let var function return if else for while do switch case break continue new class extends import from export default async await try catch finally throw typeof instanceof in of delete void yield static get set this super null undefined true false interface type enum implements readonly public private protected declare namespace as satisfies keyof infer never unknown any string number boolean',
     json: 'true false null',
-    py: 'def class return if elif else for while in not and or import from as with try except finally raise lambda yield global nonlocal pass break continue None True False async await self',
+    py: 'def class return if elif else for while in not and or import from as with try except finally raise lambda yield global nonlocal pass break continue None True False async await self match case',
     sh: 'if then else elif fi for while do done case esac function in export local echo cd node npm git sudo',
     bash: 'if then else elif fi for while do done case esac function in export local echo cd node npm git sudo',
     css: 'important media keyframes import supports from to',
     html: '',
-    sql: 'select from where insert into values update set delete create table drop alter add index join left right inner outer on group by order limit offset as and or not null is in exists having distinct union all case when then else end',
-    go: 'package import func var const type struct interface map chan go defer return if else for range switch case break continue nil true false make new',
-    rs: 'fn let mut const struct enum impl trait pub use mod match if else for while loop return break continue where self Self as in async await move dyn ref type unsafe true false Some None Ok Err',
-    java: 'public private protected class interface extends implements new return if else for while switch case break continue static final void import package try catch finally throw throws this super null true false',
+    sql: 'select from where insert into values update set delete create table drop alter add index join left right inner outer on group by order limit offset as and or not null is in exists having distinct union all case when then else end returning with',
+    go: 'package import func var const type struct interface map chan go defer return if else for range switch case break continue nil true false make new select fallthrough',
+    rs: 'fn let mut const struct enum impl trait pub use mod match if else for while loop return break continue where self Self as in async await move dyn ref type unsafe true false Some None Ok Err crate super',
+    java: 'public private protected class interface extends implements new return if else for while switch case break continue static final void import package try catch finally throw throws this super null true false record sealed permits var',
     yaml: 'true false null',
     toml: 'true false',
+    kt: 'package import class interface object fun val var if else when for while do return break continue try catch finally throw is as in out private public protected internal override open data sealed enum companion this super null true false lateinit suspend by',
+    swift: 'import class struct enum protocol extension func let var if else guard for while repeat switch case break continue return throw throws try catch do defer init deinit self super nil true false public private internal fileprivate open static final override async await actor some any',
+    c: 'auto break case char const continue default do double else enum extern float for goto if inline int long register return short signed sizeof static struct switch typedef union unsigned void volatile while',
+    cpp: 'alignas auto bool break case catch char class const constexpr continue default delete do double else enum explicit export extern false float for friend if inline int long namespace new noexcept nullptr operator private protected public return short signed sizeof static struct switch template this throw true try typedef typename union unsigned using virtual void volatile while override final',
+    cs: 'using namespace class struct interface enum public private protected internal static void int string bool var new return if else for foreach while switch case break continue try catch finally throw this base null true false async await record get set',
+    php: 'function class interface trait extends implements public private protected static return if else elseif foreach for while switch case break continue try catch finally throw new echo print namespace use as null true false fn match readonly',
+    rb: 'def class module end if elsif else unless while until for in do begin rescue ensure raise return yield self nil true false and or not require attr_reader attr_accessor lambda proc',
+    r: 'function if else for while repeat in next break return TRUE FALSE NULL NA library require c',
+    scala: 'package import class object trait extends with def val var if else match case for while do return new this super null true false implicit override private protected sealed final lazy given using enum',
+    dart: 'import class extends implements mixin enum abstract final const var late static void int double bool String if else for while switch case break continue return try catch finally throw new this super null true false async await dynamic',
+    ex: 'defmodule defp def do end if else unless case cond for with fn when import alias use require true false nil and or not in receive send',
+    hs: 'module import where let in data type newtype class instance deriving do case of if then else',
+    clj: 'def defn let fn if do loop recur ns require true false nil',
+    lua: 'and break do else elseif end false for function goto if in local nil not or repeat return then true until while',
+    erl: 'module export import if case of end fun when receive after try catch throw',
+    pl: 'use require package sub my our local if elsif else unless while for foreach last next redo return true false',
+    groovy: 'def class interface package import if else for while switch case break continue return new try catch finally throw this super null true false',
+    ps1: 'param function if else elseif foreach for while switch return break continue try catch finally throw new class begin process end in filter',
+    dockerfile: 'FROM RUN CMD ENTRYPOINT COPY ADD WORKDIR ENV ARG EXPOSE VOLUME USER LABEL HEALTHCHECK SHELL ONBUILD AS',
+    graphql: 'query mutation subscription fragment on type input enum interface union schema scalar extend implements',
+    proto: 'syntax package import message enum service rpc returns repeated optional required oneof map reserved',
+    make: 'ifeq ifneq ifdef ifndef else endif include define endef export unexport override',
   };
 
+  const ALIASES = {
+    javascript: 'js', mjs: 'js', cjs: 'js', jsx: 'js', node: 'js',
+    typescript: 'ts', tsx: 'ts',
+    python: 'py', python3: 'py',
+    shell: 'bash', zsh: 'bash', console: 'bash', terminal: 'bash',
+    rust: 'rs', ruby: 'rb', kotlin: 'kt', kts: 'kt',
+    csharp: 'cs', 'c#': 'cs', 'c++': 'cpp', golang: 'go',
+    elixir: 'ex', exs: 'ex', haskell: 'hs', clojure: 'clj',
+    erlang: 'erl', perl: 'pl', groovy: 'groovy', powershell: 'ps1', pwsh: 'ps1',
+    docker: 'dockerfile', protobuf: 'proto', gql: 'graphql',
+    yml: 'yaml', scss: 'css', sass: 'css', less: 'css', stylus: 'css',
+    toml: 'toml', makefile: 'make', mk: 'make',
+    html: 'html', xml: 'html', svg: 'html', vue: 'html', svelte: 'html', astro: 'html',
+  };
+
+  const SUPPORTED = new Set(Object.keys(KEYWORDS));
+
+  function normalizeLanguage(lang) {
+    const value = String(lang || '').toLowerCase();
+    return ALIASES[value] || value;
+  }
+
   function highlight(raw, lang) {
-    const language = String(lang || '').toLowerCase();
+    const language = normalizeLanguage(lang);
     if (!raw) return '';
     if (language === 'diff') {
       return raw.split('\n').map((line) => {
@@ -30,17 +74,19 @@
         return cls ? `<span class="${cls}">${escape(line)}</span>` : escape(line);
       }).join('\n');
     }
-    const words = KEYWORDS[language] || KEYWORDS.js;
-    if (!['js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs', 'json', 'py', 'python', 'sh', 'bash', 'zsh', 'css', 'scss', 'sql', 'go', 'rs', 'rust', 'java', 'kt', 'swift', 'c', 'cpp', 'cs', 'php', 'rb', 'ruby', 'yml', 'yaml', 'toml', 'lua'].includes(language)) {
+    const words = KEYWORDS[language];
+    if (!SUPPORTED.has(language) || !words) {
       return escape(raw);
     }
-    const hashComment = ['py', 'python', 'sh', 'bash', 'zsh', 'rb', 'ruby', 'yml', 'yaml', 'toml', 'r'].includes(language);
+    const hashComment = ['py', 'sh', 'bash', 'rb', 'yml', 'yaml', 'toml', 'r', 'ps1', 'make', 'dockerfile', 'pl'].includes(language);
     const dashComment = ['sql', 'lua'].includes(language);
+    const semiComment = ['erl', 'hs'].includes(language);
     const commentGroup = [
       '\\/\\/[^\\n]*',
       '\\/\\*[\\s\\S]*?\\*\\/',
       hashComment ? '#[^\\n]*' : null,
       dashComment ? '--[^\\n]*' : null,
+      semiComment ? '--[^\\n]*' : null,
     ].filter(Boolean).join('|');
     const keywordPattern = words.split(/\s+/).filter(Boolean).join('|');
     const regex = new RegExp(

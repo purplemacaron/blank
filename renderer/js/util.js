@@ -1,4 +1,4 @@
-/* Blank renderer utilities. */
+/* blank renderer utilities. */
 (function () {
   'use strict';
 

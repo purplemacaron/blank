@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * A tiny, dependency-free MCP server used to verify Blank's MCP loop.
+ * A tiny, dependency-free MCP server used to verify blank's MCP loop.
  * Speaks newline-delimited JSON-RPC 2.0 on stdio.
  */
 

@@ -41,6 +41,7 @@ const DEFAULTS = {
     run_command: 'ask',
     ssh_run: 'ask',
     team_delegate: 'allow',
+    api_request: 'ask',
     mcp: 'ask',
   },
   approvals: {
@@ -106,12 +107,13 @@ const DEFAULTS = {
   ssh: {
     hosts: [],
   },
+  apis: [],
   team: {
     enabled: false,
     members: [
-      { id: 'scout', name: 'Scout', role: 'Map the codebase, gather evidence and return concrete file:line references, constraints and unknowns.', model: '', enabled: true },
-      { id: 'architect', name: 'Architect', role: 'Propose the smallest robust design. Name interfaces, tradeoffs, migration steps and risks.', model: '', enabled: true },
-      { id: 'critic', name: 'Critic', role: 'Find correctness, security, regression and missing-test risks. Be specific and skeptical.', model: '', enabled: true },
+      { id: 'scout', name: 'Scout', role: 'Map the codebase, gather evidence and return concrete file:line references, constraints and unknowns.', model: '', enabled: true, write: false },
+      { id: 'architect', name: 'Architect', role: 'Propose the smallest robust design. Name interfaces, tradeoffs, migration steps and risks.', model: '', enabled: true, write: false },
+      { id: 'critic', name: 'Critic', role: 'Find correctness, security, regression and missing-test risks. Be specific and skeptical.', model: '', enabled: true, write: false },
     ],
   },
 };
@@ -180,7 +182,7 @@ function normalizeModelDefaults(config) {
 }
 
 /**
- * Earlier builds shipped local "Blank" media engines. Those ids are retired;
+ * Earlier builds shipped local "blank" media engines. Those ids are retired;
  * map them to no engine (or System voice for speech) and drop options that no
  * real provider accepts, so generated requests only use connected engines.
  */
@@ -445,6 +447,7 @@ function publicConfig(config, catalog) {
       role: String(member.role || ''),
       model: String(member.model || ''),
       enabled: member.enabled !== false,
+      write: Boolean(member.write),
     })),
   };
   return {
@@ -498,6 +501,17 @@ function publicConfig(config, catalog) {
     ssh: {
       hosts: sshHosts,
     },
+    apis: Array.isArray(config.apis) ? config.apis.map((api) => ({
+      id: api.id,
+      name: api.name,
+      description: api.description || '',
+      baseUrl: api.baseUrl,
+      auth: api.auth || 'bearer',
+      headerName: api.headerName || 'Authorization',
+      hasKey: Boolean(api.key),
+      keyPreview: api.key ? maskKey(api.key) : '',
+      enabled: api.enabled !== false,
+    })) : [],
     team,
   };
 }

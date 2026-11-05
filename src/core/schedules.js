@@ -3,8 +3,9 @@
 const { appPaths, readJSON, writeJSON, uid } = require('./paths');
 const { isEffort } = require('./reasoning');
 
-const CADENCES = ['hourly', 'daily', 'weekdays'];
+const CADENCES = ['interval', 'hourly', 'daily', 'weekdays'];
 const MODES = ['agent', 'coding', 'design', 'plan', 'ask'];
+const HISTORY_LIMIT = 12;
 
 function schedulesFile() {
   return appPaths().schedules;
@@ -21,6 +22,10 @@ function computeNext(schedule, from = new Date()) {
   const base = from instanceof Date ? from : new Date(from);
   const next = new Date(base.getTime());
   next.setSeconds(0, 0);
+  if (schedule.cadence === 'interval') {
+    const every = Math.max(5, Math.min(1440, Number(schedule.everyMinutes) || 30));
+    return new Date(base.getTime() + every * 60_000).toISOString();
+  }
   if (schedule.cadence === 'hourly') {
     next.setMinutes(minutes, 0, 0);
     if (next.getTime() <= base.getTime()) next.setHours(next.getHours() + 1);
@@ -48,6 +53,7 @@ function sanitize(input, existing = {}, now = new Date()) {
     prompt: String(input.prompt ?? existing.prompt ?? '').trim().slice(0, 4000),
     cadence,
     time: /^([01]?\d|2[0-3]):([0-5]\d)$/.test(String(input.time ?? existing.time ?? '')) ? String(input.time ?? existing.time) : existing.time || '09:00',
+    everyMinutes: Math.max(5, Math.min(1440, Number(input.everyMinutes ?? existing.everyMinutes) || 30)),
     enabled: input.enabled === undefined ? existing.enabled !== false : Boolean(input.enabled),
     model: String(input.model ?? existing.model ?? '').trim().slice(0, 160),
     mode: MODES.includes(input.mode) ? input.mode : MODES.includes(existing.mode) ? existing.mode : 'agent',
@@ -63,6 +69,7 @@ function sanitize(input, existing = {}, now = new Date()) {
     lastError: existing.lastError || '',
     lastSessionId: existing.lastSessionId || '',
     runCount: Number(existing.runCount) || 0,
+    history: Array.isArray(existing.history) ? existing.history.slice(0, HISTORY_LIMIT) : [],
   };
   if (!schedule.prompt) throw new Error('A prompt is required for a scheduled run.');
   schedule.nextRunAt = schedule.enabled ? computeNext(schedule, now) : '';
@@ -117,7 +124,18 @@ function markRun(id, patch = {}) {
   schedule.lastStatus = patch.status || schedule.lastStatus;
   schedule.lastError = patch.error ? String(patch.error).slice(0, 800) : '';
   if (patch.sessionId) schedule.lastSessionId = patch.sessionId;
-  schedule.runCount = (Number(schedule.runCount) || 0) + 1;
+  if (patch.status && patch.status !== 'running') {
+    schedule.history = [
+      {
+        at: schedule.lastRunAt,
+        status: patch.status,
+        sessionId: patch.sessionId || '',
+        error: patch.error ? String(patch.error).slice(0, 300) : '',
+      },
+      ...(Array.isArray(schedule.history) ? schedule.history : []),
+    ].slice(0, HISTORY_LIMIT);
+  }
+  schedule.runCount = (Number(schedule.runCount) || 0) + (patch.status && patch.status !== 'running' ? 1 : 0);
   schedule.nextRunAt = schedule.enabled ? computeNext(schedule, new Date()) : '';
   saveSchedules(list);
   return schedule;

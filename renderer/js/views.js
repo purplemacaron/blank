@@ -1,4 +1,4 @@
-/* Blank pages — Models, Skills, Memory, MCP, Learning and Settings. */
+/* blank pages — Models, Skills, Memory, MCP, Learning and Settings. */
 (function () {
   'use strict';
 
@@ -10,7 +10,12 @@
     memory: { items: [], query: '' },
     mcp: { servers: [], catalog: [], loading: false },
     learn: { data: null, reflecting: false },
-    plugins: { items: [], query: '', filter: 'all', loading: false },
+    apis: { items: [], loading: false },
+    code: { data: null, selected: '', diff: null, running: '', result: null, loading: false },
+    console: { history: [], output: null, running: false, command: '' },
+    team: { loading: false },
+    automations: { schedules: [], running: [], loading: false, editing: '' },
+    browserUrl: '',
     settings: { remote: null, ssh: null, schedules: [], dictationOptions: null },
     paper: {
       loaded: false,
@@ -238,7 +243,7 @@ Start writing, or ask the agent to draft it.
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
         title: 'Models',
-        description: 'Connect frontier, open and local providers. Blank routes each session to the model you pick.',
+        description: 'Connect frontier, open and local providers. blank routes each session to the model you pick.',
         actions: `<button class="btn btn-secondary btn-sm" data-refresh-models>${icon('refresh', 12)} Refresh</button>
           <button class="btn btn-primary btn-sm" data-add-provider>${icon('plus', 12)} Add provider</button>`,
         meta: `<span class="badge blue">${providers.length} providers</span>`,
@@ -751,7 +756,7 @@ Start writing, or ask the agent to draft it.
     const footer = document.createElement('div');
     footer.style.cssText = 'display:flex;justify-content:flex-end;gap:6px;width:100%';
     footer.innerHTML = `<button class="btn btn-ghost btn-sm" data-cancel>Cancel</button><button class="btn btn-primary btn-sm" data-create>${icon('plus', 12)} Add provider</button>`;
-    const modal = UI.modal({ title: 'Add a provider', description: 'Connect a built-in provider in one click or point Blank at any compatible endpoint.', body, footer, size: 'large' });
+    const modal = UI.modal({ title: 'Add a provider', description: 'Connect a built-in provider in one click or point blank at any compatible endpoint.', body, footer, size: 'large' });
 
     const nameInput = body.querySelector('#custom-name');
     const protocolInput = body.querySelector('#custom-protocol');
@@ -867,7 +872,7 @@ Start writing, or ask the agent to draft it.
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
         title: 'Skills',
-        description: 'Teach Blank repeatable workflows. Skills are plain SKILL.md files stored on this machine or in your project.',
+        description: 'Teach blank repeatable workflows. Skills are plain SKILL.md files stored on this machine or in your project.',
         actions: `<button class="btn btn-secondary btn-sm" data-open-skills-folder>${icon('folder-open', 12)} Open folder</button>
           <button class="btn btn-primary btn-sm" data-new-skill>${icon('plus', 12)} New skill</button>`,
         meta: `<span class="badge green">${enabled} active</span>`,
@@ -1058,7 +1063,7 @@ Start writing, or ask the agent to draft it.
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
         title: 'Memory',
-        description: 'Facts Blank keeps across sessions. The agent saves durable preferences automatically; you can pin the ones that matter most.',
+        description: 'Facts blank keeps across sessions. The agent saves durable preferences automatically; you can pin the ones that matter most.',
         actions: `<button class="btn btn-secondary btn-sm" data-memory-refresh>${icon('refresh', 12)} Refresh</button>
           <button class="btn btn-primary btn-sm" data-add-memory>${icon('plus', 12)} Add memory</button>`,
         meta: `<span class="badge blue">${items.length} memories</span>`,
@@ -1528,7 +1533,7 @@ Start writing, or ask the agent to draft it.
   async function mountLearning(host) {
     vstate.page = 'learning';
     vstate.host = host;
-    host.innerHTML = pageLoading('Learning', 'Blank reviews its own sessions and proposes durable improvements.');
+    host.innerHTML = pageLoading('Learning', 'blank reviews its own sessions and proposes durable improvements.');
     try {
       const data = await API.learn.state();
       if (!alive(host, 'learning')) return;
@@ -1564,7 +1569,7 @@ Start writing, or ask the agent to draft it.
         <div class="learning-main">
           <div class="settings-section">
             <h2>Proposed improvements</h2>
-            <p>${pending.length ? 'Review what Blank noticed. Apply keeps it; dismiss forgets it.' : 'When a reflection pass finds something durable, it lands here for review.'}</p>
+            <p>${pending.length ? 'Review what blank noticed. Apply keeps it; dismiss forgets it.' : 'When a reflection pass finds something durable, it lands here for review.'}</p>
             ${pending.length ? pending.map((insight) => `<div class="insight-card">
               <div class="insight-head">
                 <span class="insight-type ${esc(insight.type)}">${icon(insightIcon(insight.type), 13)}</span>
@@ -1679,8 +1684,518 @@ Start writing, or ask the agent to draft it.
         <button class="mini-icon" type="button" data-team-remove title="Remove member">${icon('trash', 13)}</button>
       </div>
       <textarea class="settings-textarea team-role" data-team-field="role" rows="2" placeholder="What this specialist should investigate and report">${esc(member.role || '')}</textarea>
-      <input class="field-input team-model" data-team-field="model" value="${U.attr(member.model || '')}" placeholder="Model id (leave blank for the default)" spellcheck="false" />
+      <div class="team-member-foot">
+        <input class="field-input team-model" data-team-field="model" value="${U.attr(member.model || '')}" placeholder="Model id (leave blank for the default)" spellcheck="false" />
+        <label class="team-write"><span>Can edit files</span>${UI.switchHtml(Boolean(member.write), 'data-team-field="write"')}</label>
+      </div>
     </div>`;
+  }
+
+  /* ------------------------------------------------------- code / console / team */
+
+  function cadenceLabel(schedule) {
+    if (schedule.cadence === 'interval') return `Every ${schedule.everyMinutes || 30} min`;
+    if (schedule.cadence === 'hourly') return `Every hour at :${String(schedule.time || '09:00').slice(3, 5)}`;
+    if (schedule.cadence === 'weekdays') return `Weekdays at ${schedule.time || '09:00'}`;
+    return `Every day at ${schedule.time || '09:00'}`;
+  }
+
+  function diffMarkup(text) {
+    const lines = String(text || 'No changes.').split('\n').slice(0, 4000);
+    return lines.map((line) => {
+      const cls = line.startsWith('+++') || line.startsWith('---') ? 'meta'
+        : line.startsWith('@@') ? 'hunk'
+          : line.startsWith('+') ? 'add'
+            : line.startsWith('-') ? 'del' : '';
+      return `<span class="diff-line ${cls}">${U.esc(line) || ' '}</span>`;
+    }).join('');
+  }
+
+  async function mountCode(host) {
+    vstate.page = 'code';
+    vstate.host = host;
+    if (!vstate.code.data) host.innerHTML = pageLoading('Code & review', 'Reading the workspace.');
+    try {
+      const data = await API.code.overview();
+      if (!alive(host, 'code')) return;
+      vstate.code.data = data;
+      paintCode(host);
+    } catch (error) { if (alive(host, 'code')) pageError(host, 'Code & review', error); }
+  }
+
+  function paintCode(host) {
+    const data = vstate.code.data;
+    if (!data) return;
+    const git = data.git || {};
+    const checks = data.checks || [];
+    const selected = vstate.code.selected;
+    const diff = vstate.code.diff;
+    const result = vstate.code.result;
+    const changes = git.files || [];
+    host.innerHTML = `<div class="page-inner code-page">
+      ${UI.pageHeader({
+        title: 'Code & review',
+        description: 'Review changes and run project checks.',
+        actions: `<button class="btn btn-secondary btn-sm" type="button" data-code-refresh>${icon('refresh', 12)} Refresh</button><button class="btn btn-secondary btn-sm" type="button" data-code-editor>${icon('external-link', 12)} Open in VS Code</button>`,
+        meta: `<span class="badge ${git.isRepo ? 'blue' : 'gray'}">${esc(git.isRepo ? (git.branch || 'git') : 'No git')}</span>`,
+      })}
+      <div class="code-stats">
+        <div class="code-stat"><span>Files</span><b>${U.fmtNumber(data.files || 0)}</b></div>
+        <div class="code-stat"><span>Languages</span><b>${(data.languages || []).length}</b></div>
+        <div class="code-stat"><span>Changed</span><b>${(git.counts?.changed || 0) + (git.counts?.untracked || 0)}</b></div>
+        <div class="code-stat"><span>Checks</span><b>${checks.length}</b></div>
+        <div class="code-stat wide"><span>Workspace</span><b class="mono">${esc(data.workspace || 'None')}</b></div>
+      </div>
+      <div class="code-grid">
+        <section class="code-panel">
+          <div class="code-panel-head"><h2>Changes</h2><span class="setting-note">${esc(git.isRepo ? `${git.counts?.staged || 0} staged · ${git.counts?.changed || 0} modified · ${git.counts?.untracked || 0} untracked` : 'Not a repository')}</span></div>
+          ${changes.length ? `<div class="change-list">${changes.map((file) => `<button class="change-row ${selected === file.path ? 'active' : ''}" type="button" data-code-file="${U.attr(file.path)}">
+            <span class="change-status ${U.esc(file.status || '')}">${esc(file.status === 'untracked' ? '??' : file.status === 'staged' ? 'A' : file.status === 'conflicted' ? '!' : 'M')}</span>
+            <span class="change-path">${esc(file.path)}</span>
+          </button>`).join('')}</div>` : `<div class="code-empty">${icon('check-circle', 18)}<p>${git.isRepo ? 'The working tree is clean.' : 'Open a workspace with a git repository to review changes.'}</p></div>`}
+          ${data.languages?.length ? `<div class="code-langs">${data.languages.map((item) => `<span class="code-lang">${esc(item.name)} <b>${item.count}</b></span>`).join('')}</div>` : ''}
+        </section>
+        <section class="code-panel">
+          <div class="code-panel-head"><h2>Diff</h2>${selected ? `<span class="setting-note mono">${esc(selected)}</span>` : ''}</div>
+          ${selected
+            ? diff ? `<pre class="diff-view">${diffMarkup(diff.diff)}</pre>` : '<div class="code-empty"><span class="spinner"></span><p>Reading the diff…</p></div>'
+            : `<div class="code-empty">${icon('git-branch', 18)}<p>Select a changed file to read its diff.</p></div>`}
+        </section>
+      </div>
+      <section class="code-panel checks-panel">
+        <div class="code-panel-head"><h2>Checks</h2><span class="setting-note">${checks.length ? 'Detected from package.json' : 'No package.json scripts detected'}</span></div>
+        ${checks.length ? `<div class="check-actions">${checks.map((check) => `<button class="btn btn-secondary btn-sm" type="button" data-code-check="${U.attr(check.id)}" ${vstate.code.running ? 'disabled' : ''}>${vstate.code.running === check.id ? '<span class="spinner"></span>' : icon('play', 11)} ${esc(check.label)}</button>`).join('')}</div>` : `<div class="code-empty"><p>Run a custom command in the Console instead.</p></div>`}
+        ${result ? `<div class="check-result ${result.ok ? 'ok' : 'fail'}">
+          <div class="check-result-head"><span class="badge ${result.ok ? 'green' : 'red'}">${result.ok ? 'Passed' : `Exit ${result.code}`}</span><span>${esc(result.check?.label || '')} · ${result.durationMs || 0}ms</span><button class="mini-icon" type="button" data-code-copy title="Copy output">${icon('copy', 12)}</button></div>
+          <pre>${U.esc([result.stdout, result.stderr].filter(Boolean).join('\n') || 'No output.')}</pre>
+        </div>` : ''}
+      </section>
+      <div class="settings-permission-note">${icon('shield', 12)} Checks run this project's npm scripts locally.</div>
+    </div>`;
+    host.onclick = async (event) => {
+      if (event.target.closest('[data-code-refresh]')) { vstate.code.data = null; vstate.code.diff = null; vstate.code.selected = ''; vstate.code.result = null; mountCode(host); return; }
+      if (event.target.closest('[data-code-editor]')) { API.workspace.openEditor().then((res) => { if (res && res.ok === false) UI.toast(res.error || 'Could not open VS Code.', 'warn'); }).catch((error) => UI.toast(error.message, 'error')); return; }
+      const file = event.target.closest('[data-code-file]');
+      if (file) {
+        vstate.code.selected = file.dataset.codeFile;
+        vstate.code.diff = null;
+        paintCode(host);
+        try {
+          const diff = await API.code.diff({ file: vstate.code.selected });
+          if (!alive(host, 'code')) return;
+          vstate.code.diff = diff;
+        } catch (error) { vstate.code.diff = { diff: error.message }; }
+        paintCode(host);
+        return;
+      }
+      const check = event.target.closest('[data-code-check]');
+      if (check) {
+        vstate.code.running = check.dataset.codeCheck;
+        vstate.code.result = null;
+        paintCode(host);
+        try {
+          const result = await API.code.runCheck({ id: check.dataset.codeCheck });
+          if (!alive(host, 'code')) return;
+          vstate.code.result = result;
+        } catch (error) { UI.toast(error.message, 'error'); }
+        vstate.code.running = '';
+        paintCode(host);
+        return;
+      }
+      if (event.target.closest('[data-code-copy]')) {
+        const text = [vstate.code.result?.stdout, vstate.code.result?.stderr].filter(Boolean).join('\n');
+        const ok = await U.copyText(text || '');
+        UI.toast(ok ? 'Output copied.' : 'Clipboard unavailable.', ok ? 'success' : 'error');
+      }
+    };
+  }
+
+  /* ------------------------------------------------------------------ console */
+
+  function mountConsole(host) {
+    vstate.page = 'console';
+    vstate.host = host;
+    paintConsole(host);
+  }
+
+  function paintConsole(host) {
+    const workspace = currentConfig().workspace || '';
+    host.innerHTML = `<div class="page-inner console-page">
+      ${UI.pageHeader({
+        title: 'Console',
+        description: 'A local terminal in your workspace.',
+        actions: `<button class="btn btn-secondary btn-sm" type="button" data-console-side>${icon('panel-right', 12)} Open beside chat</button>`,
+        meta: `<span class="badge blue mono">${esc(workspace ? U.baseName(workspace) : 'No workspace')}</span>`,
+      })}
+      ${workspace
+        ? TerminalView.markup()
+        : `<div class="api-empty">${icon('terminal', 16)}<div><h3>Open a workspace</h3><p>A terminal starts in your project folder.</p></div><button class="btn btn-secondary btn-sm" type="button" data-console-workspace>Choose folder</button></div>`}
+    </div>`;
+    TerminalView.wire(host.querySelector('[data-terminal]'));
+    host.querySelector('[data-console-side]')?.addEventListener('click', () => App.showRailTab('terminal'));
+    host.querySelector('[data-console-workspace]')?.addEventListener('click', async () => {
+      try {
+        const result = await API.workspace.choose();
+        if (result && result.workspace) {
+          applyConfig(await API.config.get());
+          paintConsole(host);
+        }
+      } catch (error) { UI.toast(error.message, 'error'); }
+    });
+  }
+
+  /* --------------------------------------------------------------------- team */
+
+  async function mountTeam(host) {
+    vstate.page = 'team';
+    vstate.host = host;
+    host.innerHTML = pageLoading('blank Team', 'Parallel specialists.');
+    try {
+      const config = await API.config.get();
+      if (!alive(host, 'team')) return;
+      applyConfig(config);
+      paintTeam(host);
+    } catch (error) { if (alive(host, 'team')) pageError(host, 'blank Team', error); }
+  }
+
+  function paintTeam(host) {
+    const config = currentConfig();
+    const team = config.team || { enabled: false, members: [] };
+    const members = Array.isArray(team.members) ? team.members : [];
+    const enabled = members.filter((member) => member.enabled !== false && member.name).length;
+    host.innerHTML = `<div class="page-inner team-page">
+      ${UI.pageHeader({
+        title: 'blank Team',
+        description: 'One brief, several specialists in parallel.',
+        actions: `<button class="btn btn-secondary btn-sm" type="button" data-team-brief>${icon('bot', 12)} New team brief</button>`,
+        meta: `<span class="badge ${team.enabled ? 'blue' : 'gray'}">${team.enabled ? `${enabled} active` : 'Disabled'}</span>`,
+      })}
+      <section class="settings-section team-panel">
+        <div class="setting-row">
+          <div class="setting-copy"><div class="setting-label">Enable the agent team</div></div>
+          <div class="setting-control">${UI.switchHtml(Boolean(team.enabled), 'data-team-page-toggle')}</div>
+        </div>
+      </section>
+      <section class="settings-section">
+        <h2>Roster</h2>
+        <div class="team-members" data-team-members>${members.map((member) => teamMemberRow(member)).join('') || ''}</div>
+        <div class="provider-actions">
+          <button class="btn btn-secondary btn-sm" type="button" data-team-add>${icon('plus', 12)} Add member</button>
+          <button class="btn btn-primary btn-sm" type="button" data-save-team>Save roster</button>
+        </div>
+      </section>
+    </div>`;
+    const save = async () => {
+      const nodes = [...host.querySelectorAll('[data-team-member]')];
+      const nextMembers = nodes.map((node, index) => {
+        const field = (name) => node.querySelector(`[data-team-field="${name}"]`);
+        return {
+          id: node.dataset.memberId || `member_${Date.now().toString(36)}_${index}`,
+          name: field('name')?.value.trim() || '',
+          role: field('role')?.value.trim() || '',
+          model: field('model')?.value.trim() || '',
+          enabled: field('enabled') ? field('enabled').classList.contains('on') : true,
+          write: field('write') ? field('write').classList.contains('on') : false,
+        };
+      }).filter((member) => member.name);
+      const enabledNow = host.querySelector('[data-team-page-toggle]')?.classList.contains('on') ?? Boolean(team.enabled);
+      try {
+        const updated = await API.config.update({ team: { enabled: enabledNow, members: nextMembers } });
+        applyConfig(updated);
+        paintTeam(host);
+        UI.toast(`Roster saved · ${nextMembers.length} member${nextMembers.length === 1 ? '' : 's'}.`, 'success');
+      } catch (error) { UI.toast(error.message, 'error'); }
+    };
+    host.onclick = async (event) => {
+      const toggle = event.target.closest('[data-team-page-toggle]');
+      if (toggle) {
+        const next = !toggle.classList.contains('on');
+        toggle.classList.toggle('on', next);
+        toggle.setAttribute('aria-checked', String(next));
+        try {
+          const updated = await API.config.update({ team: { enabled: next } });
+          applyConfig(updated);
+          UI.toast(next ? 'blank Team enabled.' : 'blank Team disabled.', 'success');
+        } catch (error) { toggle.classList.toggle('on', !next); UI.toast(error.message, 'error'); }
+        return;
+      }
+      const fieldToggle = event.target.closest('[data-team-field="enabled"], [data-team-field="write"]');
+      if (fieldToggle) {
+        const next = !fieldToggle.classList.contains('on');
+        fieldToggle.classList.toggle('on', next);
+        fieldToggle.setAttribute('aria-checked', String(next));
+        return;
+      }
+      if (event.target.closest('[data-team-add]')) {
+        const list = host.querySelector('[data-team-members]');
+        if (!list) return;
+        list.insertAdjacentHTML('beforeend', teamMemberRow({ name: '', role: '', model: '', enabled: true, write: false }));
+        list.lastElementChild?.querySelector('[data-team-field="name"]')?.focus();
+        return;
+      }
+      if (event.target.closest('[data-team-remove]')) {
+        event.target.closest('[data-team-member]')?.remove();
+        return;
+      }
+      if (event.target.closest('[data-save-team]')) { await save(); return; }
+      if (event.target.closest('[data-team-brief]')) {
+        const names = members.filter((member) => member.enabled !== false && member.name).map((member) => member.name);
+        App.newSession();
+        ChatView.focusComposer(`Team brief: work this as blank Team${names.length ? ` with ${names.join(', ')}` : ''}. Explore in parallel, report concrete findings with file references, then synthesize one answer.\n\n`);
+      }
+    };
+  }
+
+  /* --------------------------------------------------------------- automations */
+
+  async function mountAutomations(host) {
+    vstate.page = 'automations';
+    vstate.host = host;
+    if (!vstate.automations.schedules.length) host.innerHTML = pageLoading('Automations', 'Recurring prompts.');
+    try {
+      const data = await API.schedules.list();
+      if (!alive(host, 'automations')) return;
+      vstate.automations.schedules = data.schedules || [];
+      vstate.automations.running = data.running || [];
+      paintAutomations(host);
+    } catch (error) { if (alive(host, 'automations')) pageError(host, 'Automations', error); }
+  }
+
+  function paintAutomations(host) {
+    const schedules = vstate.automations.schedules;
+    const editing = schedules.find((schedule) => schedule.id === vstate.automations.editing) || null;
+    host.innerHTML = `<div class="page-inner automations-page">
+      ${UI.pageHeader({
+        title: 'Automations',
+        description: 'Recurring prompts that run while blank is open.',
+        actions: `<button class="btn btn-secondary btn-sm" type="button" data-automation-refresh>${icon('refresh', 12)} Refresh</button>`,
+        meta: `<span class="badge blue">${schedules.length} automation${schedules.length === 1 ? '' : 's'}</span>`,
+      })}
+      <section class="settings-section">
+        <h2>${editing ? 'Edit automation' : 'New automation'}</h2>
+        <div class="settings-group automation-compose">
+          <div class="setting-row schedule-compose-row">
+            <input class="field-input" id="automation-title" maxlength="80" placeholder="Name, e.g. Morning brief" spellcheck="false" value="${U.attr(editing?.title || '')}" />
+            <select class="setting-inline-input" id="automation-cadence">
+              ${[['interval', 'Every N minutes'], ['hourly', 'Every hour'], ['daily', 'Every day'], ['weekdays', 'Weekdays']].map(([id, label]) => `<option value="${id}" ${(editing?.cadence || 'daily') === id ? 'selected' : ''}>${label}</option>`).join('')}
+            </select>
+            <input class="setting-inline-input" id="automation-time" type="time" value="${U.attr(editing?.time || '09:00')}" />
+            <input class="setting-inline-input automation-every" id="automation-every" type="number" min="5" max="1440" step="5" value="${Number(editing?.everyMinutes) || 30}" title="Minutes between runs" />
+          </div>
+          <textarea class="settings-textarea" id="automation-prompt" rows="3" placeholder="What should blank do when this runs?">${esc(editing?.prompt || '')}</textarea>
+          <div class="provider-actions">
+            <button class="btn btn-primary btn-sm" type="button" data-automation-save>${icon(editing ? 'save' : 'plus', 12)} ${editing ? 'Save automation' : 'Add automation'}</button>
+            ${editing ? '<button class="btn btn-ghost btn-sm" type="button" data-automation-cancel>Cancel</button>' : ''}
+            <label class="schedule-check"><input type="checkbox" id="automation-tools" ${editing?.allowTools ? 'checked' : ''} /> Allow tools without asking</label>
+          </div>
+        </div>
+      </section>
+      <div class="automation-list">
+        ${schedules.length ? schedules.map((schedule) => {
+          const next = schedule.nextRunAt ? new Date(schedule.nextRunAt) : null;
+          const nextText = next && !Number.isNaN(next.getTime()) ? next.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Paused';
+          const lastText = schedule.lastRunAt ? new Date(schedule.lastRunAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+          return `<article class="automation-card ${schedule.running ? 'running' : ''}" data-automation-id="${U.attr(schedule.id)}">
+            <div class="automation-head">
+              <div><div class="automation-title">${esc(schedule.title)}</div><div class="automation-meta"><span class="automation-cadence">${esc(cadenceLabel(schedule))}</span> · ${next ? `<span>next ${esc(nextText)}</span>` : '<span>paused</span>'}${lastText ? ` · <span>last ${esc(lastText)}</span>` : ''}</div></div>
+              <span class="badge ${schedule.running ? 'amber' : schedule.lastStatus === 'ok' ? 'green' : schedule.lastStatus === 'error' ? 'red' : 'gray'}">${schedule.running ? 'Running' : schedule.lastStatus === 'ok' ? 'OK' : schedule.lastStatus === 'error' ? 'Error' : 'Idle'}</span>
+            </div>
+            <p class="automation-prompt">${esc(U.truncate(schedule.prompt, 220))}</p>
+            ${schedule.lastError ? `<div class="schedule-error">${esc(U.truncate(schedule.lastError, 180))}</div>` : ''}
+            ${schedule.history?.length ? `<div class="automation-history">${schedule.history.slice(0, 5).map((entry) => `<button class="automation-history-row" type="button" ${entry.sessionId ? `data-automation-session="${U.attr(entry.sessionId)}"` : 'disabled'}>
+              <span class="badge ${entry.status === 'ok' ? 'green' : entry.status === 'error' ? 'red' : 'gray'}">${esc(entry.status)}</span>
+              <span>${esc(new Date(entry.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))}</span>
+              ${entry.sessionId ? icon('arrow-right', 11) : ''}
+            </button>`).join('')}</div>` : ''}
+            <div class="automation-actions">
+              <button class="btn btn-secondary btn-sm" type="button" data-automation-run="${U.attr(schedule.id)}" ${schedule.running ? 'disabled' : ''}>${icon('play', 11)} Run now</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-automation-edit="${U.attr(schedule.id)}">${icon('edit', 11)} Edit</button>
+              <label class="schedule-check"><input type="checkbox" data-automation-enabled="${U.attr(schedule.id)}" ${schedule.enabled !== false ? 'checked' : ''} /> Enabled</label>
+              <button class="mini-icon" type="button" data-automation-delete="${U.attr(schedule.id)}" title="Delete automation">${icon('trash', 13)}</button>
+            </div>
+          </article>`;
+        }).join('') : `<div class="empty-state"><div class="empty-icon">${icon('clock', 22)}</div><h3>Nothing scheduled</h3><p>Create a daily brief, an hourly watch or your own interval.</p></div>`}
+      </div>
+    </div>`;
+    const cadence = host.querySelector('#automation-cadence');
+    const syncCadence = () => {
+      const interval = cadence?.value === 'interval';
+      const every = host.querySelector('#automation-every');
+      const time = host.querySelector('#automation-time');
+      if (every) every.hidden = !interval;
+      if (time) time.hidden = interval;
+    };
+    syncCadence();
+    cadence?.addEventListener('change', syncCadence);
+    const reload = async () => {
+      const data = await API.schedules.list();
+      vstate.automations.schedules = data.schedules || [];
+      vstate.automations.running = data.running || [];
+      paintAutomations(host);
+    };
+    host.onclick = async (event) => {
+      if (event.target.closest('[data-automation-refresh]')) { await reload(); return; }
+      if (event.target.closest('[data-automation-cancel]')) { vstate.automations.editing = ''; paintAutomations(host); return; }
+      if (event.target.closest('[data-automation-save]')) {
+        const button = event.target.closest('[data-automation-save]');
+        const payload = {
+          id: vstate.automations.editing || undefined,
+          title: host.querySelector('#automation-title')?.value.trim() || '',
+          prompt: host.querySelector('#automation-prompt')?.value.trim() || '',
+          cadence: cadence?.value || 'daily',
+          time: host.querySelector('#automation-time')?.value || '09:00',
+          everyMinutes: Number(host.querySelector('#automation-every')?.value) || 30,
+          allowTools: Boolean(host.querySelector('#automation-tools')?.checked),
+          enabled: true,
+        };
+        if (!payload.title) { payload.title = payload.prompt.slice(0, 60) || 'Scheduled run'; }
+        button.disabled = true;
+        try {
+          await API.schedules.save(payload);
+          vstate.automations.editing = '';
+          UI.toast('Automation saved.', 'success');
+          await reload();
+        } catch (error) { button.disabled = false; UI.toast(error.message, 'error'); }
+        return;
+      }
+      const edit = event.target.closest('[data-automation-edit]');
+      if (edit) { vstate.automations.editing = edit.dataset.automationEdit; paintAutomations(host); return; }
+      const run = event.target.closest('[data-automation-run]');
+      if (run) {
+        run.disabled = true;
+        try { await API.schedules.run(run.dataset.automationRun); UI.toast('Automation started.', 'success'); await reload(); }
+        catch (error) { run.disabled = false; UI.toast(error.message, 'error'); }
+        return;
+      }
+      const remove = event.target.closest('[data-automation-delete]');
+      if (remove) {
+        const schedule = schedules.find((entry) => entry.id === remove.dataset.automationDelete);
+        const confirmed = await UI.confirm({ title: 'Delete this automation?', message: 'Scheduled runs stop. Sessions it already created are kept.', confirmLabel: 'Delete', danger: true, detail: schedule?.title });
+        if (!confirmed) return;
+        try { await API.schedules.remove(remove.dataset.automationDelete); await reload(); UI.toast('Automation deleted.', 'success'); }
+        catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      const open = event.target.closest('[data-automation-session]');
+      if (open) { App.loadSession(open.dataset.automationSession); }
+    };
+    host.onchange = async (event) => {
+      const toggle = event.target.closest('[data-automation-enabled]');
+      if (!toggle) return;
+      const schedule = schedules.find((entry) => entry.id === toggle.dataset.automationEnabled);
+      if (!schedule) return;
+      try {
+        await API.schedules.save({ id: schedule.id, enabled: toggle.checked });
+        await reload();
+      } catch (error) { toggle.checked = !toggle.checked; UI.toast(error.message, 'error'); }
+    };
+  }
+
+  /* ------------------------------------------------------------------ browser */
+
+  function normalizeBrowserUrl(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (/^https?:\/\//i.test(text)) return text;
+    if (/^[\w-]+(\.[\w-]+)+([/?#].*)?$/.test(text)) return `https://${text}`;
+    return `https://duckduckgo.com/?q=${encodeURIComponent(text)}`;
+  }
+
+  function mountBrowser(host) {
+    vstate.page = 'browser';
+    vstate.host = host;
+    const start = vstate.browserUrl || 'https://purplemacaron.github.io/blank/';
+    host.innerHTML = `<div class="page-inner browser-page">
+      ${UI.pageHeader({
+        title: 'Browser',
+        description: 'Read a page and hand it to the agent.',
+        actions: `<button class="btn btn-secondary btn-sm" type="button" data-browser-chat>${icon('message', 12)} Ask about this page</button><button class="btn btn-secondary btn-sm" type="button" data-browser-external>${icon('external-link', 12)} Open externally</button>`,
+        meta: '<span class="badge gray">Sandboxed</span>',
+      })}
+      <div class="browser-shell">
+        <div class="browser-bar">
+          <button class="mini-icon" type="button" data-browser="back" title="Back">${icon('chevron-left', 14)}</button>
+          <button class="mini-icon" type="button" data-browser="forward" title="Forward">${icon('chevron-right', 14)}</button>
+          <button class="mini-icon" type="button" data-browser="reload" title="Reload">${icon('refresh', 14)}</button>
+          <button class="mini-icon" type="button" data-browser="home" title="Home">${icon('globe', 14)}</button>
+          <input class="browser-address" id="browser-url" type="text" spellcheck="false" value="${U.attr(start)}" aria-label="Address" />
+          <button class="btn btn-secondary btn-sm" type="button" data-browser="go">Open</button>
+        </div>
+        <div class="browser-frame">
+          <webview id="blank-browser" src="${U.attr(start)}" partition="persist:blank-browser"></webview>
+        </div>
+        <div class="browser-status" id="browser-status"><span class="dot"></span><span data-browser-status-text>Loading…</span></div>
+      </div>
+      <div class="settings-permission-note">${icon('shield', 12)} Sandboxed. The agent sees a page only when you send it to chat.</div>
+    </div>`;
+    const view = host.querySelector('#blank-browser');
+    const address = host.querySelector('#browser-url');
+    const status = host.querySelector('[data-browser-status-text]');
+    if (!view) return;
+    vstate.browserUrl = start;
+    const setStatus = (text, busy) => {
+      if (status) status.textContent = text;
+      host.querySelector('#browser-status .dot')?.classList.toggle('busy', Boolean(busy));
+    };
+    const sync = () => {
+      try {
+        const url = view.getURL();
+        if (url && address) address.value = url;
+        if (url) vstate.browserUrl = url;
+      } catch {}
+    };
+    view.addEventListener('did-start-loading', () => setStatus('Loading…', true));
+    view.addEventListener('did-stop-loading', () => { sync(); setStatus(view.getTitle() || 'Ready', false); });
+    view.addEventListener('page-title-updated', (event) => { if (!view.isLoading()) setStatus(event.title || 'Ready', false); });
+    view.addEventListener('did-navigate', sync);
+    view.addEventListener('did-navigate-in-page', sync);
+    view.addEventListener('did-fail-load', (event) => {
+      if (event.errorCode === -3) return;
+      setStatus(`Could not load the page${event.errorDescription ? ` · ${event.errorDescription}` : ''}`, false);
+    });
+    const go = () => {
+      const url = normalizeBrowserUrl(address?.value);
+      if (!url) return;
+      if (address) address.value = url;
+      vstate.browserUrl = url;
+      view.loadURL(url).catch((error) => setStatus(error.message, false));
+    };
+    host.querySelectorAll('[data-browser]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const action = button.dataset.browser;
+        if (action === 'go') { go(); return; }
+        try {
+          if (action === 'back' && view.canGoBack()) view.goBack();
+          else if (action === 'forward' && view.canGoForward()) view.goForward();
+          else if (action === 'reload') view.reload();
+          else if (action === 'home') { vstate.browserUrl = 'https://purplemacaron.github.io/blank/'; view.loadURL(vstate.browserUrl); }
+        } catch {}
+      });
+    });
+    address?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); go(); }
+    });
+    host.querySelector('[data-browser-external]')?.addEventListener('click', () => {
+      const url = view.getURL() || vstate.browserUrl;
+      if (/^https?:/i.test(url)) API.app.openExternal(url).catch((error) => UI.toast(error.message, 'error'));
+    });
+    host.querySelector('[data-browser-chat]')?.addEventListener('click', async () => {
+      let title = '';
+      let url = vstate.browserUrl;
+      try { title = view.getTitle() || ''; url = view.getURL() || url; } catch {}
+      let selection = '';
+      try { selection = await view.executeJavaScript('String(window.getSelection ? window.getSelection().toString() : "").slice(0, 4000)'); } catch {}
+      App.newSession();
+      const lines = [
+        'Use this page as context and answer my question.',
+        title ? `Title: ${title}` : '',
+        url ? `URL: ${url}` : '',
+        selection ? `Selection:\n${selection}` : '',
+        '',
+      ].filter((line) => line !== '').join('\n');
+      ChatView.focusComposer(`${lines}\n`);
+    });
+    setStatus('Loading…', true);
   }
 
   function dictationSuggestionsHtml(models = []) {
@@ -1763,7 +2278,7 @@ Start writing, or ask the agent to draft it.
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
         title: 'Settings',
-        description: 'Tune how Blank thinks, what it may touch, and where your data lives.',
+        description: 'Tune how blank thinks, what it may touch, and where your data lives.',
         actions: `<button class="btn btn-secondary btn-sm" data-open-data>${icon('folder-open', 12)} Data folder</button>`,
       })}
       <div class="settings-layout">
@@ -1859,7 +2374,7 @@ Start writing, or ask the agent to draft it.
 
           <section class="settings-section" id="settings-dictation">
             <h2>Dictation</h2>
-            <p>Speech-to-text in the chat composer. Blank records only while the mic is active, then sends the clip to the provider you choose. The API key comes from Models and never appears here.</p>
+            <p>Speech-to-text in the chat composer. blank records only while the mic is active, then sends the clip to the provider you choose. The API key comes from Models and never appears here.</p>
             <div class="settings-group">
               <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Transcription provider</div><div class="setting-desc">Any OpenAI-compatible provider with a saved key and a /audio/transcriptions endpoint. Audio is sent only when you stop a recording.</div></div>
@@ -1874,7 +2389,7 @@ Start writing, or ask the agent to draft it.
               <div class="setting-row" data-dictation-custom ${customDictation ? '' : 'hidden'}>
                 <div class="setting-copy">
                   <div class="setting-label">Endpoint</div>
-                  <div class="setting-desc">Any OpenAI-compatible speech server. Blank posts the clip to /audio/transcriptions under this URL.</div>
+                  <div class="setting-desc">Any OpenAI-compatible speech server. blank posts the clip to /audio/transcriptions under this URL.</div>
                   <div class="setting-note">Use a local Whisper server or another provider's transcription API.</div>
                 </div>
                 <div class="setting-control wide">
@@ -1894,7 +2409,7 @@ Start writing, or ask the agent to draft it.
               <div class="setting-row">
                 <div class="setting-copy">
                   <div class="setting-label">Transcription model</div>
-                  <div class="setting-desc">Pick a suggestion or type any transcription model id your provider offers. Blank uses the provider's recommended model.</div>
+                  <div class="setting-desc">Pick a suggestion or type any transcription model id your provider offers. blank uses the provider's recommended model.</div>
                   <div class="dictation-suggest" data-dictation-suggest>${dictationSuggestionsHtml(dictationModels)}</div>
                 </div>
                 <div class="setting-control">
@@ -1917,7 +2432,7 @@ Start writing, or ask the agent to draft it.
                 ? (dictationBaseUrl ? 'Custom endpoint' : 'Add an endpoint URL')
                 : dictationChoices.length ? 'Ready' : 'Add an OpenAI-compatible key or use a custom endpoint'}</span>
             </div>
-            <div class="settings-permission-note">${icon('mic', 12)} The microphone is allowed only for this app. Recordings stay in memory, are sent once for transcription, and are never written to disk by Blank.</div>
+            <div class="settings-permission-note">${icon('mic', 12)} The microphone is allowed only for this app. Recordings stay in memory, are sent once for transcription, and are never written to disk by blank.</div>
           </section>
 
           <section class="settings-section" id="settings-team">
@@ -1942,7 +2457,7 @@ Start writing, or ask the agent to draft it.
 
           <section class="settings-section" id="settings-schedules">
             <h2>Schedules</h2>
-            <p>Run a prompt on a timer while Blank is open. Each run becomes a normal session you can read and continue.</p>
+            <p>Run a prompt on a timer while blank is open. Each run becomes a normal session you can read and continue.</p>
             <div class="settings-group">
               <div class="setting-row schedule-compose-row">
                 <input class="field-input" id="schedule-title" maxlength="80" placeholder="Schedule name" spellcheck="false" />
@@ -1953,7 +2468,7 @@ Start writing, or ask the agent to draft it.
                 </select>
                 <input class="setting-inline-input" id="schedule-time" type="time" value="09:00" />
               </div>
-              <textarea class="settings-textarea" id="schedule-prompt" rows="3" placeholder="What should Blank do when this runs?"></textarea>
+              <textarea class="settings-textarea" id="schedule-prompt" rows="3" placeholder="What should blank do when this runs?"></textarea>
               <div class="provider-actions">
                 <button class="btn btn-primary btn-sm" type="button" data-save-schedule>${icon('plus', 12)} Add schedule</button>
                 <label class="schedule-check"><input type="checkbox" id="schedule-tools" /> Allow tools without asking</label>
@@ -1984,7 +2499,7 @@ Start writing, or ask the agent to draft it.
 
           <section class="settings-section" id="settings-notifications">
             <h2>Notifications</h2>
-            <p>Native desktop notifications for work that finishes while Blank is in the background. Focused windows stay quiet.</p>
+            <p>Native desktop notifications for work that finishes while blank is in the background. Focused windows stay quiet.</p>
             <div class="settings-group">
               <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Desktop notifications</div><div class="setting-desc">Master switch for every notification below.</div></div>
@@ -1995,7 +2510,7 @@ Start writing, or ask the agent to draft it.
                 <div class="setting-control">${UI.switchHtml(notificationsCfg.onFinish !== false, 'data-notification-toggle="onFinish"')}</div>
               </div>
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">Approval needed</div><div class="setting-desc">A tool is waiting for your decision and Blank is not focused.</div></div>
+                <div class="setting-copy"><div class="setting-label">Approval needed</div><div class="setting-desc">A tool is waiting for your decision and blank is not focused.</div></div>
                 <div class="setting-control">${UI.switchHtml(notificationsCfg.onApproval !== false, 'data-notification-toggle="onApproval"')}</div>
               </div>
               <div class="setting-row">
@@ -2007,7 +2522,7 @@ Start writing, or ask the agent to draft it.
                 <div class="setting-control"><button class="btn btn-secondary btn-sm" type="button" data-test-notification>${icon('bell', 12)} Send test</button></div>
               </div>
             </div>
-            <div class="settings-permission-note">${icon('bell', 12)} Clicking a notification brings Blank to the front and opens the related session. Nothing is sent to a server.</div>
+            <div class="settings-permission-note">${icon('bell', 12)} Clicking a notification brings blank to the front and opens the related session. Nothing is sent to a server.</div>
           </section>
 
           <section class="settings-section" id="settings-approvals">
@@ -2133,7 +2648,7 @@ Start writing, or ask the agent to draft it.
                 <div class="setting-control">${UI.switchHtml(Boolean(remoteCfg.allowApprovals), 'data-remote-setting="allowApprovals"')}</div>
               </div>
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">Start with Blank</div><div class="setting-desc">Bring remote control up automatically using the saved port and options.</div></div>
+                <div class="setting-copy"><div class="setting-label">Start with blank</div><div class="setting-desc">Bring remote control up automatically using the saved port and options.</div></div>
                 <div class="setting-control">${UI.switchHtml(Boolean(remoteState.autoStart ?? remoteCfg.autoStart), 'data-remote-setting="autoStart"')}</div>
               </div>
             </div>
@@ -2151,7 +2666,7 @@ Start writing, or ask the agent to draft it.
 
           <section class="settings-section" id="settings-data">
             <h2>Data & CLI</h2>
-            <p>Everything Blank remembers is plain files you can inspect, back up or delete.</p>
+            <p>Everything blank remembers is plain files you can inspect, back up or delete.</p>
             <div class="settings-group">
               <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Data folder</div><div class="setting-desc">Sessions, config, memory, skills, checkpoints and media live here.</div><div class="data-path">${icon('folder', 11)}<code>${esc(info.home || runtime.home || '~/.blank')}</code></div></div>
@@ -2162,7 +2677,7 @@ Start writing, or ask the agent to draft it.
                 <div class="setting-control"><button class="btn btn-secondary btn-sm" type="button" data-install-cli>${icon('terminal', 12)} Install CLI</button></div>
               </div>
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">Workspace folder</div><div class="setting-desc">Open the folder Blank is allowed to work in.</div><div class="data-path">${icon('folder', 11)}<code>${esc(config.workspace || 'No workspace')}</code></div></div>
+                <div class="setting-copy"><div class="setting-label">Workspace folder</div><div class="setting-desc">Open the folder blank is allowed to work in.</div><div class="data-path">${icon('folder', 11)}<code>${esc(config.workspace || 'No workspace')}</code></div></div>
                 <div class="setting-control"><button class="btn btn-secondary btn-sm" type="button" data-open-workspace>${icon('folder-open', 12)} Open</button></div>
               </div>
               <div class="setting-row">
@@ -2177,7 +2692,7 @@ Start writing, or ask the agent to draft it.
             <div class="card">
               <div class="about-block">
                 <div class="about-copy">
-                  <h3>Blank</h3>
+                  <h3>blank</h3>
                   <p>A quiet, local-first agent harness. Chat, code, plan and create media from one calm surface — with keys, sessions and memory kept on your machine.</p>
                   <div class="about-versions">
                     <span class="badge">Electron ${esc(info.electron || runtime.electron || '—')}</span>
@@ -2260,6 +2775,13 @@ Start writing, or ask the agent to draft it.
         teamEnabled.setAttribute('aria-checked', String(next));
         return;
       }
+      const teamWrite = event.target.closest('[data-team-field="write"]');
+      if (teamWrite) {
+        const next = !teamWrite.classList.contains('on');
+        teamWrite.classList.toggle('on', next);
+        teamWrite.setAttribute('aria-checked', String(next));
+        return;
+      }
       if (event.target.closest('[data-team-add]')) {
         const list = host.querySelector('[data-team-members]');
         if (!list) return;
@@ -2281,6 +2803,7 @@ Start writing, or ask the agent to draft it.
             role: field('role')?.value.trim() || '',
             model: field('model')?.value.trim() || '',
             enabled: field('enabled') ? field('enabled').classList.contains('on') : true,
+            write: field('write') ? field('write').classList.contains('on') : false,
           };
         }).filter((member) => member.name);
         const enabled = host.querySelector('[data-team-toggle]')?.classList.contains('on') ?? Boolean(teamCfg.enabled);
@@ -2549,7 +3072,7 @@ Start writing, or ask the agent to draft it.
         button.disabled = true;
         if (note) note.textContent = 'Searching…';
         try {
-          const result = await API.search.test({ query: 'Blank agent harness' });
+          const result = await API.search.test({ query: 'blank agent harness' });
           if (!result.ok) throw new Error(result.error || 'Search failed.');
           if (note) note.textContent = `${result.results.length} result${result.results.length === 1 ? '' : 's'} · ${result.backendLabel}${result.note ? ` · ${result.note}` : ''}`;
           UI.toast('Search backend responded.', 'success');
@@ -2588,7 +3111,7 @@ Start writing, or ask the agent to draft it.
         try {
           vstate.settings.remote = await API.remote.configure({ [key]: next });
           paintSettings(host);
-          UI.toast(key === 'autoStart' ? (next ? 'Remote will start with Blank.' : 'Remote will not start automatically.') : 'Remote settings updated.', 'success');
+          UI.toast(key === 'autoStart' ? (next ? 'Remote will start with blank.' : 'Remote will not start automatically.') : 'Remote settings updated.', 'success');
         } catch (error) { remoteSetting.classList.toggle('on', !next); UI.toast(error.message, 'error'); }
         return;
       }
@@ -2671,7 +3194,7 @@ Start writing, or ask the agent to draft it.
           const mode = event.target.value === 'all' ? 'all' : 'important';
           const updated = await API.config.update({ approvals: { mode } });
           applyConfig(updated);
-          UI.toast(mode === 'all' ? 'Blank will ask before every guarded action.' : 'Blank will ask only for important actions.', 'success');
+          UI.toast(mode === 'all' ? 'blank will ask before every guarded action.' : 'blank will ask only for important actions.', 'success');
         } catch (error) { UI.toast(error.message, 'error'); }
         return;
       }
@@ -4394,186 +4917,248 @@ Start writing, or ask the agent to draft it.
     setTimeout(() => search?.focus(), 60);
   }
 
-  /* ------------------------------------------------------------------ plugins */
+  /* -------------------------------------------------------------------- APIs */
 
-  const PLUGIN_ICONS = { github: 'git-branch', smartphone: 'link' };
-
-  async function mountPlugins(host) {
+  async function mountApis(host) {
     vstate.page = 'plugins';
     vstate.host = host;
-    if (!vstate.plugins.items.length) host.innerHTML = pageLoading('Plugins', 'Add MCP servers, skills and built-in capabilities in one click.');
+    if (!vstate.apis.items.length) host.innerHTML = pageLoading('APIs', 'Public HTTP services.');
     try {
-      const data = await API.plugins.list();
+      const data = await API.apis.list();
       if (!alive(host, 'plugins')) return;
-      vstate.plugins.items = data.items || [];
-      paintPlugins(host);
-    } catch (error) { if (alive(host, 'plugins')) pageError(host, 'Plugins', error); }
+      vstate.apis.items = data.apis || [];
+      paintApis(host);
+    } catch (error) { if (alive(host, 'plugins')) pageError(host, 'APIs', error); }
   }
 
-  function pluginCard(item) {
-    const iconName = PLUGIN_ICONS[item.icon] || item.icon || 'plug';
-    const isMCP = item.kind === 'mcp';
-    const isSkill = item.kind === 'skill';
-    const server = item.server;
-    const labels = {
-      'settings-web': 'Open search settings',
-      'settings-computer': 'Open computer settings',
-      'settings-remote': 'Open remote settings',
-      studio: 'Create media',
-    };
-    return `<article class="plugin-card ${item.installed ? 'installed' : ''}">
+  async function refreshApis(host) {
+    try {
+      const data = await API.apis.list();
+      vstate.apis.items = data.apis || [];
+    } catch (error) { UI.toast(error.message, 'error'); }
+    if (alive(host, 'plugins')) paintApis(host);
+  }
+
+  function apiAuthLabel(item) {
+    if (item.auth === 'none') return 'No authentication';
+    if (item.auth === 'query') return `Query key · ${item.headerName || 'key'}`;
+    if (item.auth === 'header') return `Header · ${item.headerName || 'X-API-Key'}`;
+    return 'Bearer token';
+  }
+
+  function apiConnectorCard(item) {
+    return `<article class="api-card ${item.enabled ? '' : 'disabled'}">
       <div class="plugin-card-head">
-        <span class="plugin-icon">${icon(iconName, 17)}</span>
-        <div class="plugin-card-title"><h3>${esc(item.name)}</h3><span class="plugin-cat">${esc(item.category)}</span></div>
-        ${item.installed ? `<span class="badge ${item.kind === 'builtin' ? 'blue' : 'green'}">${item.kind === 'builtin' ? 'Built in' : 'Installed'}</span>` : ''}
+        <span class="plugin-icon">${icon('link', 17)}</span>
+        <div class="plugin-card-title"><h3>${esc(item.name)}</h3><span class="plugin-cat">${esc(apiAuthLabel(item))}</span></div>
+        ${item.enabled ? '' : '<span class="badge">Disabled</span>'}
       </div>
-      <p class="plugin-tagline">${esc(item.tagline)}</p>
-      <p class="plugin-description">${esc(item.description)}</p>
-      <div class="plugin-tags">${(item.tags || []).map((tag) => `<span class="plugin-tag">${esc(tag)}</span>`).join('')}</div>
-      ${isMCP && server ? `<div class="plugin-status">${server.connected ? '<span class="badge green">Connected</span>' : `<span class="badge amber">${esc(server.error ? U.truncate(server.error, 46) : 'Not connected')}</span>`}<span>${server.toolCount || 0} tool${server.toolCount === 1 ? '' : 's'}</span></div>` : ''}
+      ${item.description ? `<p class="plugin-tagline">${esc(item.description)}</p>` : ''}
+      <div class="api-base">${icon('globe', 11)}<code>${esc(item.baseUrl)}</code></div>
+      <div class="api-card-meta">
+        <span class="badge ${item.hasKey ? 'green' : ''}">${item.hasKey ? `${icon('key', 9)} ${esc(item.keyPreview)}` : item.auth === 'none' ? 'No credentials' : 'No key saved'}</span>
+      </div>
       <div class="plugin-actions">
-        ${item.kind === 'builtin'
-          ? `<button class="btn btn-secondary btn-sm" type="button" data-plugin-action="${U.attr(item.action || '')}">${icon('arrow-up-right', 11)} ${esc(labels[item.action] || 'Open')}</button>`
-          : item.installed
-            ? `<button class="btn btn-secondary btn-sm" type="button" data-plugin-manage="${isSkill ? 'skill' : 'mcp'}">${icon(isSkill ? 'layers' : 'plug', 11)} ${isSkill ? 'Open Skills' : 'Open MCP'}</button>${isMCP ? `<button class="btn btn-ghost btn-sm" type="button" data-plugin-remove="${U.attr(item.id)}">${icon('trash', 11)} Remove</button>` : ''}`
-            : `<button class="btn btn-primary btn-sm" type="button" data-plugin-install="${U.attr(item.id)}">${icon('plus', 11)} Install</button>`}
+        <button class="btn btn-secondary btn-sm" type="button" data-api-test="${U.attr(item.id)}">${icon('play', 11)} Test</button>
+        <button class="btn btn-secondary btn-sm" type="button" data-api-edit="${U.attr(item.id)}">${icon('settings', 11)} Edit</button>
+        <button class="btn btn-ghost btn-sm" type="button" data-api-delete="${U.attr(item.id)}">${icon('trash', 11)} Remove</button>
       </div>
     </article>`;
   }
 
-  function paintPlugins(host) {
-    const items = vstate.plugins.items;
-    const counts = { all: items.length, builtin: 0, mcp: 0, skill: 0 };
-    for (const item of items) counts[item.kind] = (counts[item.kind] || 0) + 1;
-    const installed = items.filter((item) => item.installed).length;
-    const query = vstate.plugins.query.trim().toLowerCase();
-    const filtered = items.filter((item) => {
-      if (vstate.plugins.filter !== 'all' && item.kind !== vstate.plugins.filter) return false;
-      if (!query) return true;
-      return `${item.name} ${item.tagline} ${item.description} ${(item.tags || []).join(' ')}`.toLowerCase().includes(query);
-    });
-    const tabs = [
-      ['all', 'All'], ['builtin', 'Built in'], ['mcp', 'MCP'], ['skill', 'Skills'],
-    ];
+  function paintApis(host) {
+    const items = vstate.apis.items;
+    const enabled = items.filter((item) => item.enabled !== false).length;
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
-        title: 'Plugins',
-        description: 'One-click capabilities. MCP servers add tools, skills add focused workflows, and built-ins are always available.',
-        actions: `<button class="btn btn-secondary btn-sm" type="button" data-plugin-refresh>${icon('refresh', 12)} Refresh</button>`,
-        meta: `<span class="badge blue">${installed} active</span>`,
+        title: 'APIs',
+        description: 'Public HTTP APIs for api_request.',
+        actions: `<button class="btn btn-primary btn-sm" type="button" data-api-add>${icon('plus', 12)} Add connector</button><button class="btn btn-secondary btn-sm" type="button" data-api-refresh>${icon('refresh', 12)} Refresh</button>`,
+        meta: items.length ? `<span class="badge blue">${enabled} active</span>` : '',
       })}
-      <div class="plugin-toolbar">
-        <div class="plugin-filters">
-          ${tabs.map(([id, label]) => `<button class="studio-filter ${vstate.plugins.filter === id ? 'active' : ''}" type="button" data-plugin-filter="${id}">${esc(label)} <span class="count">${counts[id] || 0}</span></button>`).join('')}
+      <section class="api-section">
+        <div class="api-section-head">
+          <div><h2>Saved connectors</h2><p>Keys stay in the main process.</p></div>
+          <span class="badge">${items.length}</span>
         </div>
-        <div style="flex:1"></div>
-        <label class="search-field">${icon('search', 12)}<input id="plugin-search" type="search" placeholder="Search plugins" value="${U.attr(vstate.plugins.query)}" /></label>
-      </div>
-      ${filtered.length
-        ? `<div class="plugin-grid" id="plugin-grid">${filtered.map(pluginCard).join('')}</div>`
-        : `<div class="empty-state"><div class="empty-icon">${icon('plug', 22)}</div><h3>No plugins match</h3><p>Try another search or switch filters.</p></div>`}
-      <div class="settings-permission-note">${icon('shield', 12)} Installing runs only after you confirm. MCP tools still pass through Approvals on every call, and nothing is installed silently.</div>
+        ${items.length
+          ? `<div class="api-grid">${items.map(apiConnectorCard).join('')}</div>`
+          : `<div class="api-empty">${icon('link', 16)}<div><h3>No public APIs yet</h3><p>Add a base URL and key for any public service.</p></div><button class="btn btn-secondary btn-sm" type="button" data-api-add>Add connector</button></div>`}
+      </section>
     </div>`;
 
     host.onclick = (event) => {
-      const filter = event.target.closest('[data-plugin-filter]');
-      if (filter) { vstate.plugins.filter = filter.dataset.pluginFilter; paintPlugins(host); return; }
-      if (event.target.closest('[data-plugin-refresh]')) { vstate.plugins.items = []; mountPlugins(host); return; }
-      const install = event.target.closest('[data-plugin-install]');
-      if (install) {
-        const item = items.find((entry) => entry.id === install.dataset.pluginInstall);
-        if (item) openPluginInstall(item, host);
+      if (event.target.closest('[data-api-refresh]')) { vstate.apis.items = []; mountApis(host); return; }
+      if (event.target.closest('[data-api-add]')) { openApiEditor(null, host); return; }
+      const apiEdit = event.target.closest('[data-api-edit]');
+      if (apiEdit) {
+        const item = vstate.apis.items.find((entry) => entry.id === apiEdit.dataset.apiEdit);
+        if (item) openApiEditor(item, host);
         return;
       }
-      const action = event.target.closest('[data-plugin-action]');
-      if (action) { runPluginAction(action.dataset.pluginAction); return; }
-      const manage = event.target.closest('[data-plugin-manage]');
-      if (manage) {
-        if (window.App?.openPage) App.openPage(manage.dataset.pluginManage === 'skill' ? 'skills' : 'mcp');
+      const apiDelete = event.target.closest('[data-api-delete]');
+      if (apiDelete) {
+        const item = vstate.apis.items.find((entry) => entry.id === apiDelete.dataset.apiDelete);
+        if (item) removeApi(item, host);
         return;
       }
-      const remove = event.target.closest('[data-plugin-remove]');
-      if (remove) {
-        const item = items.find((entry) => entry.id === remove.dataset.pluginRemove);
-        if (item) openPluginRemove(item, host);
+      const apiTest = event.target.closest('[data-api-test]');
+      if (apiTest) {
+        const item = vstate.apis.items.find((entry) => entry.id === apiTest.dataset.apiTest);
+        if (item) openApiTest(item);
       }
-    };
-    host.oninput = (event) => {
-      if (event.target.id !== 'plugin-search') return;
-      vstate.plugins.query = event.target.value;
-      paintPlugins(host);
-      const next = host.querySelector('#plugin-search');
-      if (next) { next.focus(); next.setSelectionRange(next.value.length, next.value.length); }
     };
   }
 
-  function runPluginAction(action) {
-    if (!window.App?.openPage) return;
-    if (action === 'studio') { openStudio(); return; }
-    if (action === 'settings-web') { openSettingsSection('search'); return; }
-    if (action === 'settings-computer') { openSettingsSection('computer'); return; }
-    if (action === 'settings-remote') { openSettingsSection('remote'); return; }
-    App.openPage('settings');
-  }
-
-  function openPluginInstall(item, host) {
-    const needsToken = (item.requires || []).includes('token');
-    const needsWorkspace = (item.requires || []).includes('workspace');
-    const workspace = currentConfig().workspace || '';
+  function openApiEditor(item, host) {
+    const editing = Boolean(item);
+    const auth = item?.auth || 'bearer';
+    const authOptions = [
+      ['bearer', 'Bearer token'],
+      ['header', 'Custom header'],
+      ['query', 'Query parameter'],
+      ['none', 'No authentication'],
+    ];
     const body = document.createElement('div');
-    body.className = 'plugin-modal';
+    body.className = 'api-editor';
     body.innerHTML = `
-      <div class="plugin-modal-head"><span class="plugin-icon">${icon(PLUGIN_ICONS[item.icon] || item.icon || 'plug', 18)}</span><div><h3>${esc(item.name)}</h3><span class="plugin-cat">${esc(item.category)}</span></div></div>
-      <p class="plugin-modal-desc">${esc(item.description)}</p>
-      ${item.risk ? `<div class="plugin-risk">${icon('shield-alert', 12)}<span>${esc(item.risk)}</span></div>` : ''}
-      ${needsToken ? `<label class="field"><span>${esc(item.tokenLabel || 'Access token')}</span><input class="field-input" id="plugin-token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste token" /><small class="setting-note">Stored locally in ~/.blank/config.json. Sent only to the service above.</small></label>` : ''}
-      ${needsWorkspace && !workspace ? `<div class="plugin-risk">${icon('alert-triangle', 12)}<span>Open a workspace first. This plugin is rooted at your current folder.</span></div>` : ''}
-      <div class="setting-note">Blank never installs silently. Remove MCP plugins from this page at any time.</div>`;
+      ${UI.field({ label: 'Name', hint: 'How the agent refers to this connector', id: 'api-name', control: `<input class="field-input" id="api-name" maxlength="60" value="${U.attr(item?.name || '')}" placeholder="Weather API" />` })}
+      ${UI.field({ label: 'Description', hint: 'Optional, helps the agent choose the right API', id: 'api-description', control: `<input class="field-input" id="api-description" maxlength="300" value="${U.attr(item?.description || '')}" placeholder="Current weather and forecasts" />` })}
+      ${UI.field({ label: 'Base URL', hint: 'Paths are appended to this address', id: 'api-base', control: `<input class="field-input" id="api-base" spellcheck="false" value="${U.attr(item?.baseUrl || '')}" placeholder="https://api.example.com" />` })}
+      <div class="field-grid">
+        ${UI.field({ label: 'Authentication', id: 'api-auth', control: `<select class="field-select" id="api-auth">${authOptions.map(([value, label]) => `<option value="${value}" ${auth === value ? 'selected' : ''}>${label}</option>`).join('')}</select>` })}
+        ${UI.field({ label: 'Header or query name', hint: 'Used by custom header and query auth', id: 'api-header', control: `<input class="field-input" id="api-header" spellcheck="false" value="${U.attr(item?.headerName || '')}" placeholder="X-API-Key" />` })}
+      </div>
+      ${UI.field({ label: 'API key', hint: item?.hasKey ? `A key is saved (${item.keyPreview}). Leave blank to keep it.` : 'Stored under ~/.blank, never shown again after saving', id: 'api-key', control: `<input class="field-input" id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="${item?.hasKey ? 'Keep the saved key' : 'Paste a key, or leave blank'}" />` })}
+      <div class="api-editor-extra">
+        <div><b>Enabled</b><span>The agent may call this connector through api_request.</span></div>
+        ${UI.switchHtml(item ? item.enabled !== false : true, 'id="api-enabled"')}
+      </div>
+      ${item?.hasKey ? `<label class="api-clear-key"><input type="checkbox" id="api-clear-key" /> Remove the saved key</label>` : ''}
+      <div class="settings-permission-note">${icon('shield', 12)} Requests follow the API permission and appear in chat as tool calls. Keys stay out of the transcript.</div>`;
     const footer = document.createElement('div');
-    footer.className = 'modal-actions';
-    footer.innerHTML = `<button class="btn btn-ghost" type="button" data-modal-close>Cancel</button><button class="btn btn-primary" type="button" data-confirm-plugin>${icon('download', 12)} Install ${item.kind === 'mcp' ? 'MCP server' : 'skill'}</button>`;
+    footer.className = 'api-editor-foot';
+    footer.innerHTML = `<span class="modal-foot-error" data-api-error></span><span class="modal-foot-spacer"></span><button class="btn btn-secondary btn-sm" type="button" data-api-cancel>Cancel</button><button class="btn btn-primary btn-sm" type="button" data-api-save>${editing ? 'Save connector' : 'Add connector'}</button>`;
     const modal = UI.modal({
-      title: `Install ${item.name}`,
-      description: item.kind === 'mcp' ? 'Adds a tool server after your confirmation.' : 'Adds a reusable workflow to your skills.',
+      title: editing ? `Edit ${item.name}` : 'Add an API connector',
+      description: 'The agent calls it through api_request without seeing the key.',
       body,
       footer,
-      size: 'small',
+      size: 'wide',
     });
-    const button = footer.querySelector('[data-confirm-plugin]');
-    button.addEventListener('click', async () => {
-      if (needsWorkspace && !workspace) { UI.toast('Choose a workspace first.', 'error'); return; }
-      const tokenInput = body.querySelector('#plugin-token');
-      const token = tokenInput ? tokenInput.value.trim() : '';
-      if (needsToken && !token) { UI.toast('Paste a token to continue.', 'error'); tokenInput?.focus(); return; }
-      button.disabled = true;
-      button.innerHTML = '<span class="spinner" style="width:11px;height:11px"></span> Installing…';
+
+    const authSelect = body.querySelector('#api-auth');
+    const headerInput = body.querySelector('#api-header');
+    const keyInput = body.querySelector('#api-key');
+    const enabledSwitch = body.querySelector('#api-enabled');
+    const errorNode = footer.querySelector('[data-api-error]');
+    const saveButton = footer.querySelector('[data-api-save]');
+    const syncAuth = () => {
+      const value = authSelect.value;
+      headerInput.disabled = value === 'none' || value === 'bearer';
+      keyInput.disabled = value === 'none';
+      if (!headerInput.value) headerInput.placeholder = value === 'header' ? 'X-API-Key' : value === 'query' ? 'key' : 'Authorization';
+    };
+    syncAuth();
+    authSelect.addEventListener('change', syncAuth);
+    enabledSwitch.addEventListener('click', () => {
+      enabledSwitch.classList.toggle('on');
+      enabledSwitch.setAttribute('aria-checked', String(enabledSwitch.classList.contains('on')));
+    });
+    footer.querySelector('[data-api-cancel]').addEventListener('click', () => modal.close());
+    saveButton.addEventListener('click', async () => {
+      errorNode.textContent = '';
+      const payload = {
+        ...(editing ? { id: item.id } : {}),
+        name: body.querySelector('#api-name').value,
+        description: body.querySelector('#api-description').value,
+        baseUrl: body.querySelector('#api-base').value,
+        auth: authSelect.value,
+        headerName: headerInput.value,
+        enabled: enabledSwitch.classList.contains('on'),
+      };
+      const keyValue = keyInput.value.trim();
+      if (keyValue) payload.key = keyValue;
+      const clearKey = body.querySelector('#api-clear-key');
+      if (clearKey?.checked) payload.clearKey = true;
+      saveButton.disabled = true;
       try {
-        await API.plugins.install({ id: item.id, token });
+        await API.apis.save(payload);
         modal.close();
-        UI.toast(`${item.name} installed.`, 'success');
-        vstate.plugins.items = [];
-        mountPlugins(host);
+        UI.toast(editing ? `${payload.name} saved.` : `${payload.name} added.`, 'success');
+        refreshApis(host);
       } catch (error) {
-        button.disabled = false;
-        button.innerHTML = `${icon('download', 12)} Install ${item.kind === 'mcp' ? 'MCP server' : 'skill'}`;
-        UI.toast(error.message, 'error', { timeout: 7000 });
+        errorNode.textContent = error.message;
+        saveButton.disabled = false;
       }
     });
   }
 
-  async function openPluginRemove(item, host) {
+  function openApiTest(item) {
+    const body = document.createElement('div');
+    body.className = 'api-test';
+    body.innerHTML = `
+      <div class="api-test-target">${icon('globe', 12)}<code>${esc(item.baseUrl)}</code></div>
+      <div class="field-grid">
+        ${UI.field({ label: 'Method', id: 'api-test-method', control: `<select class="field-select" id="api-test-method"><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>HEAD</option></select>` })}
+        ${UI.field({ label: 'Path', hint: 'Appended to the base URL, or an absolute URL', id: 'api-test-path', control: `<input class="field-input" id="api-test-path" spellcheck="false" value="/" />` })}
+      </div>
+      ${UI.field({ label: 'Body', hint: 'Optional JSON or text for POST, PUT and PATCH', id: 'api-test-body', control: `<textarea class="field-textarea" id="api-test-body" spellcheck="false" placeholder='{"example": true}'></textarea>` })}
+      <div class="api-test-status" data-api-test-status>Requests run from the main process with the saved credentials.</div>
+      <pre class="api-test-output" data-api-test-output hidden></pre>`;
+    const footer = document.createElement('div');
+    footer.className = 'api-editor-foot';
+    footer.innerHTML = `<span class="modal-foot-error" data-api-test-error></span><span class="modal-foot-spacer"></span><button class="btn btn-secondary btn-sm" type="button" data-api-test-close>Close</button><button class="btn btn-primary btn-sm" type="button" data-api-test-run>${icon('play', 11)} Send request</button>`;
+    const modal = UI.modal({
+      title: `Test ${item.name}`,
+      description: 'One request with the saved connector. The key stays hidden.',
+      body,
+      footer,
+      size: 'wide',
+    });
+    const runButton = footer.querySelector('[data-api-test-run]');
+    const errorNode = footer.querySelector('[data-api-test-error]');
+    const statusNode = body.querySelector('[data-api-test-status]');
+    const outputNode = body.querySelector('[data-api-test-output]');
+    footer.querySelector('[data-api-test-close]').addEventListener('click', () => modal.close());
+    runButton.addEventListener('click', async () => {
+      errorNode.textContent = '';
+      const method = body.querySelector('#api-test-method').value;
+      const path = body.querySelector('#api-test-path').value.trim() || '/';
+      const rawBody = body.querySelector('#api-test-body').value.trim();
+      const payload = { id: item.id, method, path };
+      if (rawBody && method !== 'GET' && method !== 'HEAD') {
+        try { payload.body = JSON.parse(rawBody); } catch { payload.body = rawBody; }
+      }
+      runButton.disabled = true;
+      statusNode.textContent = 'Sending…';
+      outputNode.hidden = true;
+      try {
+        const result = await API.apis.test(payload);
+        statusNode.innerHTML = `<span class="badge ${result.ok ? 'green' : 'red'}">${esc(String(result.status))} ${esc(result.statusText || '')}</span><span>${U.fmtNumber(result.durationMs)}ms · ${esc(result.contentType || 'no content type')}</span>${result.truncated ? '<span class="badge amber">Truncated</span>' : ''}`;
+        outputNode.textContent = result.body || '(empty response)';
+        outputNode.hidden = false;
+      } catch (error) {
+        statusNode.textContent = 'The request failed.';
+        errorNode.textContent = error.message;
+      } finally {
+        runButton.disabled = false;
+      }
+    });
+  }
+
+  async function removeApi(item, host) {
     const ok = await UI.confirm({
       title: `Remove ${item.name}?`,
-      message: 'The MCP server is removed from Blank and reconnects without its tools.',
+      message: 'The connector and its saved key are deleted. The agent can no longer call it.',
       confirmLabel: 'Remove',
       danger: true,
     });
     if (!ok) return;
     try {
-      await API.plugins.remove(item.id);
+      await API.apis.remove(item.id);
       UI.toast(`${item.name} removed.`, 'success');
-      vstate.plugins.items = [];
-      mountPlugins(host);
+      refreshApis(host);
     } catch (error) { UI.toast(error.message, 'error'); }
   }
 
@@ -4581,12 +5166,21 @@ Start writing, or ask the agent to draft it.
 
   function languageFor(filePath) {
     const ext = String(filePath || '').split('.').pop().toLowerCase();
+    const base = U.baseName(String(filePath || '')).toLowerCase();
+    if (base === 'dockerfile' || base === 'containerfile') return 'dockerfile';
+    if (base === 'makefile' || base === 'gnumakefile') return 'make';
     const map = {
-      js: 'js', mjs: 'js', cjs: 'js', jsx: 'jsx', ts: 'ts', tsx: 'tsx', json: 'json', md: 'markdown',
-      py: 'py', sh: 'bash', bash: 'bash', zsh: 'bash', css: 'css', scss: 'scss', sass: 'scss',
-      html: 'html', htm: 'html', svg: 'html', xml: 'html', sql: 'sql', go: 'go', rs: 'rust',
-      java: 'java', kt: 'java', swift: 'js', c: 'cpp', h: 'cpp', cpp: 'cpp', hpp: 'cpp', cs: 'java',
-      php: 'php', rb: 'ruby', yml: 'yaml', yaml: 'yaml', toml: 'toml', lua: 'lua', env: 'bash', gitignore: 'bash',
+      js: 'js', mjs: 'js', cjs: 'js', jsx: 'js', ts: 'ts', tsx: 'ts', mts: 'ts', cts: 'ts',
+      json: 'json', jsonc: 'json', md: 'markdown', mdx: 'markdown',
+      py: 'py', pyw: 'py', sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash', bat: 'bash', cmd: 'bash',
+      ps1: 'ps1', psm1: 'ps1', css: 'css', scss: 'css', sass: 'css', less: 'css',
+      html: 'html', htm: 'html', svg: 'html', xml: 'html', vue: 'html', svelte: 'html', astro: 'html',
+      sql: 'sql', go: 'go', rs: 'rs', java: 'java', kt: 'kt', kts: 'kt', swift: 'swift',
+      c: 'c', h: 'c', cc: 'cpp', cpp: 'cpp', hpp: 'cpp', cxx: 'cpp', cs: 'cs', php: 'php',
+      rb: 'rb', lua: 'lua', r: 'r', scala: 'scala', dart: 'dart', ex: 'ex', exs: 'ex',
+      erl: 'erl', hs: 'hs', clj: 'clj', pl: 'pl', groovy: 'groovy',
+      yml: 'yaml', yaml: 'yaml', toml: 'toml', proto: 'proto', graphql: 'graphql', gql: 'graphql',
+      mk: 'make', ini: 'bash', conf: 'bash', cfg: 'bash', env: 'bash', gitignore: 'bash',
     };
     return map[ext] || '';
   }
@@ -5295,10 +5889,15 @@ Start writing, or ask the agent to draft it.
     if (page === 'skills') { mountSkills(host); return; }
     if (page === 'memory') { mountMemory(host); return; }
     if (page === 'mcp') { mountMcp(host); return; }
-    if (page === 'plugins') { mountPlugins(host); return; }
+    if (page === 'plugins') { mountApis(host); return; }
     if (page === 'learning') { mountLearning(host); return; }
     if (page === 'settings') { mountSettings(host); return; }
     if (page === 'paper') { mountPaper(host); return; }
+    if (page === 'code') { mountCode(host); return; }
+    if (page === 'console') { mountConsole(host); return; }
+    if (page === 'team') { mountTeam(host); return; }
+    if (page === 'automations') { mountAutomations(host); return; }
+    if (page === 'browser') { mountBrowser(host); return; }
     host.innerHTML = `<div class="page-inner">${UI.emptyState({ iconName: 'alert-circle', title: 'Unknown page', description: 'This surface is not part of this build.' })}</div>`;
   }
 
@@ -5315,6 +5914,7 @@ Start writing, or ask the agent to draft it.
     openPaperComposer,
     openModelPicker,
     openFilePreview,
+    languageFor,
     openSettingsSection,
     mediaCount,
   };

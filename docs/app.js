@@ -208,7 +208,7 @@
       enableLink(closing, href);
       var closingTitle = closing.querySelector('.btn-label');
       var closingSub = closing.querySelector('.btn-sub');
-      if (closingTitle) closingTitle.textContent = 'Blank 받기';
+      if (closingTitle) closingTitle.textContent = 'blank 받기';
       if (closingSub) closingSub.textContent = label + '용';
       closing.removeAttribute('target');
       closing.removeAttribute('rel');

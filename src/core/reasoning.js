@@ -5,7 +5,7 @@
  *
  * Providers expose different ladders: some models cannot think at all, some
  * are always on, and the adjustable ones range from none/minimal up to
- * xhigh/max. Blank never shows a generic "auto" list — the catalog attaches
+ * xhigh/max. blank never shows a generic "auto" list — the catalog attaches
  * the exact stages each discovered model accepts, and requests are translated
  * to that provider's native parameter.
  */

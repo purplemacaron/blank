@@ -50,6 +50,8 @@ function createSession({ workspace = '', model = '', mode = 'agent', title = 'Ne
     summary: '',
     compactedCount: 0,
     pinned: false,
+    archived: false,
+    subagents: [],
   };
   saveSession(session);
   return session;
@@ -101,6 +103,7 @@ function listSessions(workspace) {
       model: session.model,
       mode: session.mode,
       pinned: Boolean(session.pinned),
+      archived: Boolean(session.archived),
       messageCount: (session.messages || []).length,
       workspace: session.workspace,
       usage: session.usage || { input: 0, output: 0 },

@@ -5,7 +5,7 @@
  * until a valid pairing token is supplied. Everything is local and dependency
  * free so it works in a phone browser.
  */
-function remotePage({ appName = 'Blank', version = '1.0.0' } = {}) {
+function remotePage({ appName = 'blank', version = '1.0.0' } = {}) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -119,7 +119,7 @@ button{cursor:pointer}
   </main>
   <div class="composer-wrap">
     <div class="composer">
-      <textarea id="input" rows="1" placeholder="Message Blank…" autocomplete="off"></textarea>
+      <textarea id="input" rows="1" placeholder="Message blank…" autocomplete="off"></textarea>
       <button class="stop" id="stop" aria-label="Stop" title="Stop the run" hidden><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg></button>
       <button class="send" id="send" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M5 12l14-7-6 14-2-6-6-1z"/><path d="M13 13l6-8"/></svg></button>
     </div>
@@ -136,12 +136,12 @@ button{cursor:pointer}
   <div class="token-card">
     <span class="mark"></span>
     <h1>Connect to ${appName}</h1>
-    <p>Enter the pairing token shown in Blank → Settings → Remote. The token stays in this browser tab.</p>
+    <p>Enter the pairing token shown in blank → Settings → Remote. The token stays in this browser tab.</p>
     <label class="label" for="token">Pairing token</label>
     <input class="token-input" id="token" type="password" placeholder="Paste the token" autocomplete="off" spellcheck="false" />
     <button class="btn primary" id="pair">Connect</button>
     <div class="error" id="pair-error"></div>
-    <div class="trust"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" style="flex:none;margin-top:2px"><path d="M12 3l7 3v6c0 4.4-2.8 8.2-7 9-4.2-.8-7-4.6-7-9V6l7-3z"/></svg><span>Blank talks directly to your computer. Nothing is sent to a third-party service. Disconnect at any time.</span></div>
+    <div class="trust"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" style="flex:none;margin-top:2px"><path d="M12 3l7 3v6c0 4.4-2.8 8.2-7 9-4.2-.8-7-4.6-7-9V6l7-3z"/></svg><span>blank talks directly to your computer. Nothing is sent to a third-party service. Disconnect at any time.</span></div>
   </div>
 </div>
 
@@ -176,7 +176,7 @@ button{cursor:pointer}
     sessionStorage.removeItem(TOKEN_KEY);
     $('token-screen').classList.remove('hide');
     $('shell').classList.add('hide');
-    if(expired){ $('pair-error').textContent='The pairing token is no longer valid. Start Remote again in Blank.'; }
+    if(expired){ $('pair-error').textContent='The pairing token is no longer valid. Start Remote again in blank.'; }
   }
 
   function enter(){
@@ -230,7 +230,7 @@ button{cursor:pointer}
       var content=String(message.content||'').trim();
       if(!content&&!(message.toolCalls||[]).length) return;
       var isUser=message.role==='user';
-      html+='<div class="msg '+(isUser?'user':'assistant')+'"><div class="avatar">'+(isUser?'Y':'B')+'</div><div class="bubble"><div class="text">'+esc(content)+'</div><div class="meta">'+(isUser?'You':esc((message.model||'Blank').split('/').pop()))+' · '+esc(time(message.at))+'</div></div></div>';
+      html+='<div class="msg '+(isUser?'user':'assistant')+'"><div class="avatar">'+(isUser?'Y':'B')+'</div><div class="bubble"><div class="text">'+esc(content)+'</div><div class="meta">'+(isUser?'You':esc((message.model||'blank').split('/').pop()))+' · '+esc(time(message.at))+'</div></div></div>';
     });
     if(state.live && state.live.text){ html+='<div class="msg assistant"><div class="avatar">B</div><div class="bubble"><div class="text live">'+esc(state.live.text)+'<span class="caret"></span></div><div class="meta">'+esc(state.live.model||'')+' · live</div></div></div>'; }
     if(state.running){ html+='<div class="working"><span class="spinner"></span>'+esc(state.live&&state.live.tool?state.live.tool:'Working…')+'</div>'; }
@@ -245,7 +245,7 @@ button{cursor:pointer}
       });
     }
     if(!html){
-      html='<div class="empty"><h2>Your agent, in your pocket</h2><p>Send a message to start a session. When Blank asks for permission, you can review it here.</p></div>';
+      html='<div class="empty"><h2>Your agent, in your pocket</h2><p>Send a message to start a session. When blank asks for permission, you can review it here.</p></div>';
     }
     thread.innerHTML=html;
     var scroll=$('scroll');
@@ -271,7 +271,7 @@ button{cursor:pointer}
 
   $('pair').addEventListener('click',function(){
     var value=$('token').value.trim();
-    if(!value){ $('pair-error').textContent='Paste the token from Blank → Settings → Remote.'; return; }
+    if(!value){ $('pair-error').textContent='Paste the token from blank → Settings → Remote.'; return; }
     token=value;
     $('pair-error').textContent='';
     api('/api/ping').then(function(){ sessionStorage.setItem(TOKEN_KEY,token); enter(); }).catch(function(err){ $('pair-error').textContent=err.message; });

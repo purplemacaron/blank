@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Guidance for coding agents working in this repository. Blank reads this file automatically at the start of every run.
+Guidance for coding agents working in this repository. blank reads this file automatically at the start of every run.
 
-## What Blank is
+## What blank is
 
-Blank is a quiet, local-first desktop agent harness. It is an Electron app with a sandboxed renderer, a terminal CLI, and a static download site on GitHub Pages. The product promise is restraint: real providers and tools, local files, no accounts, no demo responses.
+blank is a quiet, local-first desktop agent harness. It is an Electron app with a sandboxed renderer, a terminal CLI, and a static download site on GitHub Pages. The product promise is restraint: real providers and tools, local files, no accounts, no demo responses.
 
 - Electron 45, CommonJS in the main process, classic IIFEs in the renderer. No bundler.
 - White surfaces, hairline borders, one blue accent, Korean by default with an English switch.

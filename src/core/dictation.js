@@ -50,7 +50,7 @@ function transcriptionModels(provider = {}) {
 }
 
 /**
- * Blank stored whisper-1 as the old global default. On providers that do not
+ * blank stored whisper-1 as the old global default. On providers that do not
  * offer that id, treat it as "not set" and use their recommended model.
  */
 function effectiveModel(configured, provider) {

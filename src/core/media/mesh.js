@@ -699,8 +699,8 @@ function renderMeshPreview(model, options = {}) {
 function exportObj(model) {
   const { mesh } = model;
   const lines = [
-    `# Blank Studio — ${model.title || model.kind}`,
-    `# ${model.stats.triangles} triangles, generated with Blank`,
+    `# blank Studio — ${model.title || model.kind}`,
+    `# ${model.stats.triangles} triangles, generated with blank`,
     `mtllib ${safeName(model.title || model.kind)}.mtl`,
     '',
   ];
@@ -725,7 +725,7 @@ function exportObj(model) {
     const { r, g, b } = hexToRgbLocal(group.color);
     return [`newmtl mat_${index}`, `Kd ${n(r / 255)} ${n(g / 255)} ${n(b / 255)}`, 'Ka 0 0 0', 'Ks 0.25 0.25 0.25', 'Ns 40', ''].join('\n');
   }).join('\n');
-  return { obj: `${lines.join('\n')}\n`, mtl: `# Blank Studio materials\n\n${mtl}`, triangles: triangleIndex };
+  return { obj: `${lines.join('\n')}\n`, mtl: `# blank Studio materials\n\n${mtl}`, triangles: triangleIndex };
 }
 
 function hexToRgbLocal(hex) {
@@ -741,7 +741,7 @@ function exportStl(model) {
   const { mesh } = model;
   const triangles = mesh.triangles;
   const buffer = Buffer.alloc(84 + triangles.length * 50);
-  buffer.write('Blank Studio binary STL', 0);
+  buffer.write('blank Studio binary STL', 0);
   buffer.writeUInt32LE(triangles.length, 80);
   let offset = 84;
   const v = (index) => mesh.vertices[index];

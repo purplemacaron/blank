@@ -22,15 +22,21 @@ const isWin = process.platform === 'win32';
 const isMac = process.platform === 'darwin';
 
 let activityListener = null;
+let actorName = '';
 
 /** Observe computer activity (used by the desktop cursor overlay). */
 function onActivity(listener) {
   activityListener = typeof listener === 'function' ? listener : null;
 }
 
+/** Name shown on the cursor marker (the active model or worker). */
+function setActor(name) {
+  actorName = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 48);
+}
+
 function signalActivity(payload) {
   if (!activityListener) return;
-  try { activityListener(payload); } catch {}
+  try { activityListener({ actor: actorName, ...payload }); } catch {}
 }
 
 function computerDir() {
@@ -494,4 +500,4 @@ async function listWindows() {
   return result.windows || [];
 }
 
-module.exports = { screenshot, perform, listWindows, normalizeArgs, computerDir, onActivity };
+module.exports = { screenshot, perform, listWindows, normalizeArgs, computerDir, onActivity, setActor };

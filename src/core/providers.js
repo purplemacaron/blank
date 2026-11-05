@@ -126,7 +126,7 @@ async function* openaiStream({ resolved, apiKey, system, messages, tools, option
   };
   if (resolved.providerId === 'openrouter') {
     headers['http-referer'] = 'https://blank.dev';
-    headers['x-title'] = 'Blank';
+    headers['x-title'] = 'blank';
   }
   const response = await fetch(`${base}/chat/completions`, {
     method: 'POST',

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Authenticated remote control for Blank.
+ * Authenticated remote control for blank.
  *
  * Safe defaults: off until started, loopback-only unless LAN is explicitly
  * enabled, a fresh random token on every start, no CORS, no static file server,
@@ -171,7 +171,7 @@ function createRemoteService() {
   }
 
   function sendPage(res) {
-    const html = remotePage({ appName: 'Blank', version: handlers?.version?.() || '1.0.0' });
+    const html = remotePage({ appName: 'blank', version: handlers?.version?.() || '1.0.0' });
     res.writeHead(200, {
       'content-type': 'text/html; charset=utf-8',
       'content-length': Buffer.byteLength(html),
@@ -215,7 +215,7 @@ function createRemoteService() {
     const pathname = url.pathname;
 
     if (req.method === 'GET' && pathname === '/api/ping') {
-      sendJson(res, 200, { ok: true, name: 'Blank', version: handlers?.version?.() || '1.0.0', allowApprovals });
+      sendJson(res, 200, { ok: true, name: 'blank', version: handlers?.version?.() || '1.0.0', allowApprovals });
       return;
     }
 
@@ -229,7 +229,7 @@ function createRemoteService() {
       const running = sessionId ? Boolean(handlers?.isRunning?.(sessionId)) : Boolean(live);
       sendJson(res, 200, {
         ok: true,
-        name: 'Blank',
+        name: 'blank',
         sessions,
         session,
         running,
@@ -310,7 +310,7 @@ function createRemoteService() {
         return;
       }
       if (req.method === 'GET' && url.pathname === '/health') {
-        sendJson(res, 200, { ok: true, name: 'Blank' });
+        sendJson(res, 200, { ok: true, name: 'blank' });
         return;
       }
       if (url.pathname.startsWith('/api/')) {

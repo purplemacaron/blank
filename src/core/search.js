@@ -119,7 +119,7 @@ async function searchDuckDuckGo(query, count, signal) {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
-      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Blank/1.0',
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) blank/1.0',
       accept: 'text/html,application/xhtml+xml',
     },
     body,
@@ -151,7 +151,7 @@ async function searchDuckDuckGo(query, count, signal) {
   }
   if (!results.length) {
     const instant = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`, {
-      headers: { accept: 'application/json', 'user-agent': 'Blank/1.0' },
+      headers: { accept: 'application/json', 'user-agent': 'blank/1.0' },
       signal: withTimeout(signal, 12000),
     });
     if (instant.ok) {
@@ -251,7 +251,7 @@ async function searchSearxng(query, count, baseUrl, signal) {
   url.searchParams.set('q', query);
   url.searchParams.set('format', 'json');
   const response = await fetch(url, {
-    headers: { accept: 'application/json', 'user-agent': 'Blank/1.0' },
+    headers: { accept: 'application/json', 'user-agent': 'blank/1.0' },
     signal: withTimeout(signal, 15000),
   });
   const json = await readJson(response, 'SearXNG');
@@ -277,11 +277,11 @@ async function searchWeb(query, { config = {}, signal, count } = {}) {
   let key = searchKey(config, backend);
   let note = '';
   if (backend.needsKey && !key.key) {
-    note = `${backend.label} has no key saved, so Blank used DuckDuckGo instead.`;
+    note = `${backend.label} has no key saved, so blank used DuckDuckGo instead.`;
     backend = backendById('duckduckgo');
   }
   if (backend.id === 'searxng' && !config.search?.baseUrl) {
-    note = 'SearXNG needs an instance URL, so Blank used DuckDuckGo instead.';
+    note = 'SearXNG needs an instance URL, so blank used DuckDuckGo instead.';
     backend = backendById('duckduckgo');
   }
 

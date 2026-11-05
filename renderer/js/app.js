@@ -1,4 +1,4 @@
-/* Blank application shell: boot, chrome, sessions, context rail, palette, onboarding. */
+/* blank application shell: boot, chrome, sessions, context rail, palette, onboarding. */
 (function () {
   'use strict';
 
@@ -6,17 +6,22 @@
     'run:start', 'assistant:start', 'text', 'reasoning', 'tool:start', 'tool:end',
     'assistant:end', 'assistant:empty', 'tasks', 'usage', 'notice', 'error', 'compacted',
     'approval', 'approval:resolved', 'approval:expired', 'run:done', 'title',
-    'chat:queued', 'chat:queued:sent', 'chat:queue:update',
+    'chat:queued', 'chat:queued:sent', 'chat:queue:update', 'agent:start', 'agent:end',
   ]);
 
   const PAGE_META = {
     chat: { label: 'Chat', icon: 'message' },
     paper: { label: 'Paper', icon: 'book' },
+    code: { label: 'Code', icon: 'code' },
+    browser: { label: 'Browser', icon: 'globe' },
+    console: { label: 'Console', icon: 'terminal' },
+    team: { label: 'Team', icon: 'bot' },
+    automations: { label: 'Automations', icon: 'clock' },
     models: { label: 'Models', icon: 'sparkles' },
     skills: { label: 'Skills', icon: 'layers' },
     memory: { label: 'Memory', icon: 'brain' },
     mcp: { label: 'MCP', icon: 'plug' },
-    plugins: { label: 'Plugins', icon: 'grid' },
+    plugins: { label: 'APIs', icon: 'link' },
     learning: { label: 'Learning', icon: 'zap' },
     settings: { label: 'Settings', icon: 'settings' },
   };
@@ -35,9 +40,14 @@
       railTab: 'plan',
       railOpen: true,
       railOverlay: false,
+      railWide: false,
+      railFile: '',
+      railFileData: null,
+      railBrowserUrl: 'https://purplemacaron.github.io/blank/',
       sidebarOpen: false,
       sessionSearch: '',
       sessionSearchOpen: false,
+      showArchived: false,
       fileQuery: '',
       expanded: new Set(),
       memory: [],
@@ -172,7 +182,7 @@
       pill.title = parts.join(' · ');
     }
     const version = $('sidebar-version');
-    if (version) version.textContent = 'Blank';
+    if (version) version.textContent = 'blank';
   }
 
   function setConfig(config, options = {}) {
@@ -319,18 +329,36 @@
   function renderSessions() {
     const host = $('session-list');
     if (!host) return;
-    const filtered = state.sessions.filter(matchesSearch);
+    const archivedCount = state.sessions.filter((session) => session.archived).length;
+    const toggle = $('archive-toggle');
+    if (toggle) {
+      toggle.hidden = !archivedCount;
+      toggle.classList.toggle('active', state.showArchived);
+      const label = $('archive-label');
+      if (label) label.textContent = state.showArchived ? 'Back to sessions' : `Archived (${archivedCount})`;
+    }
     if (!state.sessions.length) {
       host.innerHTML = '<div class="sidebar-empty">Start a conversation to see it here.</div>';
       return;
     }
+    const scoped = state.sessions.filter((session) => Boolean(session.archived) === Boolean(state.showArchived));
+    const filtered = scoped.filter(matchesSearch);
     if (!filtered.length) {
-      host.innerHTML = `<div class="sidebar-empty">No sessions match “${U.esc(state.sessionSearch)}”.</div>`;
+      host.innerHTML = `<div class="sidebar-empty">${state.showArchived
+        ? 'No archived sessions yet.'
+        : scoped.length ? `No sessions match “${U.esc(state.sessionSearch)}”.` : 'Start a conversation to see it here.'}</div>`;
       return;
     }
     const groups = groupSessions(filtered);
     host.innerHTML = groups.map(([label, sessions]) => `<div class="session-group-label">${U.esc(label)}</div>${sessions.map(sessionMarkup).join('')}`).join('');
   }
+
+  function toggleArchivedSessions() {
+    state.showArchived = !state.showArchived;
+    renderSessions();
+  }
+
+  App.toggleArchivedSessions = toggleArchivedSessions;
 
   function findSession(id) {
     return state.sessions.find((session) => session.id === id) || null;
@@ -388,10 +416,24 @@
         icon: 'pin',
         onClick: () => togglePinnedSession(summary),
       },
+      {
+        label: summary.archived ? 'Restore from archive' : 'Archive session',
+        icon: 'inbox',
+        onClick: () => toggleArchived(summary),
+      },
       { label: 'Compact context', icon: 'panel-bottom', onClick: () => compactSession(summary) },
       { separator: true },
       { label: 'Delete session', icon: 'trash', danger: true, onClick: () => deleteSession(summary) },
     ], { align: 'end' });
+  }
+
+  async function toggleArchived(summary) {
+    try {
+      const result = await API.sessions.update({ id: summary.id, archived: !summary.archived });
+      upsertSession({ ...summary, archived: Boolean(result.session?.archived), pinned: Boolean(result.session?.pinned) });
+      UI.toast(result.session?.archived ? 'Session archived.' : 'Session restored.', 'success');
+      renderSessions();
+    } catch (error) { UI.toast(error.message, 'error'); }
   }
 
   async function renameSession(summary) {
@@ -427,7 +469,7 @@
   async function compactSession(summary) {
     const confirmed = await UI.confirm({
       title: 'Compact this conversation?',
-      message: 'Blank will summarize earlier turns into a short context note. Recent messages stay verbatim.',
+      message: 'blank will summarize earlier turns into a short context note. Recent messages stay verbatim.',
       confirmLabel: 'Compact',
       detail: summary.title,
     });
@@ -631,10 +673,10 @@
   function updateDocumentTitle() {
     const session = currentSession();
     if (state.page === 'chat') {
-      const title = session?.title && session.title !== 'New session' ? session.title : 'Blank';
-      document.title = title === 'Blank' ? 'Blank' : `${title} · Blank`;
+      const title = session?.title && session.title !== 'New session' ? session.title : 'blank';
+      document.title = title === 'blank' ? 'blank' : `${title} · blank`;
     } else {
-      document.title = `${PAGE_META[state.page]?.label || 'Blank'} · Blank`;
+      document.title = `${PAGE_META[state.page]?.label || 'blank'} · blank`;
     }
   }
 
@@ -765,16 +807,127 @@
         <div class="plan-items">${tasks.map((task) => `<div class="plan-item ${U.esc(task.status || 'pending')}">
           <span class="plan-mark">${task.status === 'completed' ? icon('check', 9) : ''}</span>
           <span class="plan-text">${U.esc(task.content)}</span>
-        </div>`).join('')}</div>` : railEmpty('checklist', 'No plan yet', 'Ask Blank to plan a multi-step task; the checklist appears here while it works.')}
+        </div>`).join('')}</div>` : railEmpty('checklist', 'No plan yet', 'Ask blank to plan a multi-step task; the checklist appears here while it works.')}
       </div>
       ${sessionFilesMarkup()}`;
   }
 
   function filesMarkup() {
+    if (state.railFile) return railFileMarkup();
     return `<div class="rail-section">
       <div class="rail-files-search">${icon('search', 12)}<input type="text" data-rail-search placeholder="Filter files" value="${U.attr(state.fileQuery)}" spellcheck="false" /></div>
       <div data-rail-tree>${railTreeMarkup()}</div>
     </div>`;
+  }
+
+  function railFileMarkup() {
+    const pathName = state.railFile;
+    const data = state.railFileData;
+    const head = `<div class="rail-preview-head">
+      <button class="mini-icon" type="button" data-rail-file-back title="Back">${icon('chevron-left', 13)}</button>
+      <div class="rail-preview-title"><b>${U.esc(U.baseName(pathName))}</b><span>${U.esc(pathName)}</span></div>
+      <button class="mini-icon" type="button" data-rail-file-copy title="Copy file">${icon('copy', 12)}</button>
+      <button class="mini-icon" type="button" data-rail-file-open title="Open">${icon('external-link', 12)}</button>
+      <button class="mini-icon" type="button" data-rail-file-reveal title="Reveal">${icon('folder-open', 12)}</button>
+    </div>`;
+    if (!data) return `${head}<div class="rail-preview-state"><span class="spinner"></span> Reading…</div>`;
+    if (data.error) return `${head}<div class="rail-preview-state">${U.esc(data.error)}</div>`;
+    if (!data.content) return `${head}<div class="rail-preview-state">This file is empty.</div>`;
+    const highlighted = window.MD?.highlight ? window.MD.highlight(data.content, window.Views?.languageFor?.(pathName) || 'text') : U.esc(data.content);
+    return `${head}<div class="rail-preview-meta">${data.lines} lines · ${U.fmtBytes(data.bytes)}${data.truncated ? ' · truncated' : ''}</div>
+      <pre class="rail-preview-code"><code>${highlighted}</code></pre>`;
+  }
+
+  function railTerminalMarkup() {
+    return `${window.TerminalView ? window.TerminalView.markup({ compact: true }) : ''}`;
+  }
+
+  function railBrowserMarkup() {
+    const url = state.railBrowserUrl || 'https://purplemacaron.github.io/blank/';
+    return `<div class="rail-browser">
+      <div class="rail-browser-bar">
+        <button class="mini-icon" type="button" data-rail-browser-nav="back" title="Back">${icon('chevron-left', 13)}</button>
+        <button class="mini-icon" type="button" data-rail-browser-nav="forward" title="Forward">${icon('chevron-right', 13)}</button>
+        <input class="rail-browser-address" data-rail-browser-address type="text" spellcheck="false" value="${U.attr(url)}" aria-label="Address" />
+        <button class="mini-icon" type="button" data-rail-browser-nav="go" title="Open">${icon('arrow-right', 13)}</button>
+      </div>
+      <webview class="rail-browser-view" data-rail-browser-view src="${U.attr(url)}" partition="persist:blank-browser"></webview>
+      <div class="rail-browser-foot">
+        <span class="rail-browser-status" data-rail-browser-status>Loading…</span>
+        <button class="btn btn-secondary btn-sm" type="button" data-rail-browser-send>${icon('message', 11)} Send to chat</button>
+      </div>
+    </div>`;
+  }
+
+  function railUrl(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (/^https?:\/\//i.test(text)) return text;
+    if (/^[\w-]+(\.[\w-]+)+([/?#].*)?$/.test(text)) return `https://${text}`;
+    return `https://duckduckgo.com/?q=${encodeURIComponent(text)}`;
+  }
+
+  function wireRailBrowser(body) {
+    const view = body.querySelector('[data-rail-browser-view]');
+    const address = body.querySelector('[data-rail-browser-address]');
+    const status = body.querySelector('[data-rail-browser-status]');
+    if (!view) return;
+    const sync = () => {
+      try {
+        const url = view.getURL();
+        if (url) { state.railBrowserUrl = url; if (address) address.value = url; }
+        if (status) status.textContent = view.getTitle() || 'Ready';
+      } catch {}
+    };
+    view.addEventListener('did-start-loading', () => { if (status) status.textContent = 'Loading…'; });
+    view.addEventListener('did-stop-loading', sync);
+    view.addEventListener('did-navigate', sync);
+    view.addEventListener('did-navigate-in-page', sync);
+    view.addEventListener('did-fail-load', (event) => {
+      if (event.errorCode === -3) return;
+      if (status) status.textContent = 'Page could not load';
+    });
+    const go = () => {
+      const url = railUrl(address?.value);
+      if (!url) return;
+      state.railBrowserUrl = url;
+      if (address) address.value = url;
+      view.loadURL(url).catch(() => { if (status) status.textContent = 'Page could not load'; });
+    };
+    body.querySelectorAll('[data-rail-browser-nav]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const action = button.dataset.railBrowserNav;
+        if (action === 'go') { go(); return; }
+        try {
+          if (action === 'back' && view.canGoBack()) view.goBack();
+          if (action === 'forward' && view.canGoForward()) view.goForward();
+        } catch {}
+      });
+    });
+    address?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); go(); }
+    });
+    body.querySelector('[data-rail-browser-send]')?.addEventListener('click', async () => {
+      let title = '';
+      let url = state.railBrowserUrl;
+      let selection = '';
+      let text = '';
+      try { title = view.getTitle() || ''; url = view.getURL() || url; } catch {}
+      try { selection = await view.executeJavaScript('String(window.getSelection ? window.getSelection().toString() : "").slice(0, 3000)'); } catch {}
+      if (!selection) {
+        try { text = await view.executeJavaScript('String(document.body ? document.body.innerText : "").slice(0, 3000)'); } catch {}
+      }
+      const lines = [
+        'Use this page as context.',
+        title ? `Title: ${title}` : '',
+        url ? `URL: ${url}` : '',
+        selection ? `Selection:\n${selection}` : '',
+        !selection && text ? `Page text:\n${text}` : '',
+        '',
+      ].filter((line, index, all) => line !== '' || index === all.length - 1).join('\n');
+      window.ChatView?.focusComposer(`${lines}\n`);
+      UI.toast('Page added to the composer.', 'success');
+    });
   }
 
   function contextMarkup() {
@@ -816,26 +969,101 @@
       </div>
       <div class="rail-section">
         <div class="rail-section-head"><span class="rail-section-title">${icon('brain', 11)} Memory</span><span class="rail-section-meta">${state.memory.length || 0}</span></div>
-        ${memories.length ? `<div class="memory-chip-list">${memories.map((memory) => `<div class="memory-chip">${icon('circle-dot', 10)}<span>${U.esc(memory.text)}</span></div>`).join('')}</div>` : railEmpty('brain', 'Memory is quiet', 'Saved facts and preferences will surface here as Blank learns them.')}
+        ${memories.length ? `<div class="memory-chip-list">${memories.map((memory) => `<div class="memory-chip">${icon('circle-dot', 10)}<span>${U.esc(memory.text)}</span></div>`).join('')}</div>` : railEmpty('brain', 'Memory is quiet', 'Saved facts and preferences will surface here as blank learns them.')}
       </div>
       ${session?.summary ? `<div class="rail-section"><div class="rail-section-head"><span class="rail-section-title">${icon('panel-bottom', 11)} Compacted context</span></div><div class="summary-card"><b>Summary</b>${U.esc(session.summary)}</div></div>` : ''}`;
+  }
+
+  function agentsMarkup() {
+    const session = currentSession();
+    const agents = Array.isArray(session?.subagents) ? session.subagents.slice().reverse() : [];
+    const running = agents.filter((agent) => agent.status === 'running').length;
+    if (!agents.length) {
+      return `<div class="rail-section">
+        <div class="rail-section-head"><span class="rail-section-title">${icon('bot', 11)} Agents</span><span class="rail-section-meta">—</span></div>
+        ${railEmpty('bot', 'No sub-agents yet')}
+        <div class="rail-hint">Delegated research and team reports appear here with their status and report.</div>
+      </div>`;
+    }
+    return `<div class="rail-section">
+      <div class="rail-section-head"><span class="rail-section-title">${icon('bot', 11)} Agents</span><span class="rail-section-meta">${running ? `${running} running` : `${agents.length} finished`}</span></div>
+      <div class="agent-list">${agents.map((agent) => `<div class="agent-row ${U.esc(agent.status || 'ok')}">
+        <div class="agent-row-head">
+          <span class="agent-dot"></span>
+          <span class="agent-name">${U.esc(agent.name || 'Sub-agent')}</span>
+          <span class="agent-state">${agent.status === 'running' ? 'running' : agent.status === 'error' ? 'failed' : `${Math.max(1, Math.round((Number(agent.durationMs) || 0) / 1000))}s`}</span>
+        </div>
+        <div class="agent-task">${U.esc(U.truncate(agent.task || '', 120))}</div>
+        ${agent.report ? `<details class="agent-report"><summary>Report</summary><pre>${U.esc(agent.report)}</pre></details>` : ''}
+      </div>`).join('')}</div>
+    </div>`;
   }
 
   function renderRail() {
     const body = $('rail-body');
     if (!body) return;
     const tasks = currentSession()?.tasks || [];
+    const agents = currentSession()?.subagents || [];
     const planCount = $('rail-plan-count');
     const fileCount = $('rail-files-count');
+    const agentCount = $('rail-agents-count');
     if (planCount) planCount.textContent = String(tasks.length);
     if (fileCount) fileCount.textContent = String(countTreeFiles(state.tree));
+    if (agentCount) agentCount.textContent = String(agents.length);
     for (const tab of qsa('[data-rail]')) tab.classList.toggle('active', tab.dataset.rail === state.railTab);
+    const workbench = state.railTab === 'terminal' || state.railTab === 'browser';
+    body.classList.toggle('workbench', workbench);
+    const keep = (state.railTab === 'terminal' && body.querySelector('[data-terminal]'))
+      || (state.railTab === 'browser' && body.querySelector('[data-rail-browser-view]'));
+    if (keep) return;
     const scrollTop = body.scrollTop;
-    if (state.railTab === 'files') body.innerHTML = filesMarkup();
+    if (state.railTab === 'terminal') {
+      body.innerHTML = railTerminalMarkup();
+      window.TerminalView?.wire(body.querySelector('[data-terminal]'));
+    } else if (state.railTab === 'browser') {
+      body.innerHTML = railBrowserMarkup();
+      wireRailBrowser(body);
+    } else if (state.railTab === 'files') body.innerHTML = filesMarkup();
     else if (state.railTab === 'context') body.innerHTML = contextMarkup();
+    else if (state.railTab === 'agents') body.innerHTML = agentsMarkup();
     else body.innerHTML = planMarkup();
     body.scrollTop = scrollTop;
   }
+
+  function showRailTab(tab) {
+    state.railTab = tab;
+    if (state.page !== 'chat') openPage('chat');
+    state.railOpen = true;
+    if (isOverlayRail()) state.railOverlay = true;
+    applyRailVisibility();
+    renderRail();
+  }
+
+  async function openRailFile(filePath) {
+    if (!filePath) return;
+    state.railFile = filePath;
+    state.railFileData = null;
+    showRailTab('files');
+    renderRail();
+    try {
+      const result = await window.API.workspace.read(filePath);
+      if (state.railFile !== filePath) return;
+      const content = String(result?.content || '');
+      const limited = content.length > 60_000 ? content.slice(0, 60_000) : content;
+      state.railFileData = {
+        content: limited,
+        truncated: content.length > limited.length,
+        lines: content.split(/\r?\n/).length,
+        bytes: new TextEncoder().encode(content).length,
+      };
+    } catch (error) {
+      state.railFileData = { error: error.message || 'Could not open this file.' };
+    }
+    renderRail();
+  }
+
+  App.showRailTab = showRailTab;
+  App.openRailFile = openRailFile;
 
   function refreshRail() { renderRail(); }
 
@@ -919,12 +1147,17 @@
       { icon: 'message', title: 'Go to Chat', sub: 'Conversation with the agent', run: () => openPage('chat') },
       { icon: 'wand', title: 'Create media', sub: 'Images, video, audio and 3D in chat', run: () => window.Views?.openStudio?.() },
       { icon: 'book', title: 'Open Paper', sub: 'Live pages, documents and graphics', run: () => openPage('paper') },
+      { icon: 'code', title: 'Code & review', sub: 'Workspace map, changes and checks', run: () => openPage('code') },
+      { icon: 'globe', title: 'Browser', sub: 'Built-in browser with page context', run: () => openPage('browser') },
+      { icon: 'terminal', title: 'Console', sub: 'Run commands in the workspace', run: () => openPage('console') },
+      { icon: 'bot', title: 'Agent team', sub: 'blank Team roster and briefs', run: () => openPage('team') },
+      { icon: 'clock', title: 'Automations', sub: 'Scheduled and interval runs', run: () => openPage('automations') },
       { icon: 'sparkles', title: 'Switch default model…', sub: 'Model used by new sessions', kbd: U.kbd('Ctrl M'), run: () => openDefaultModelPicker($('palette-trigger')) },
       { icon: 'sparkles', title: 'Models', sub: 'Providers, keys and discovery', run: () => openPage('models') },
       { icon: 'layers', title: 'Skills', sub: 'Reusable workflows and instructions', run: () => openPage('skills') },
-      { icon: 'brain', title: 'Memory', sub: 'Facts and preferences Blank remembers', run: () => openPage('memory') },
+      { icon: 'brain', title: 'Memory', sub: 'Facts and preferences blank remembers', run: () => openPage('memory') },
       { icon: 'plug', title: 'MCP', sub: 'Connected tool servers', run: () => openPage('mcp') },
-      { icon: 'grid', title: 'Plugins', sub: 'One-click MCP servers and skills', run: () => openPage('plugins') },
+      { icon: 'link', title: 'APIs', sub: 'Public HTTP services the agent can call', run: () => openPage('plugins') },
       { icon: 'globe', title: 'Web search settings', sub: 'Search backend and API keys', run: () => Views.openSettingsSection('search') },
       { icon: 'monitor', title: 'Computer settings', sub: 'Cursor overlay and screen access', run: () => Views.openSettingsSection('computer') },
       { icon: 'link', title: 'Remote control settings', sub: 'Pair a phone over your network', run: () => Views.openSettingsSection('remote') },
@@ -933,7 +1166,7 @@
       { icon: 'panel-right', title: 'Toggle context panel', sub: 'Plan, files and context', kbd: U.kbd('Ctrl Shift B'), run: () => toggleRail() },
       { icon: resolvedTheme() === 'dark' ? 'sun' : 'moon', title: `Switch to ${resolvedTheme() === 'dark' ? 'light' : 'dark'} theme`, sub: 'Appearance only affects this window', run: toggleTheme },
       { icon: 'folder', title: 'Open workspace folder…', sub: state.workspace || 'No folder selected', run: chooseWorkspace },
-      { icon: 'terminal', title: 'Install command line tool', sub: 'Run Blank from any terminal', run: installCli },
+      { icon: 'terminal', title: 'Install command line tool', sub: 'Run blank from any terminal', run: installCli },
       { icon: 'database', title: 'Open data folder', sub: state.info?.home || '~/.blank', run: () => API.app.openDataFolder().catch((error) => UI.toast(error.message, 'error')) },
     ];
   }
@@ -991,7 +1224,7 @@
         <div class="palette-results" data-palette-results></div>
         <div class="palette-foot">
           <span class="hint-group"><span><kbd>↑</kbd><kbd>↓</kbd> navigate</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></span>
-          <span>Blank</span>
+          <span>blank</span>
         </div>
       </div>`;
     document.body.appendChild(layer);
@@ -1181,10 +1414,10 @@
         return `<div class="onboard-step">
           <div class="onboard-hero">
             <span class="onboard-mark"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="15" fill="#2F6BFF"/><path d="M23 13h13l12 12v23a4 4 0 0 1-4 4H23a4 4 0 0 1-4-4V17a4 4 0 0 1 4-4Z" fill="#fff"/><path d="M36 13v12h12Z" fill="#DCE7FF"/></svg></span>
-            <div><h2>Connect a provider</h2><p>Blank runs on the model you choose. Add an API key in Models.</p></div>
+            <div><h2>Connect a provider</h2><p>blank runs on the model you choose. Add an API key in Models.</p></div>
           </div>
           ${stepsMarkup()}
-          <div class="onboard-note">${icon('lock', 12)}<span>Blank needs a model. Add a provider API key in Models.</span></div>
+          <div class="onboard-note">${icon('lock', 12)}<span>blank needs a model. Add a provider API key in Models.</span></div>
           <div class="onboard-actions">
             <button class="btn btn-ghost" type="button" data-onboard-skip>Set up later</button>
             <button class="btn btn-primary" type="button" data-onboard-connect>Open Models ${icon('arrow-right', 12)}</button>
@@ -1194,7 +1427,7 @@
       return `<div class="onboard-step">
         <div class="onboard-hero">
           <span class="onboard-mark"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="15" fill="#2F6BFF"/><path d="M23 13h13l12 12v23a4 4 0 0 1-4 4H23a4 4 0 0 1-4-4V17a4 4 0 0 1 4-4Z" fill="#fff"/><path d="M36 13v12h12Z" fill="#DCE7FF"/></svg></span>
-          <div><h2>Meet Blank</h2><p>A local-first agent harness for code, research and media.</p></div>
+          <div><h2>Meet blank</h2><p>A local-first agent harness for code, research and media.</p></div>
         </div>
         ${stepsMarkup()}
         <div>
@@ -1216,15 +1449,15 @@
     function workspaceStep() {
       return `<div class="onboard-step">
         <div class="onboard-hero">
-          <span class="onboard-mark">${icon('folder-open', 46)}</span>
-          <div><h2>Pick a workspace</h2><p>Blank reads and writes inside this folder — and nowhere else.</p></div>
+          <span class="onboard-mark"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="15" fill="#2F6BFF"/><path d="M23 13h13l12 12v23a4 4 0 0 1-4 4H23a4 4 0 0 1-4-4V17a4 4 0 0 1 4-4Z" fill="#fff"/><path d="M36 13v12h12Z" fill="#DCE7FF"/></svg></span>
+          <div><h2>Pick a workspace</h2><p>blank reads and writes inside this folder — and nowhere else.</p></div>
         </div>
         ${stepsMarkup()}
-        <div class="onboard-workspace">${icon('folder', 16)}<span>${U.esc(chosenWorkspace || 'Blank Workspace will be created automatically')}</span><button class="btn btn-secondary btn-sm" type="button" data-onboard-choose>Change</button></div>
-        <div class="onboard-note">${icon('shield', 12)}<span>Blank asks only for important actions; routine local edits and safe commands run on their own. Sessions, memory and media live in <code>~/.blank</code>, never in your repository.</span></div>
+        <div class="onboard-workspace">${icon('folder', 16)}<span>${U.esc(chosenWorkspace || 'blank Workspace will be created automatically')}</span><button class="btn btn-secondary btn-sm" type="button" data-onboard-choose>Change</button></div>
+        <div class="onboard-note">${icon('shield', 12)}<span>blank asks only for important actions; routine local edits and safe commands run on their own. Sessions, memory and media live in <code>~/.blank</code>, never in your repository.</span></div>
         <div class="onboard-actions">
           <button class="btn btn-ghost" type="button" data-onboard-back>Back</button>
-          <button class="btn btn-primary" type="button" data-onboard-finish ${saving ? 'disabled' : ''}>${saving ? '<span class="spinner" style="width:11px;height:11px"></span> Setting up…' : 'Start using Blank'}</button>
+          <button class="btn btn-primary" type="button" data-onboard-finish ${saving ? 'disabled' : ''}>${saving ? '<span class="spinner" style="width:11px;height:11px"></span> Setting up…' : 'Start using blank'}</button>
         </div>
       </div>`;
     }
@@ -1235,7 +1468,7 @@
 
     paint();
     const modal = UI.modal({
-      title: 'Welcome to Blank',
+      title: 'Welcome to blank',
       description: 'Two quick choices. Everything stays on this machine.',
       body,
       size: 'large',
@@ -1254,7 +1487,7 @@
         if (config) setConfig(config);
         else setConfig({ ...state.config, onboarded: true });
         modal.close();
-        UI.toast(skip ? 'You can finish setup from Settings.' : 'Blank is ready.', 'success');
+        UI.toast(skip ? 'You can finish setup from Settings.' : 'blank is ready.', 'success');
         if (window.ChatView?.refreshHeader) ChatView.refreshHeader();
       } catch (error) {
         saving = false;
@@ -1336,6 +1569,22 @@
       case 'session:updated':
         if (event.session) upsertSession(event.session);
         break;
+      case 'agent:start':
+      case 'agent:end': {
+        const session = currentSession();
+        if (session && event.agent && (!event.sessionId || event.sessionId === session.id)) {
+          session.subagents = Array.isArray(session.subagents) ? session.subagents : [];
+          const index = session.subagents.findIndex((agent) => agent.id === event.agent.id);
+          if (index >= 0) session.subagents[index] = { ...session.subagents[index], ...event.agent };
+          else session.subagents.push(event.agent);
+          if (state.railTab === 'agents') refreshRail();
+          else {
+            const count = $('rail-agents-count');
+            if (count) count.textContent = String(session.subagents.length);
+          }
+        }
+        break;
+      }
       case 'title':
         if (event.sessionId && event.title) upsertSession({ id: event.sessionId, title: event.title });
         break;
@@ -1391,6 +1640,7 @@
       button.addEventListener('click', () => openPage(button.dataset.page));
     });
     $('new-session')?.addEventListener('click', newSession);
+    $('archive-toggle')?.addEventListener('click', toggleArchivedSessions);
     $('brand')?.addEventListener('click', () => openPage('chat'));
     qs('.brand')?.addEventListener('click', () => openPage('chat'));
     $('workspace-chip')?.addEventListener('click', () => openWorkspacePopover($('workspace-chip')));
@@ -1455,6 +1705,12 @@
       renderRail();
     });
     $('rail-close')?.addEventListener('click', toggleRail);
+    $('rail-expand')?.addEventListener('click', () => {
+      state.railWide = !state.railWide;
+      document.body.classList.toggle('rail-wide', state.railWide);
+      $('rail-expand')?.classList.toggle('active', state.railWide);
+      renderRail();
+    });
     $('rail-body')?.addEventListener('click', (event) => {
       const dir = event.target.closest('[data-tree-dir]');
       if (dir) {
@@ -1464,8 +1720,27 @@
         document.getElementById('rail-body').innerHTML = filesMarkup();
         return;
       }
+      if (event.target.closest('[data-rail-file-back]')) {
+        state.railFile = '';
+        state.railFileData = null;
+        renderRail();
+        return;
+      }
+      if (event.target.closest('[data-rail-file-copy]')) {
+        const content = state.railFileData?.content || '';
+        if (content) U.copyText(content).then((copied) => UI.toast(copied ? 'File copied.' : 'Could not copy the file.', copied ? 'success' : 'error'));
+        return;
+      }
+      if (event.target.closest('[data-rail-file-open]')) {
+        window.API.workspace.openPath(state.railFile).catch((error) => UI.toast(error.message, 'error'));
+        return;
+      }
+      if (event.target.closest('[data-rail-file-reveal]')) {
+        window.API.workspace.reveal(state.railFile).catch((error) => UI.toast(error.message, 'error'));
+        return;
+      }
       const file = event.target.closest('[data-rail-file]');
-      if (file) { App.openFilePreview(file.dataset.railFile); return; }
+      if (file) { openRailFile(file.dataset.railFile); return; }
     });
     $('rail-body')?.addEventListener('input', (event) => {
       if (!event.target.matches('[data-rail-search]')) return;
@@ -1614,7 +1889,7 @@
       await loadInitial();
     } catch (error) {
       console.error('[blank] boot failed', error);
-      UI.toast(`Blank could not finish loading: ${error.message}`, 'error', { timeout: 8000 });
+      UI.toast(`blank could not finish loading: ${error.message}`, 'error', { timeout: 8000 });
       if (!state.ready) {
         window.ChatView?.mount();
         state.ready = true;
@@ -1629,7 +1904,10 @@
 
   App.init = init;
   App.handleEvent = handleEvent;
-  App.openFilePreview = (path) => window.Views?.openFilePreview(path);
+  App.openFilePreview = (path) => {
+    if (state.page === 'chat') return openRailFile(path);
+    return window.Views?.openFilePreview(path);
+  };
   App.openMedia = (id) => window.Views?.openMediaDetail(id);
   App.openPaper = (id) => window.Views?.openPaper(id);
 

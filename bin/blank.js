@@ -424,7 +424,7 @@ async function handleCommand(input, context) {
               log(`  ${blue('●')} ${bold(insight.title)} ${dim(insight.type)}`);
               log(`    ${insight.content.slice(0, 300)}`);
             }
-            log(dim('  Review and apply these in the Blank app → Learning.'));
+            log(dim('  Review and apply these in the blank app → Learning.'));
           } else {
             log(dim('  No new insights.'));
           }
@@ -437,7 +437,7 @@ async function handleCommand(input, context) {
     case '/init': {
       const file = path.join(workspace, 'AGENTS.md');
       if (fs.existsSync(file)) { log(`  ${dim('AGENTS.md already exists')} · ${file}`); return; }
-      const content = `# AGENTS.md\n\nGuidance for coding agents working in this repository. Blank reads this file automatically.\n\n## Working agreements\n\n- Read a file before changing it. Keep changes focused.\n- Match the existing style and architecture.\n- Run the relevant checks before claiming work is done.\n- Never commit secrets or unrelated changes.\n\n## Project context\n\n<!-- Add architecture notes and known pitfalls here. -->\n`;
+      const content = `# AGENTS.md\n\nGuidance for coding agents working in this repository. blank reads this file automatically.\n\n## Working agreements\n\n- Read a file before changing it. Keep changes focused.\n- Match the existing style and architecture.\n- Run the relevant checks before claiming work is done.\n- Never commit secrets or unrelated changes.\n\n## Project context\n\n<!-- Add architecture notes and known pitfalls here. -->\n`;
       fs.writeFileSync(file, content, 'utf8');
       log(`  ${green('✓')} created ${file}`);
       return;
@@ -609,7 +609,7 @@ async function main() {
   const command = args._[0] || 'chat';
   const config = configModule.loadConfig();
 
-  if (args.flags.version) { log(`Blank ${pkg.version}`); return; }
+  if (args.flags.version) { log(`blank ${pkg.version}`); return; }
   if (args.flags.help || command === 'help') {
     log(`
   ${bold('blank')} ${dim(`v${pkg.version}`)} — a quiet agent harness
@@ -754,7 +754,7 @@ async function main() {
         log(insight.content);
         if (insight.reason) log(dim(`why: ${insight.reason}`));
       }
-      log(dim('\nReview and apply these in the Blank app → Learning.'));
+      log(dim('\nReview and apply these in the blank app → Learning.'));
       return;
     }
     if (sub === 'state') {
@@ -767,7 +767,7 @@ async function main() {
   if (command === 'init') {
     const file = path.join(workspace, 'AGENTS.md');
     if (fs.existsSync(file)) { log(`AGENTS.md already exists: ${file}`); return; }
-    fs.writeFileSync(file, `# AGENTS.md\n\nGuidance for coding agents working in this repository. Blank reads this file automatically.\n\n## Working agreements\n\n- Read a file before changing it. Keep changes focused.\n- Match the existing style and architecture.\n- Run the relevant checks before claiming work is done.\n- Never commit secrets or unrelated changes.\n\n## Project context\n\n<!-- Add architecture notes and known pitfalls here. -->\n`, 'utf8');
+    fs.writeFileSync(file, `# AGENTS.md\n\nGuidance for coding agents working in this repository. blank reads this file automatically.\n\n## Working agreements\n\n- Read a file before changing it. Keep changes focused.\n- Match the existing style and architecture.\n- Run the relevant checks before claiming work is done.\n- Never commit secrets or unrelated changes.\n\n## Project context\n\n<!-- Add architecture notes and known pitfalls here. -->\n`, 'utf8');
     log(`${green('✓')} created ${file}`);
     return;
   }
