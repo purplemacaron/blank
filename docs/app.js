@@ -323,32 +323,6 @@
     fillCards({ windows: null, mac: null, macIntel: null, linux: null });
   }
 
-  function setupGallery() {
-    var tabs = Array.prototype.slice.call(document.querySelectorAll('.gallery-tab'));
-    var image = document.getElementById('gallery-image');
-    var caption = document.getElementById('gallery-caption');
-    if (!tabs.length || !image) return;
-    var captions = {
-      '미디어': '채팅 속 미디어 만들기 · 자산 라이브러리 · 엔진 상태',
-      '모델': '키 · 로테이션 · 모델 선택',
-      '채팅': '플랜 레일 · 스트리밍 도구 · 승인'
-    };
-    tabs.forEach(function (tab) {
-      tab.addEventListener('click', function () {
-        tabs.forEach(function (other) {
-          other.classList.toggle('active', other === tab);
-          other.setAttribute('aria-selected', other === tab ? 'true' : 'false');
-        });
-        image.classList.remove('swap');
-        void image.offsetWidth;
-        image.src = tab.getAttribute('data-shot');
-        image.alt = tab.getAttribute('data-shot-alt') || '';
-        image.classList.add('swap');
-        if (caption) caption.textContent = captions[tab.textContent.trim()] || '';
-      });
-    });
-  }
-
   function setupPlatformJumps() {
     var links = document.querySelectorAll('[data-platform-jump]');
     Array.prototype.forEach.call(links, function (link) {
@@ -391,7 +365,6 @@
     setVersion(null);
     setRepoLinks();
     setRecommended();
-    setupGallery();
     setupPlatformJumps();
     setupMenu();
 

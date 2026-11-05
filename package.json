@@ -1,7 +1,7 @@
 {
   "name": "blank",
   "productName": "blank",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "A quiet, local-first agent harness for your workspace.",
   "main": "electron/main.js",
   "license": "MIT",

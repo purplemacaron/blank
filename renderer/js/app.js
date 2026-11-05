@@ -43,7 +43,6 @@
       railWide: false,
       railFile: '',
       railFileData: null,
-      railBrowserUrl: 'https://purplemacaron.github.io/blank/',
       sidebarOpen: false,
       sessionSearch: '',
       sessionSearchOpen: false,
@@ -842,94 +841,6 @@
     return `${window.TerminalView ? window.TerminalView.markup({ compact: true }) : ''}`;
   }
 
-  function railBrowserMarkup() {
-    const url = state.railBrowserUrl || 'https://purplemacaron.github.io/blank/';
-    return `<div class="rail-browser">
-      <div class="rail-browser-bar">
-        <button class="mini-icon" type="button" data-rail-browser-nav="back" title="Back">${icon('chevron-left', 13)}</button>
-        <button class="mini-icon" type="button" data-rail-browser-nav="forward" title="Forward">${icon('chevron-right', 13)}</button>
-        <input class="rail-browser-address" data-rail-browser-address type="text" spellcheck="false" value="${U.attr(url)}" aria-label="Address" />
-        <button class="mini-icon" type="button" data-rail-browser-nav="go" title="Open">${icon('arrow-right', 13)}</button>
-      </div>
-      <webview class="rail-browser-view" data-rail-browser-view src="${U.attr(url)}" partition="persist:blank-browser"></webview>
-      <div class="rail-browser-foot">
-        <span class="rail-browser-status" data-rail-browser-status>Loading…</span>
-        <button class="btn btn-secondary btn-sm" type="button" data-rail-browser-send>${icon('message', 11)} Send to chat</button>
-      </div>
-    </div>`;
-  }
-
-  function railUrl(value) {
-    const text = String(value || '').trim();
-    if (!text) return '';
-    if (/^https?:\/\//i.test(text)) return text;
-    if (/^[\w-]+(\.[\w-]+)+([/?#].*)?$/.test(text)) return `https://${text}`;
-    return `https://duckduckgo.com/?q=${encodeURIComponent(text)}`;
-  }
-
-  function wireRailBrowser(body) {
-    const view = body.querySelector('[data-rail-browser-view]');
-    const address = body.querySelector('[data-rail-browser-address]');
-    const status = body.querySelector('[data-rail-browser-status]');
-    if (!view) return;
-    const sync = () => {
-      try {
-        const url = view.getURL();
-        if (url) { state.railBrowserUrl = url; if (address) address.value = url; }
-        if (status) status.textContent = view.getTitle() || 'Ready';
-      } catch {}
-    };
-    view.addEventListener('did-start-loading', () => { if (status) status.textContent = 'Loading…'; });
-    view.addEventListener('did-stop-loading', sync);
-    view.addEventListener('did-navigate', sync);
-    view.addEventListener('did-navigate-in-page', sync);
-    view.addEventListener('did-fail-load', (event) => {
-      if (event.errorCode === -3) return;
-      if (status) status.textContent = 'Page could not load';
-    });
-    const go = () => {
-      const url = railUrl(address?.value);
-      if (!url) return;
-      state.railBrowserUrl = url;
-      if (address) address.value = url;
-      view.loadURL(url).catch(() => { if (status) status.textContent = 'Page could not load'; });
-    };
-    body.querySelectorAll('[data-rail-browser-nav]').forEach((button) => {
-      button.addEventListener('click', () => {
-        const action = button.dataset.railBrowserNav;
-        if (action === 'go') { go(); return; }
-        try {
-          if (action === 'back' && view.canGoBack()) view.goBack();
-          if (action === 'forward' && view.canGoForward()) view.goForward();
-        } catch {}
-      });
-    });
-    address?.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') { event.preventDefault(); go(); }
-    });
-    body.querySelector('[data-rail-browser-send]')?.addEventListener('click', async () => {
-      let title = '';
-      let url = state.railBrowserUrl;
-      let selection = '';
-      let text = '';
-      try { title = view.getTitle() || ''; url = view.getURL() || url; } catch {}
-      try { selection = await view.executeJavaScript('String(window.getSelection ? window.getSelection().toString() : "").slice(0, 3000)'); } catch {}
-      if (!selection) {
-        try { text = await view.executeJavaScript('String(document.body ? document.body.innerText : "").slice(0, 3000)'); } catch {}
-      }
-      const lines = [
-        'Use this page as context.',
-        title ? `Title: ${title}` : '',
-        url ? `URL: ${url}` : '',
-        selection ? `Selection:\n${selection}` : '',
-        !selection && text ? `Page text:\n${text}` : '',
-        '',
-      ].filter((line, index, all) => line !== '' || index === all.length - 1).join('\n');
-      window.ChatView?.focusComposer(`${lines}\n`);
-      UI.toast('Page added to the composer.', 'success');
-    });
-  }
-
   function contextMarkup() {
     const session = currentSession();
     const fullId = currentModelId();
@@ -1011,18 +922,12 @@
     if (fileCount) fileCount.textContent = String(countTreeFiles(state.tree));
     if (agentCount) agentCount.textContent = String(agents.length);
     for (const tab of qsa('[data-rail]')) tab.classList.toggle('active', tab.dataset.rail === state.railTab);
-    const workbench = state.railTab === 'terminal' || state.railTab === 'browser';
-    body.classList.toggle('workbench', workbench);
-    const keep = (state.railTab === 'terminal' && body.querySelector('[data-terminal]'))
-      || (state.railTab === 'browser' && body.querySelector('[data-rail-browser-view]'));
-    if (keep) return;
+    body.classList.toggle('workbench', state.railTab === 'terminal');
+    if (state.railTab === 'terminal' && body.querySelector('[data-terminal]')) return;
     const scrollTop = body.scrollTop;
     if (state.railTab === 'terminal') {
       body.innerHTML = railTerminalMarkup();
       window.TerminalView?.wire(body.querySelector('[data-terminal]'));
-    } else if (state.railTab === 'browser') {
-      body.innerHTML = railBrowserMarkup();
-      wireRailBrowser(body);
     } else if (state.railTab === 'files') body.innerHTML = filesMarkup();
     else if (state.railTab === 'context') body.innerHTML = contextMarkup();
     else if (state.railTab === 'agents') body.innerHTML = agentsMarkup();
