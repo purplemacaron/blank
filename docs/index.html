@@ -4,62 +4,62 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>blank — 대화가 끝나면, 파일이 남습니다</title>
-  <meta name="description" content="모델과 도구, 파일과 터미널을 한 창에 두는 로컬 우선 데스크톱 하네스. 키와 세션은 이 기기에 남습니다. Windows, macOS, Linux." />
+  <meta name="description" content="모델과 도구, 파일과 터미널을 한 창에서. 계정 없이 이 기기에서 움직이는 로컬 우선 데스크톱 에이전트." />
   <meta name="theme-color" content="#ffffff" />
-  <link rel="icon" href="media/icon.svg?v=122" type="image/svg+xml" />
-  <link rel="icon" type="image/png" sizes="64x64" href="media/favicon.png?v=122" />
-  <link rel="apple-touch-icon" href="media/icon.png?v=122" />
+  <link rel="icon" href="media/icon.svg?v=125" type="image/svg+xml" />
+  <link rel="icon" type="image/png" sizes="64x64" href="media/favicon.png?v=125" />
+  <link rel="apple-touch-icon" href="media/icon.png?v=125" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self'; script-src 'self'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'; object-src 'none'" />
   <meta property="og:title" content="blank — 대화가 끝나면, 파일이 남습니다" />
-  <meta property="og:description" content="모델과 도구, 파일과 터미널을 한 창에. 로컬 우선, 계정 없이." />
+  <meta property="og:description" content="모델과 도구, 파일과 터미널을 한 창에서. 계정 없이 이 기기에서." />
   <meta property="og:type" content="website" />
   <meta property="og:locale" content="ko_KR" />
-  <meta property="og:image" content="https://purplemacaron.github.io/blank/media/social.png?v=122" />
+  <meta property="og:image" content="https://purplemacaron.github.io/blank/media/social.png?v=125" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="blank — 대화가 끝나면, 파일이 남습니다" />
-  <meta name="twitter:description" content="모델과 도구, 파일과 터미널을 한 창에. 로컬 우선 데스크톱 에이전트 하네스." />
-  <meta name="twitter:image" content="https://purplemacaron.github.io/blank/media/social.png?v=122" />
-  <link rel="stylesheet" href="styles.css?v=122" />
-  <script src="config.js?v=122" defer></script>
-  <script src="app.js?v=122" defer></script>
+  <meta name="twitter:description" content="모델과 도구, 파일과 터미널을 한 창에서. 로컬 우선 데스크톱 에이전트." />
+  <meta name="twitter:image" content="https://purplemacaron.github.io/blank/media/social.png?v=125" />
+  <link rel="stylesheet" href="styles.css?v=125" />
+  <script src="config.js?v=125" defer></script>
+  <script src="app.js?v=125" defer></script>
 </head>
 <body>
+  <a class="skip-link" href="#main">본문으로 건너뛰기</a>
+
   <header class="site-head">
     <div class="shell head-inner">
       <a class="wordmark" href="#top" aria-label="blank 홈">
-        <img src="media/icon.svg?v=122" alt="" width="24" height="24" />
+        <img src="media/icon.svg?v=125" alt="" width="26" height="26" />
         <span>blank</span>
       </a>
       <nav class="nav" aria-label="주요 메뉴">
         <a href="#features">기능</a>
         <a href="#install">설치</a>
-        <a href="privacy.html">개인정보</a>
-        <a href="terms.html">약관</a>
+        <a data-repo-link href="https://github.com/purplemacaron/blank" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
       </nav>
       <div class="head-actions">
-        <a class="repo-link" data-repo-link href="https://github.com" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
-        <a class="btn btn-primary" href="#install">다운로드</a>
-        <button class="menu-btn" type="button" aria-label="메뉴 열기" aria-expanded="false" data-menu>
+        <a class="btn btn-primary btn-sm" href="#install">다운로드</a>
+        <button class="menu-btn" type="button" aria-label="메뉴 열기" aria-expanded="false" aria-controls="mobile-nav" data-menu>
           <span></span><span></span>
         </button>
       </div>
     </div>
-    <div class="mobile-nav" data-mobile-nav hidden>
+    <div class="mobile-nav" id="mobile-nav" data-mobile-nav hidden>
       <a href="#features">기능</a>
       <a href="#install">설치</a>
       <a href="privacy.html">개인정보처리방침</a>
       <a href="terms.html">이용약관</a>
-      <a data-repo-link href="https://github.com" target="_blank" rel="noreferrer">GitHub ↗</a>
+      <a data-repo-link href="https://github.com/purplemacaron/blank" target="_blank" rel="noreferrer">GitHub ↗</a>
     </div>
   </header>
 
-  <main id="top">
-    <section class="hero">
-      <div class="shell">
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="shell hero-grid">
         <div class="hero-copy">
-          <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>로컬 데스크톱 하네스</p>
-          <h1>대화가 끝나면,<br /><span class="quiet">파일이 남습니다.</span></h1>
-          <p class="lead">모델과 도구, 파일과 터미널을 한 창에서. 키와 세션은 이 기기에.</p>
+          <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>로컬 데스크톱 에이전트</p>
+          <h1>대화가 끝나면,<br /><span>파일이 남습니다.</span></h1>
+          <p class="lead">모델과 도구, 파일과 터미널을 한 창에서.</p>
           <div class="hero-actions">
             <a class="download-btn" id="primary-download" href="#install">
               <span class="download-copy">
@@ -68,78 +68,61 @@
               </span>
               <span class="download-arrow" aria-hidden="true">↓</span>
             </a>
-            <a class="btn btn-ghost" href="#features">제품 살펴보기</a>
+            <a class="btn btn-outline" data-repo-link href="https://github.com/purplemacaron/blank" target="_blank" rel="noreferrer">GitHub</a>
           </div>
           <div class="hero-meta">
             <span class="release-pill" id="release-pill"><span class="pill-dot" aria-hidden="true"></span><span id="release-pill-text">최신 릴리스</span></span>
             <span class="hero-sep" aria-hidden="true"></span>
-            <span>무료 · 오픈 소스 · MIT</span>
+            <span>무료 · MIT · 계정 없음</span>
           </div>
         </div>
 
-        <div class="stage" role="img" aria-label="blank 앱에서 파일을 읽고 수정한 뒤 새 파일로 전달하는 화면">
+        <div class="stage" role="img" aria-label="파일을 읽고 숫자를 고친 뒤 새 파일 카드로 전달하는 blank 앱 화면">
           <div class="stage-window">
-            <div class="stage-titlebar">
-              <span class="stage-brand"><img src="media/icon.svg?v=122" alt="" width="18" height="18" /><b>blank</b></span>
-              <span class="stage-workspace">q3-report <span aria-hidden="true">⌄</span></span>
-              <span class="stage-search"><span>검색하거나 이동…</span><kbd>Ctrl K</kbd></span>
-              <span class="stage-status"><span class="status-dot" aria-hidden="true"></span>로컬 실행</span>
-              <span class="stage-winbtns" aria-hidden="true"><i></i><i></i><i></i></span>
+            <div class="stage-bar">
+              <span class="stage-brand"><img src="media/icon.svg?v=125" alt="" width="15" height="15" /><b>blank</b></span>
+              <span class="stage-title">3분기 보고서</span>
+              <span class="stage-status"><i aria-hidden="true"></i>로컬</span>
             </div>
-            <div class="stage-main">
-              <aside class="stage-sidebar">
-                <div class="side-new"><span aria-hidden="true">＋</span>새 세션<kbd>Ctrl N</kbd></div>
-                <div class="side-nav">
-                  <span class="side-item is-active">채팅</span>
-                  <span class="side-item">페이퍼</span>
-                  <span class="side-item">코드</span>
-                  <span class="side-item">콘솔</span>
-                  <span class="side-item">터미널</span>
-                </div>
-                <div class="side-label">세션</div>
-                <div class="side-session is-active"><span>3분기 보고서 숫자 갱신</span><em>방금</em></div>
-                <div class="side-session"><span>출시 노트 정리</span><em>어제</em></div>
-                <div class="side-session"><span>테스트 실패 원인</span><em>어제</em></div>
-                <div class="side-bottom"><span class="side-avatar">B</span><span>로컬 워크스페이스</span></div>
+            <div class="stage-body">
+              <aside class="stage-side">
+                <span class="side-new"><span aria-hidden="true">＋</span>새 세션</span>
+                <span class="side-nav">
+                  <span class="is-active">채팅</span>
+                  <span>페이퍼</span>
+                  <span>코드</span>
+                  <span>터미널</span>
+                </span>
+                <span class="side-label">세션</span>
+                <span class="side-session is-active"><span>3분기 보고서</span><em>방금</em></span>
+                <span class="side-session"><span>출시 노트</span><em>어제</em></span>
+                <span class="side-foot"><span aria-hidden="true"></span>MCP 3 · 메신저 2</span>
               </aside>
 
               <div class="stage-chat">
-                <div class="chat-head"><b>3분기 보고서 숫자 갱신</b><span class="chat-tag">에이전트</span><span class="chat-model">Claude Sonnet 4.5</span></div>
-                <div class="chat-thread">
-                  <p class="msg-user">q3-report.md에서 12–14행 숫자만 갱신해줘. 문장과 줄바꿈은 그대로.</p>
-                  <div class="msg-meta"><b>blank</b><span>Claude Sonnet 4.5</span></div>
-                  <p class="msg-text">12–14행의 숫자를 바꿨습니다. 나머지 문장과 줄바꿈은 그대로입니다.</p>
-                  <div class="tool-list">
-                    <div class="tool-line"><span class="tool-mark" aria-hidden="true">✓</span><span class="tool-name">파일 읽기</span><em>q3-report.md</em></div>
-                    <div class="tool-line"><span class="tool-mark" aria-hidden="true">✓</span><span class="tool-name">파일 편집</span><em>12–14행</em></div>
-                  </div>
-                  <div class="diff-card">
-                    <div class="diff-head"><span>변경 미리보기</span><em>q3-report.md · 12–14행</em></div>
-                    <div class="diff-line is-old"><span class="diff-num">12</span><span class="diff-sign" aria-hidden="true">−</span><span>매출 1,280만원 · 전년 대비 8.2%</span></div>
-                    <div class="diff-line is-new"><span class="diff-num">12</span><span class="diff-sign" aria-hidden="true">+</span><span>매출 1,412만원 · 전년 대비 9.6%</span></div>
-                  </div>
-                  <div class="deliver">
-                    <div class="deliver-head"><span>파일로 전달</span><em>3분기 운영 보고서.md</em></div>
-                    <div class="deliver-file">
-                      <span class="file-mark" aria-hidden="true"></span>
-                      <span class="deliver-copy"><b>3분기 운영 보고서.md</b><small>q3-report.md · 382 B · 12–14행 수정</small></span>
-                      <span class="deliver-save">저장</span>
-                    </div>
+                <div class="chat-top"><b>3분기 보고서</b><span class="chat-pill">에이전트</span><span class="chat-model">Sonnet 4.5</span></div>
+                <div class="chat-flow">
+                  <p class="bubble-user">q3-report.md 12–14행 숫자만 갱신해줘.</p>
+                  <div class="msg-head"><b>blank</b><span>파일 2개 확인</span></div>
+                  <p class="msg-line">숫자를 갱신했습니다. 나머지 문장은 그대로입니다.</p>
+                  <span class="tool-line"><span aria-hidden="true">✓</span>파일 읽기<em>q3-report.md</em></span>
+                  <span class="tool-line"><span aria-hidden="true">✓</span>파일 편집<em>12–14행</em></span>
+                  <div class="file-card">
+                    <span class="file-icon" aria-hidden="true"></span>
+                    <span class="file-copy"><b>3분기 운영 보고서.md</b><small>382 B · 저장됨</small></span>
+                    <span class="file-action">열기</span>
                   </div>
                 </div>
-                <div class="chat-composer">
-                  <p>blank에게 맡길 일을 적으세요…</p>
-                  <div class="composer-bar"><span>＋</span><span>미디어</span><span>모델</span><span>에이전트</span><span class="composer-send" aria-hidden="true">↑</span></div>
-                </div>
+                <div class="stage-composer"><span>blank에게 맡길 일…</span><span class="send" aria-hidden="true">↑</span></div>
               </div>
 
               <aside class="stage-rail">
-                <div class="rail-title">계획<span>4 / 4</span></div>
-                <div class="rail-meter"><span></span></div>
-                <div class="rail-step is-done">q3-report.md 읽기</div>
-                <div class="rail-step is-done">12–14행 숫자 갱신</div>
-                <div class="rail-step is-done">나머지 문장 유지 확인</div>
-                <div class="rail-step is-done">파일 카드로 전달</div>
+                <div class="rail-head">계획<span>4 / 4</span></div>
+                <div class="rail-bar"><span></span></div>
+                <span class="rail-step is-done">파일 읽기</span>
+                <span class="rail-step is-done">숫자 갱신</span>
+                <span class="rail-step is-done">문장 유지 확인</span>
+                <span class="rail-step is-done">파일로 전달</span>
               </aside>
             </div>
           </div>
@@ -147,127 +130,86 @@
       </div>
     </section>
 
-    <section class="section-features" id="features">
+    <section class="section" id="features">
       <div class="shell">
-        <div class="section-intro">
-          <div>
-            <p class="eyebrow">기능</p>
-            <h2>말하면 실행하고,<br /><span class="quiet">파일로 건넵니다.</span></h2>
-          </div>
+        <div class="section-head">
+          <p class="eyebrow">기능</p>
+          <h2>실행하고, 확인하고, 남깁니다.</h2>
         </div>
-
         <div class="feature-grid">
           <article class="feature">
-            <div class="feature-visual">
-              <div class="mini-stack">
-                <div class="mini-row"><span class="mini-mark" aria-hidden="true">✓</span><span>파일 편집</span><em>q3-report.md</em></div>
-                <div class="mini-row"><span class="mini-mark" aria-hidden="true">✓</span><span>터미널</span><em>npm test</em></div>
-                <div class="mini-row"><span class="mini-mark" aria-hidden="true">✓</span><span>브라우저</span><em>릴리스 노트</em></div>
-                <div class="mini-row is-last"><span class="mini-mark" aria-hidden="true">↓</span><span>파일로 전달</span><em>report.md</em></div>
-              </div>
-            </div>
-            <span class="feature-index">01</span>
-            <h3>도구가 실제로 움직입니다</h3>
-            <p>읽고, 고치고, 실행합니다. 결과는 파일로 돌아옵니다.</p>
+            <span class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="m7 9 3 3-3 3" /><path d="M12.5 15H17" /></svg>
+            </span>
+            <h3>도구 실행</h3>
+            <p>파일 읽기와 편집, 터미널, 브라우저.</p>
           </article>
-
           <article class="feature">
-            <div class="feature-visual">
-              <div class="mini-approval">
-                <span class="mini-kicker">승인 필요</span>
-                <p>12–14행의 숫자를 바꾸고 새 파일로 전달합니다.</p>
-                <div class="mini-actions"><span class="mini-btn is-dark">승인</span><span class="mini-btn">이번만</span></div>
-              </div>
-            </div>
-            <span class="feature-index">02</span>
-            <h3>중요한 것만 확인합니다</h3>
-            <p>읽기는 바로, 쓰기와 실행은 확인 후.</p>
+            <span class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 2.9 7.8 7 10 4.1-2.2 7-5.6 7-10V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></svg>
+            </span>
+            <h3>확인 후 실행</h3>
+            <p>중요한 작업만 승인을 구합니다.</p>
           </article>
-
           <article class="feature">
-            <div class="feature-visual">
-              <div class="mini-tree">
-                <span class="tree-root">~/.blank</span>
-                <span>config.json</span>
-                <span>sessions/</span>
-                <span>papers/</span>
-                <span>media/</span>
-              </div>
-            </div>
-            <span class="feature-index">03</span>
-            <h3>계정 없이, 이 기기에서</h3>
-            <p>키는 <code>config.json</code>에, 세션은 <code>~/.blank</code>에.</p>
+            <span class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5v-9Z" /><path d="M3 10h18" /></svg>
+            </span>
+            <h3>로컬에 저장</h3>
+            <p>키와 세션은 <code>~/.blank</code>에.</p>
           </article>
         </div>
-
       </div>
     </section>
 
-    <section class="section-install" id="install">
-      <div class="shell">
-        <div class="install-grid">
-          <div class="install-intro">
-            <p class="eyebrow">설치</p>
-            <h2>설치</h2>
-            <dl class="install-facts">
-              <div><dt>라이선스</dt><dd>MIT</dd></div>
-              <div><dt>계정</dt><dd>필요 없음</dd></div>
-              <div><dt>데이터</dt><dd>이 기기에</dd></div>
-            </dl>
-          </div>
-
-          <div class="install-list">
-            <article class="os-card" data-os-card="windows">
-              <div class="os-main">
-                <div class="os-head">
-                  <span class="os-name">Windows</span>
-                  <span class="recommended" hidden>이 기기</span>
-                </div>
-                <p class="os-meta">설치 파일 · Windows 10 이상</p>
-                <span class="os-asset" data-asset="windows"></span>
-              </div>
-              <a class="os-action" data-download="windows" href="#install">설치 파일 받기</a>
-            </article>
-
-            <article class="os-card" data-os-card="mac">
-              <div class="os-main">
-                <div class="os-head">
-                  <span class="os-name">macOS</span>
-                  <span class="recommended" hidden>이 기기</span>
-                </div>
-                <p class="os-meta">디스크 이미지 · Apple silicon</p>
-                <span class="os-asset" data-asset="mac"></span>
-                <a class="os-alt" data-download="mac-alt" href="#install" hidden>Intel Mac 빌드</a>
-              </div>
-              <a class="os-action" data-download="mac" href="#install">디스크 이미지 받기</a>
-            </article>
-
-            <article class="os-card" data-os-card="linux">
-              <div class="os-main">
-                <div class="os-head">
-                  <span class="os-name">Linux</span>
-                  <span class="recommended" hidden>이 기기</span>
-                </div>
-                <p class="os-meta">AppImage · x64</p>
-                <span class="os-asset" data-asset="linux"></span>
-              </div>
-              <a class="os-action" data-download="linux" href="#install">AppImage 받기</a>
-            </article>
-
-            <div class="install-note">
-              <span><a id="releases-link" href="#install">GitHub Releases</a></span>
-              <span class="install-path">데이터 <code>~/.blank</code></span>
+    <section class="section install" id="install">
+      <div class="shell install-inner">
+        <div class="section-head install-head">
+          <p class="eyebrow">설치</p>
+          <h2>이 기기에 맞춰 받으세요.</h2>
+        </div>
+        <div class="install-list">
+          <article class="os-card" data-os-card="windows">
+            <div class="os-row">
+              <span class="os-name">Windows</span>
+              <span class="recommended" hidden>이 기기</span>
             </div>
-          </div>
+            <p class="os-meta">설치 파일 · Windows 10 이상</p>
+            <span class="os-asset" data-asset="windows"></span>
+            <a class="os-action" data-download="windows" href="#install">설치 파일 받기 <span aria-hidden="true">↓</span></a>
+          </article>
+
+          <article class="os-card" data-os-card="mac">
+            <div class="os-row">
+              <span class="os-name">macOS</span>
+              <span class="recommended" hidden>이 기기</span>
+            </div>
+            <p class="os-meta">디스크 이미지 · Apple silicon</p>
+            <span class="os-asset" data-asset="mac"></span>
+            <a class="os-alt" data-download="mac-alt" href="#install" hidden>Intel Mac 빌드</a>
+            <a class="os-action" data-download="mac" href="#install">디스크 이미지 받기 <span aria-hidden="true">↓</span></a>
+          </article>
+
+          <article class="os-card" data-os-card="linux">
+            <div class="os-row">
+              <span class="os-name">Linux</span>
+              <span class="recommended" hidden>이 기기</span>
+            </div>
+            <p class="os-meta">AppImage · x64</p>
+            <span class="os-asset" data-asset="linux"></span>
+            <a class="os-action" data-download="linux" href="#install">AppImage 받기 <span aria-hidden="true">↓</span></a>
+          </article>
+        </div>
+        <div class="install-note">
+          <span>모든 빌드와 변경 내역은 <a id="releases-link" href="#install">GitHub Releases</a>에 있습니다.</span>
+          <span class="install-path">데이터 <code>~/.blank</code></span>
         </div>
       </div>
     </section>
 
     <section class="closing">
       <div class="shell closing-inner">
-        <div class="closing-copy">
-          <h2>빈 화면에서<br />시작하세요.</h2>
-        </div>
+        <h2>빈 화면에서 시작하세요.</h2>
         <a class="download-btn closing-download" id="closing-download" href="#install">
           <span class="download-copy">
             <span class="btn-label">다운로드 선택</span>
@@ -283,10 +225,10 @@
     <div class="shell foot-inner">
       <div class="foot-brand">
         <a class="wordmark" href="#top" aria-label="blank 홈">
-          <img src="media/icon.svg?v=122" alt="" width="24" height="24" />
+          <img src="media/icon.svg?v=125" alt="" width="24" height="24" />
           <span>blank</span>
         </a>
-        <span class="foot-version" id="site-version">v1.2.3</span>
+        <span class="foot-version" id="site-version">v1.2.4</span>
       </div>
       <div class="foot-links">
         <div class="foot-col">
@@ -294,18 +236,18 @@
           <a href="#features">기능</a>
           <a href="#install">설치</a>
           <a id="foot-releases" href="#install" target="_blank" rel="noreferrer">릴리스</a>
-          <a data-repo-link href="https://github.com" target="_blank" rel="noreferrer">GitHub</a>
         </div>
         <div class="foot-col">
-          <span>문서</span>
+          <span>리소스</span>
+          <a data-repo-link href="https://github.com/purplemacaron/blank" target="_blank" rel="noreferrer">GitHub</a>
           <a href="privacy.html">개인정보처리방침</a>
           <a href="terms.html">이용약관</a>
-          <a data-repo-link href="https://github.com" target="_blank" rel="noreferrer">소스 코드</a>
         </div>
       </div>
     </div>
     <div class="shell foot-bottom">
       <span>© <span id="year">2026</span> blank · MIT License</span>
+      <span>로컬 우선 · 계정 없음</span>
     </div>
   </footer>
 </body>

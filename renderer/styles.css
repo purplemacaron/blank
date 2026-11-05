@@ -4087,6 +4087,18 @@ html[data-theme="dark"] .tok-kw { color: #8db3ff; }
   white-space: nowrap;
 }
 
+/* MCP sections */
+
+.mcp-section { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--border); }
+.mcp-section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.mcp-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
 /* Messengers */
 
 .messenger-pair {

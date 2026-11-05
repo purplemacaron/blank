@@ -1214,17 +1214,19 @@ Start writing, or ask the agent to draft it.
   async function mountMcp(host) {
     vstate.page = 'mcp';
     vstate.host = host;
-    host.innerHTML = pageLoading('MCP', 'Model Context Protocol servers extend the agent with real tools.');
+    host.innerHTML = pageLoading('MCP', 'Model Context Protocol servers and messengers connected to blank.');
     try {
-      const [data, refreshed, sshData] = await Promise.all([
+      const [data, refreshed, sshData, messengers] = await Promise.all([
         API.mcp.list(),
         API.mcp.refresh().catch(() => null),
         API.ssh?.list ? API.ssh.list().catch(() => null) : Promise.resolve(null),
+        API.messengers?.status ? API.messengers.status().catch(() => null) : Promise.resolve(null),
       ]);
       if (!alive(host, 'mcp')) return;
       vstate.mcp.servers = refreshed?.servers || data.servers || [];
       vstate.mcp.catalog = data.catalog || [];
       if (sshData) vstate.settings.ssh = sshData;
+      if (messengers) vstate.settings.messengers = messengers;
       paintMcp(host);
     } catch (error) { if (alive(host, 'mcp')) pageError(host, 'MCP', error); }
   }
@@ -1301,8 +1303,10 @@ Start writing, or ask the agent to draft it.
           </div>`).join('')}
         </div>
       </div>` : ''}
+      ${messengerSectionHtml(vstate.settings.messengers, currentConfig().messengers || {})}
     </div>`;
     host.onclick = async (event) => {
+      if (await handleMessengerEvent(event, host, () => paintMcp(host))) return;
       if (event.target.closest('[data-ssh-manage]')) { openSshHosts(() => mountMcp(host)); return; }
       if (event.target.closest('[data-add-mcp]')) { openMcpComposer(() => mountMcp(host)); return; }
       if (event.target.closest('[data-mcp-refresh]')) { mountMcp(host); return; }
@@ -2431,6 +2435,186 @@ Start writing, or ask the agent to draft it.
     </article>`;
   }
 
+  async function handleMessengerEvent(event, host, repaint) {
+    const copyMessenger = event.target.closest('[data-copy-messenger]');
+    if (copyMessenger) {
+      const what = copyMessenger.dataset.copyMessenger;
+      const state = vstate.settings.messengers || {};
+      const value = what === 'pair-code'
+        ? String(state.pairCode || '')
+        : what === 'webhook-secret'
+          ? String(state.webhook?.secret || '')
+          : what === 'webhook-endpoint'
+            ? String(state.webhook?.endpoint || '')
+            : '';
+      if (value) {
+        const ok = await U.copyText(value);
+        UI.toast(ok ? 'Copied.' : 'Could not access the clipboard.', ok ? 'success' : 'error');
+      }
+      return true;
+    }
+    const messengerSave = event.target.closest('[data-messenger-save]');
+    if (messengerSave) {
+      const provider = messengerSave.dataset.messengerSave;
+      const payload = { provider };
+      if (provider === 'slack') {
+        const appToken = host.querySelector('#messenger-slack-app-token')?.value.trim() || '';
+        const botToken = host.querySelector('#messenger-slack-bot-token')?.value.trim() || '';
+        if (!appToken && !botToken) { UI.toast('Paste at least one token first.', 'error'); return true; }
+        if (appToken) payload.appToken = appToken;
+        if (botToken) payload.botToken = botToken;
+      } else {
+        const token = host.querySelector(`#messenger-${provider}-token`)?.value.trim() || '';
+        if (!token) { UI.toast('Paste a token first.', 'error'); return true; }
+        payload.token = token;
+      }
+      messengerSave.disabled = true;
+      try {
+        vstate.settings.messengers = await API.messengers.configure(payload);
+        repaint();
+        UI.toast('Messenger settings saved.', 'success');
+      } catch (error) { messengerSave.disabled = false; UI.toast(error.message, 'error'); }
+      return true;
+    }
+    const messengerRemove = event.target.closest('[data-messenger-remove]');
+    if (messengerRemove) {
+      const provider = messengerRemove.dataset.messengerRemove;
+      const meta = MESSENGER_META.find((entry) => entry.id === provider);
+      const ok = await UI.confirm({
+        title: 'Remove this token?',
+        message: 'This messenger turns off until a new token is saved.',
+        confirmLabel: 'Remove token',
+        danger: true,
+        detail: meta?.name || provider,
+      });
+      if (ok) {
+        try {
+          vstate.settings.messengers = await API.messengers.configure({ provider, clearToken: true });
+          repaint();
+          UI.toast('Token removed.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+      }
+      return true;
+    }
+    const messengerToggle = event.target.closest('[data-messenger-enable]');
+    if (messengerToggle) {
+      const provider = messengerToggle.dataset.messengerEnable;
+      const next = !messengerToggle.classList.contains('on');
+      messengerToggle.disabled = true;
+      try {
+        vstate.settings.messengers = await API.messengers.configure({ provider, enabled: next });
+        repaint();
+        UI.toast(next ? 'Messenger enabled.' : 'Messenger disabled.', next ? 'success' : 'warn');
+      } catch (error) { messengerToggle.disabled = false; UI.toast(error.message, 'error'); }
+      return true;
+    }
+    const messengerNotify = event.target.closest('[data-messenger-notify]');
+    if (messengerNotify) {
+      const next = !messengerNotify.classList.contains('on');
+      messengerNotify.classList.toggle('on', next);
+      messengerNotify.setAttribute('aria-checked', String(next));
+      try {
+        vstate.settings.messengers = await API.messengers.configure({ notify: next });
+        UI.toast(next ? 'Run updates are on.' : 'Run updates are off.', next ? 'success' : 'warn');
+      } catch (error) {
+        messengerNotify.classList.toggle('on', !next);
+        messengerNotify.setAttribute('aria-checked', String(!next));
+        UI.toast(error.message, 'error');
+      }
+      return true;
+    }
+    const messengerTest = event.target.closest('[data-messenger-test]');
+    if (messengerTest) {
+      const provider = messengerTest.dataset.messengerTest;
+      const note = host.querySelector(`#messenger-test-${provider}`);
+      messengerTest.disabled = true;
+      if (note) note.textContent = 'Testing…';
+      try {
+        const result = await API.messengers.test(provider);
+        if (!result.ok) throw new Error(result.error || 'Connection test failed.');
+        if (note) note.textContent = provider === 'webhook'
+          ? `Webhook is running on ${result.name}.`
+          : `Connected as ${result.name}.`;
+        UI.toast('Messenger is ready.', 'success');
+      } catch (error) {
+        if (note) note.textContent = error.message;
+        UI.toast(error.message, 'error');
+      } finally { messengerTest.disabled = false; }
+      return true;
+    }
+    const messengerUnpair = event.target.closest('[data-messenger-unpair]');
+    if (messengerUnpair) {
+      const provider = messengerUnpair.dataset.messengerUnpair;
+      const meta = MESSENGER_META.find((entry) => entry.id === provider);
+      const ok = await UI.confirm({
+        title: 'Unpair every chat?',
+        message: 'Chats must pair again with the current code.',
+        confirmLabel: 'Unpair',
+        danger: true,
+        detail: meta?.name || provider,
+      });
+      if (ok) {
+        try {
+          vstate.settings.messengers = await API.messengers.configure({ provider, unpair: true });
+          repaint();
+          UI.toast('Paired chats cleared.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+      }
+      return true;
+    }
+    if (event.target.closest('[data-messenger-port]')) {
+      try {
+        const port = Number(host.querySelector('#messenger-webhook-port')?.value) || 8789;
+        vstate.settings.messengers = await API.messengers.configure({ provider: 'webhook', port });
+        repaint();
+        UI.toast('Webhook port saved.', 'success');
+      } catch (error) { UI.toast(error.message, 'error'); }
+      return true;
+    }
+    if (event.target.closest('[data-messenger-url]')) {
+      try {
+        const url = host.querySelector('#messenger-webhook-url')?.value.trim() || '';
+        vstate.settings.messengers = await API.messengers.configure({ provider: 'webhook', url });
+        repaint();
+        UI.toast('Notification URL saved.', 'success');
+      } catch (error) { UI.toast(error.message, 'error'); }
+      return true;
+    }
+    return false;
+  }
+
+  function messengerSectionHtml(stateInput, cfgInput) {
+    const state = stateInput && typeof stateInput === 'object' ? stateInput : {};
+    const cfg = cfgInput && typeof cfgInput === 'object' ? cfgInput : {};
+    const pairCode = String(state.pairCode || '');
+    const notify = state.notify !== undefined ? state.notify !== false : cfg.notify !== false;
+    const cards = MESSENGER_META.map((meta) => messengerCardHtml(meta, state[meta.id], cfg[meta.id]));
+    const running = MESSENGER_META.filter((meta) => Boolean(state[meta.id]?.running)).length;
+    return `<section class="mcp-section" id="mcp-messengers">
+      <div class="mcp-section-head">
+        <div class="mcp-section-title">Messengers</div>
+        <span class="badge ${running ? 'green' : ''}">${running ? `${running} running` : 'Off'}</span>
+      </div>
+      <div class="messenger-pair">
+        <div class="messenger-pair-copy">
+          <div class="messenger-pair-head">${icon('key', 12)} Pairing code</div>
+          <p>Send /pair &lt;code&gt; from the chat you want to link. The code changes after every pairing.</p>
+          <div class="messenger-code-row">
+            <code id="messenger-pair-code">${esc(pairCode || '——————')}</code>
+            <button class="btn btn-secondary btn-sm" type="button" data-copy-messenger="pair-code" ${pairCode ? '' : 'disabled'}>Copy code</button>
+          </div>
+        </div>
+        <div class="messenger-pair-side">
+          <div class="setting-label">Run and approval updates</div>
+          <p class="messenger-pair-desc">Send final answers and approval requests to the paired chat. Desktop runs notify the last active chat.</p>
+          <div class="setting-control">${UI.switchHtml(notify, 'data-messenger-notify')}</div>
+        </div>
+      </div>
+      <div class="messenger-grid">${cards.join('')}</div>
+      <div class="settings-permission-note">${icon('shield', 12)} Only paired chats can start runs or approve tools. Tokens stay in the main process and never reach this window.</div>
+    </section>`;
+  }
+
   function paintSettings(host) {
     const config = currentConfig();
     const info = appState().info || {};
@@ -2460,11 +2644,6 @@ Start writing, or ask the agent to draft it.
     const remotePort = Number(remoteState.port) || Number(remoteCfg.port) || 8787;
     const remoteToken = remoteRunning ? String(remoteState.token || '') : '';
     const remoteUrls = remoteRunning && Array.isArray(remoteState.urls) ? remoteState.urls : [];
-    const messengerCfg = config.messengers || {};
-    const messengerState = vstate.settings.messengers || {};
-    const messengerPairCode = String(messengerState.pairCode || '');
-    const messengerNotify = messengerState.notify !== undefined ? messengerState.notify !== false : messengerCfg.notify !== false;
-    const messengerCards = MESSENGER_META.map((meta) => messengerCardHtml(meta, messengerState[meta.id], messengerCfg[meta.id]));
     const teamCfg = config.team || { enabled: false, members: [] };
     const teamMembers = Array.isArray(teamCfg.members) ? teamCfg.members : [];
     const schedules = Array.isArray(vstate.settings.schedules) ? vstate.settings.schedules : [];
@@ -2520,7 +2699,6 @@ Start writing, or ask the agent to draft it.
           <button class="settings-nav-item" type="button" data-settings-go="search">${icon('globe', 13)} Web search</button>
           <button class="settings-nav-item" type="button" data-settings-go="computer">${icon('monitor', 13)} Computer</button>
           <button class="settings-nav-item" type="button" data-settings-go="remote">${icon('link', 13)} Remote</button>
-          <button class="settings-nav-item" type="button" data-settings-go="messengers">${icon('message-square', 13)} Messengers</button>
           <button class="settings-nav-item" type="button" data-settings-go="data">${icon('database', 13)} Data & CLI</button>
           <button class="settings-nav-item" type="button" data-settings-go="updates">${icon('download-cloud', 13)} Updates</button>
           <button class="settings-nav-item" type="button" data-settings-go="about">${icon('sparkles', 13)} About</button>
@@ -2905,28 +3083,6 @@ Start writing, or ask the agent to draft it.
               <div class="setting-note">${remoteState.connections || 0} live connection${Number(remoteState.connections) === 1 ? '' : 's'} · token rotates on every start.</div>
             </div>` : `<div class="setting-note" style="margin-top:10px">${icon('lock', 11)} Pairing links and the token appear here after you start remote control.</div>`}
             <div class="settings-permission-note">${icon('shield-alert', 12)} Anyone with the token and network access can talk to this app. Keep LAN off on untrusted Wi-Fi, leave remote approvals off by default, and stop remote control when you are done.</div>
-          </section>
-
-          <section class="settings-section" id="settings-messengers">
-            <h2>Messengers</h2>
-            <p>Chat with blank from Telegram, Discord, Slack or your own webhook. Only paired chats can start runs or approve tools.</p>
-            <div class="messenger-pair">
-              <div class="messenger-pair-copy">
-                <div class="messenger-pair-head">${icon('key', 12)} Pairing code</div>
-                <p>Send /pair &lt;code&gt; from the chat you want to link. The code changes after every pairing.</p>
-                <div class="messenger-code-row">
-                  <code id="messenger-pair-code">${esc(messengerPairCode || '——————')}</code>
-                  <button class="btn btn-secondary btn-sm" type="button" data-copy-messenger="pair-code" ${messengerPairCode ? '' : 'disabled'}>Copy code</button>
-                </div>
-              </div>
-              <div class="messenger-pair-side">
-                <div class="setting-label">Run and approval updates</div>
-                <p class="messenger-pair-desc">Send final answers and approval requests to the paired chat. Desktop runs notify the last active chat.</p>
-                <div class="setting-control">${UI.switchHtml(messengerNotify, 'data-messenger-notify')}</div>
-              </div>
-            </div>
-            <div class="messenger-grid">${messengerCards.join('')}</div>
-            <div class="settings-permission-note">${icon('shield', 12)} Only paired chats can start runs or approve tools. Tokens stay in the main process and never reach this window.</div>
           </section>
 
           <section class="settings-section" id="settings-data">
@@ -3436,147 +3592,6 @@ Start writing, or ask the agent to draft it.
         } finally { button.disabled = false; }
         return;
       }
-      const copyMessenger = event.target.closest('[data-copy-messenger]');
-      if (copyMessenger) {
-        const what = copyMessenger.dataset.copyMessenger;
-        const state = vstate.settings.messengers || {};
-        const value = what === 'pair-code'
-          ? String(state.pairCode || '')
-          : what === 'webhook-secret'
-            ? String(state.webhook?.secret || '')
-            : what === 'webhook-endpoint'
-              ? String(state.webhook?.endpoint || '')
-              : '';
-        if (!value) return;
-        const ok = await U.copyText(value);
-        UI.toast(ok ? 'Copied.' : 'Could not access the clipboard.', ok ? 'success' : 'error');
-        return;
-      }
-      const messengerSave = event.target.closest('[data-messenger-save]');
-      if (messengerSave) {
-        const provider = messengerSave.dataset.messengerSave;
-        const payload = { provider };
-        if (provider === 'slack') {
-          const appToken = host.querySelector('#messenger-slack-app-token')?.value.trim() || '';
-          const botToken = host.querySelector('#messenger-slack-bot-token')?.value.trim() || '';
-          if (!appToken && !botToken) { UI.toast('Paste at least one token first.', 'error'); return; }
-          if (appToken) payload.appToken = appToken;
-          if (botToken) payload.botToken = botToken;
-        } else {
-          const token = host.querySelector(`#messenger-${provider}-token`)?.value.trim() || '';
-          if (!token) { UI.toast('Paste a token first.', 'error'); return; }
-          payload.token = token;
-        }
-        messengerSave.disabled = true;
-        try {
-          vstate.settings.messengers = await API.messengers.configure(payload);
-          paintSettings(host);
-          UI.toast('Messenger settings saved.', 'success');
-        } catch (error) { messengerSave.disabled = false; UI.toast(error.message, 'error'); }
-        return;
-      }
-      const messengerRemove = event.target.closest('[data-messenger-remove]');
-      if (messengerRemove) {
-        const provider = messengerRemove.dataset.messengerRemove;
-        const meta = MESSENGER_META.find((entry) => entry.id === provider);
-        const ok = await UI.confirm({
-          title: 'Remove this token?',
-          message: 'This messenger turns off until a new token is saved.',
-          confirmLabel: 'Remove token',
-          danger: true,
-          detail: meta?.name || provider,
-        });
-        if (!ok) return;
-        try {
-          vstate.settings.messengers = await API.messengers.configure({ provider, clearToken: true });
-          paintSettings(host);
-          UI.toast('Token removed.', 'success');
-        } catch (error) { UI.toast(error.message, 'error'); }
-        return;
-      }
-      const messengerToggle = event.target.closest('[data-messenger-enable]');
-      if (messengerToggle) {
-        const provider = messengerToggle.dataset.messengerEnable;
-        const next = !messengerToggle.classList.contains('on');
-        messengerToggle.disabled = true;
-        try {
-          vstate.settings.messengers = await API.messengers.configure({ provider, enabled: next });
-          paintSettings(host);
-          UI.toast(next ? 'Messenger enabled.' : 'Messenger disabled.', next ? 'success' : 'warn');
-        } catch (error) { messengerToggle.disabled = false; UI.toast(error.message, 'error'); }
-        return;
-      }
-      const messengerNotify = event.target.closest('[data-messenger-notify]');
-      if (messengerNotify) {
-        const next = !messengerNotify.classList.contains('on');
-        messengerNotify.classList.toggle('on', next);
-        messengerNotify.setAttribute('aria-checked', String(next));
-        try {
-          vstate.settings.messengers = await API.messengers.configure({ notify: next });
-          UI.toast(next ? 'Run updates are on.' : 'Run updates are off.', next ? 'success' : 'warn');
-        } catch (error) {
-          messengerNotify.classList.toggle('on', !next);
-          messengerNotify.setAttribute('aria-checked', String(!next));
-          UI.toast(error.message, 'error');
-        }
-        return;
-      }
-      const messengerTest = event.target.closest('[data-messenger-test]');
-      if (messengerTest) {
-        const provider = messengerTest.dataset.messengerTest;
-        const note = host.querySelector(`#messenger-test-${provider}`);
-        messengerTest.disabled = true;
-        if (note) note.textContent = 'Testing…';
-        try {
-          const result = await API.messengers.test(provider);
-          if (!result.ok) throw new Error(result.error || 'Connection test failed.');
-          if (note) note.textContent = provider === 'webhook'
-            ? `Webhook is running on ${result.name}.`
-            : `Connected as ${result.name}.`;
-          UI.toast('Messenger is ready.', 'success');
-        } catch (error) {
-          if (note) note.textContent = error.message;
-          UI.toast(error.message, 'error');
-        } finally { messengerTest.disabled = false; }
-        return;
-      }
-      const messengerUnpair = event.target.closest('[data-messenger-unpair]');
-      if (messengerUnpair) {
-        const provider = messengerUnpair.dataset.messengerUnpair;
-        const meta = MESSENGER_META.find((entry) => entry.id === provider);
-        const ok = await UI.confirm({
-          title: 'Unpair every chat?',
-          message: 'Chats must pair again with the current code.',
-          confirmLabel: 'Unpair',
-          danger: true,
-          detail: meta?.name || provider,
-        });
-        if (!ok) return;
-        try {
-          vstate.settings.messengers = await API.messengers.configure({ provider, unpair: true });
-          paintSettings(host);
-          UI.toast('Paired chats cleared.', 'success');
-        } catch (error) { UI.toast(error.message, 'error'); }
-        return;
-      }
-      if (event.target.closest('[data-messenger-port]')) {
-        try {
-          const port = Number(host.querySelector('#messenger-webhook-port')?.value) || 8789;
-          vstate.settings.messengers = await API.messengers.configure({ provider: 'webhook', port });
-          paintSettings(host);
-          UI.toast('Webhook port saved.', 'success');
-        } catch (error) { UI.toast(error.message, 'error'); }
-        return;
-      }
-      if (event.target.closest('[data-messenger-url]')) {
-        try {
-          const url = host.querySelector('#messenger-webhook-url')?.value.trim() || '';
-          vstate.settings.messengers = await API.messengers.configure({ provider: 'webhook', url });
-          paintSettings(host);
-          UI.toast('Notification URL saved.', 'success');
-        } catch (error) { UI.toast(error.message, 'error'); }
-        return;
-      }
       if (event.target.closest('[data-remote-toggle]')) {
         const button = event.target.closest('[data-remote-toggle]');
         button.disabled = true;
@@ -3727,19 +3742,17 @@ Start writing, or ask the agent to draft it.
     vstate.host = host;
     host.innerHTML = pageLoading('Settings', 'Preferences, approvals and local data.');
     try {
-      const [config, storage, remote, schedules, dictationOptions, updates, messengers] = await Promise.all([
+      const [config, storage, remote, schedules, dictationOptions, updates] = await Promise.all([
         API.config.get(),
         API.media.storage().catch(() => null),
         API.remote?.status ? API.remote.status().catch(() => null) : Promise.resolve(null),
         API.schedules?.list ? API.schedules.list().catch(() => null) : Promise.resolve(null),
         API.dictation?.options ? API.dictation.options().catch(() => null) : Promise.resolve(null),
         API.updates?.status ? API.updates.status().catch(() => null) : Promise.resolve(null),
-        API.messengers?.status ? API.messengers.status().catch(() => null) : Promise.resolve(null),
       ]);
       if (!alive(host, 'settings')) return;
       vstate.media.storage = storage || vstate.media.storage;
       vstate.settings.remote = remote;
-      vstate.settings.messengers = messengers;
       vstate.settings.schedules = schedules?.schedules || [];
       vstate.settings.ssh = config?.ssh || null;
       vstate.settings.dictationOptions = Array.isArray(dictationOptions?.providers) ? dictationOptions : null;
