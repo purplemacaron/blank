@@ -16,6 +16,7 @@ const { summarizeArgs } = require('../src/core/tools');
 const search = require('../src/core/search');
 const computer = require('../src/core/computer');
 const { createRemoteService } = require('../src/core/remote');
+const { createMessengerService } = require('../src/core/messengers');
 const { createComputerOverlay } = require('./computer-overlay');
 const { createPet } = require('./pet');
 const { petPalette } = require('./pet-palette');
@@ -275,6 +276,11 @@ function registerIpc({ mcp, getWindow }) {
   /* ------------------------------------------------------- remote & overlay */
 
   const remote = createRemoteService();
+  const messengers = createMessengerService({
+    handlers: () => messengerHandlers(),
+    onStatus: (status) => broadcast({ type: 'messengers:status', status }),
+  });
+  try { messengers.start(); } catch {}
   const overlay = createComputerOverlay({
     isEnabled: () => configModule.loadConfig().computer?.showCursor !== false,
     isPetEnabled: () => configModule.loadConfig().pet?.enabled !== false,
@@ -347,6 +353,37 @@ function registerIpc({ mcp, getWindow }) {
       stop: async (sessionId) => stopSessionRun(sessionId),
       approve: async ({ approvalId, decision }) => approveApproval(approvalId, decision),
       pendingApprovals,
+    };
+  }
+
+  function messengerHandlers() {
+    return {
+      ...remoteHandlers(),
+      send: async ({ text, sessionId, mode }) => {
+        const result = await startChatRun({
+          win: getWindow(),
+          input: { sessionId, text, mode },
+          queueIfRunning: true,
+          source: 'messenger',
+        });
+        return {
+          sessionId: result.sessionId,
+          runId: result.runId || null,
+          queued: Boolean(result.queued),
+          title: result.title || '',
+        };
+      },
+      createSession: () => {
+        const config = configModule.loadConfig();
+        const session = store.createSession({
+          workspace: config.workspace,
+          model: config.defaultModel,
+          mode: 'agent',
+        });
+        notifySession(session);
+        broadcast({ type: 'sessions:refresh' });
+        return { id: session.id, title: session.title, model: session.model };
+      },
     };
   }
 
@@ -428,6 +465,10 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('updates:status', async () => updater.status());
   require('electron').ipcMain.handle('updates:check', async () => updater.check());
   require('electron').ipcMain.handle('updates:install', async () => updater.install());
+
+  require('electron').ipcMain.handle('messengers:status', async () => messengers.status());
+  require('electron').ipcMain.handle('messengers:configure', async (_event, input = {}) => messengers.configure(input));
+  require('electron').ipcMain.handle('messengers:test', async (_event, provider) => messengers.test(provider));
 
   require('electron').ipcMain.handle('config:update', async (_event, patch = {}) => {
     const allowed = ['defaultModel', 'fallbackModel', 'theme', 'language', 'onboarded', 'agent', 'ui', 'customInstructions', 'disabledSkills', 'media', 'permissions', 'approvals', 'search', 'computer', 'pet', 'team', 'notifications', 'dictation', 'updates'];
@@ -1264,6 +1305,7 @@ function registerIpc({ mcp, getWindow }) {
       if (main && main !== win) sendEvent(main, enriched);
       sendPetEvent(enriched);
       remote.publish(enriched);
+      messengers.publish(enriched);
     };
 
     const requestApproval = (request) => new Promise((resolve) => {
@@ -1304,6 +1346,7 @@ function registerIpc({ mcp, getWindow }) {
       if (main && main !== win) sendEvent(main, payload);
       sendPetEvent(payload);
       remote.publish({ ...payload, type: 'tool:start', summary: payload.summary });
+      messengers.approval(payload);
       notifications.approval({ label: payload.label, summary: payload.summary, sessionId: session.id });
     });
 
@@ -2651,6 +2694,7 @@ ${commands}
   function dispose() {
     state.disposed = true;
     try { updater.dispose(); } catch {}
+    try { messengers.dispose(); } catch {}
     stopTerminal();
     if (state.scheduleTimer) clearInterval(state.scheduleTimer);
     for (const run of state.scheduleRuns.values()) {

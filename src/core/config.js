@@ -109,6 +109,14 @@ const DEFAULTS = {
     allowApprovals: false,
     autoStart: false,
   },
+  messengers: {
+    notify: true,
+    pairCode: '',
+    telegram: { enabled: false, token: '', links: {}, lastChatId: '' },
+    discord: { enabled: false, token: '', links: {}, lastChatId: '' },
+    slack: { enabled: false, appToken: '', botToken: '', links: {}, lastChatId: '' },
+    webhook: { enabled: false, port: 8789, secret: '', url: '', links: {}, lastChatId: '' },
+  },
   notifications: {
     enabled: true,
     onFinish: true,
@@ -508,6 +516,37 @@ function publicConfig(config, catalog) {
       allowLan: Boolean(config.remote?.allowLan),
       allowApprovals: Boolean(config.remote?.allowApprovals),
       autoStart: Boolean(config.remote?.autoStart),
+    },
+    messengers: {
+      notify: config.messengers?.notify !== false,
+      telegram: {
+        enabled: config.messengers?.telegram?.enabled === true,
+        hasToken: Boolean(config.messengers?.telegram?.token),
+        tokenPreview: maskKey(config.messengers?.telegram?.token),
+        paired: Object.keys(config.messengers?.telegram?.links || {}).length,
+      },
+      discord: {
+        enabled: config.messengers?.discord?.enabled === true,
+        hasToken: Boolean(config.messengers?.discord?.token),
+        tokenPreview: maskKey(config.messengers?.discord?.token),
+        paired: Object.keys(config.messengers?.discord?.links || {}).length,
+      },
+      slack: {
+        enabled: config.messengers?.slack?.enabled === true,
+        hasAppToken: Boolean(config.messengers?.slack?.appToken),
+        hasBotToken: Boolean(config.messengers?.slack?.botToken),
+        appTokenPreview: maskKey(config.messengers?.slack?.appToken),
+        botTokenPreview: maskKey(config.messengers?.slack?.botToken),
+        paired: Object.keys(config.messengers?.slack?.links || {}).length,
+      },
+      webhook: {
+        enabled: config.messengers?.webhook?.enabled === true,
+        hasSecret: Boolean(config.messengers?.webhook?.secret),
+        secretPreview: maskKey(config.messengers?.webhook?.secret),
+        port: Number(config.messengers?.webhook?.port) || 8789,
+        url: config.messengers?.webhook?.url || '',
+        paired: Object.keys(config.messengers?.webhook?.links || {}).length,
+      },
     },
     notifications: {
       enabled: config.notifications?.enabled !== false,

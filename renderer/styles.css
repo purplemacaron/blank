@@ -4087,6 +4087,120 @@ html[data-theme="dark"] .tok-kw { color: #8db3ff; }
   white-space: nowrap;
 }
 
+/* Messengers */
+
+.messenger-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 16px;
+  align-items: start;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 12px 0 14px;
+}
+.messenger-pair-copy p { font-size: 10.5px; color: var(--text-secondary); line-height: 1.55; margin: 0 0 8px; }
+.messenger-pair-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent-text);
+  margin-bottom: 6px;
+}
+.messenger-code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  min-width: 0;
+}
+.messenger-code-row code,
+.messenger-code-row .messenger-code-value {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.messenger-pair-side {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-left: 1px solid var(--accent-border);
+  padding-left: 16px;
+}
+.messenger-pair-desc { font-size: 10px; color: var(--text-tertiary); margin: 0; line-height: 1.5; }
+.messenger-pair-side .setting-control { margin-top: 4px; }
+.messenger-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 10px; margin-top: 2px; }
+.messenger-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  padding: 12px;
+  min-width: 0;
+}
+.messenger-head { display: flex; align-items: center; gap: 9px; }
+.messenger-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  flex: 0 0 auto;
+}
+.messenger-icon.has-logo { background: var(--bg); border: 1px solid var(--border); }
+.messenger-icon svg { width: 17px; height: 17px; display: block; }
+.messenger-head-copy { flex: 1; min-width: 0; }
+.messenger-name { font-size: 11.5px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+.messenger-state { font-size: 9.5px; color: var(--text-tertiary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.messenger-desc { font-size: 10.5px; color: var(--text-tertiary); line-height: 1.55; margin: 0; }
+.messenger-field { display: flex; flex-direction: column; gap: 5px; }
+.messenger-field .setting-label { font-size: 10.5px; }
+.messenger-field .setting-note { font-size: 9.5px; }
+.messenger-field .settings-input,
+.messenger-field .settings-inline-form { min-width: 0; }
+.messenger-field .settings-inline-form { flex-wrap: wrap; }
+.messenger-save-row { justify-content: flex-start; }
+.messenger-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 2px;
+  flex-wrap: wrap;
+}
+.messenger-switch { display: flex; align-items: center; gap: 7px; font-size: 10px; color: var(--text-tertiary); }
+.messenger-actions { display: flex; align-items: center; gap: 3px; }
+.messenger-note:empty { display: none; }
+.messenger-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--red);
+  background: var(--red-soft);
+  border: 1px solid var(--red-border);
+  border-radius: 7px;
+  padding: 6px 8px;
+  overflow-wrap: anywhere;
+}
+
 /* Plugins */
 
 .plugin-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 14px 0 10px; }
@@ -4194,6 +4308,9 @@ html[data-theme="dark"] .tok-kw { color: #8db3ff; }
   .key-add .key-label-input { flex: 1 1 100%; }
   .remote-url-row { flex-wrap: wrap; }
   .remote-token-row { flex-wrap: wrap; }
+  .messenger-pair { grid-template-columns: 1fr; }
+  .messenger-pair-side { border-left: 0; border-top: 1px solid var(--accent-border); padding-left: 0; padding-top: 10px; }
+  .messenger-grid { grid-template-columns: 1fr; }
 }
 
 /* Language, agent team and SSH */

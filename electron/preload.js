@@ -40,6 +40,12 @@ const api = {
     install: () => invoke('updates:install'),
   },
 
+  messengers: {
+    status: () => invoke('messengers:status'),
+    configure: (input) => invoke('messengers:configure', input),
+    test: (provider) => invoke('messengers:test', provider),
+  },
+
   models: {
     list: () => invoke('models:list'),
     setKey: (input) => invoke('providers:setKey', input),

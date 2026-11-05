@@ -16,7 +16,7 @@
     team: { loading: false },
     automations: { schedules: [], running: [], loading: false, editing: '' },
     browserUrl: '',
-    settings: { remote: null, ssh: null, schedules: [], dictationOptions: null, updates: null },
+    settings: { remote: null, ssh: null, schedules: [], dictationOptions: null, updates: null, messengers: null },
     paper: {
       loaded: false,
       items: [],
@@ -2300,6 +2300,137 @@ Start writing, or ask the agent to draft it.
     panel.outerHTML = updatePanelHtml(status);
   }
 
+  const MESSENGER_META = [
+    {
+      id: 'telegram',
+      name: 'Telegram',
+      icon: 'send',
+      desc: 'Create a bot with @BotFather, paste its token, then send /pair <code> from the chat you want to link.',
+    },
+    {
+      id: 'discord',
+      name: 'Discord',
+      icon: 'message',
+      desc: 'Create a bot in the Discord Developer Portal, enable Message Content Intent, then DM it or mention it after pairing.',
+    },
+    {
+      id: 'slack',
+      name: 'Slack',
+      icon: 'message-square',
+      desc: 'Create a Slack app with Socket Mode, then paste the app-level and bot tokens. DM the bot or mention it in a channel.',
+    },
+    {
+      id: 'webhook',
+      name: 'Webhook',
+      icon: 'plug',
+      desc: 'A loopback HTTP bridge for scripts and other apps. Send text to /message and receive runs and approvals as JSON.',
+    },
+  ];
+
+  function messengerCardHtml(meta, stateInput, cfgInput) {
+    const state = stateInput && typeof stateInput === 'object' ? stateInput : {};
+    const cfg = cfgInput && typeof cfgInput === 'object' ? cfgInput : {};
+    const enabled = state.enabled !== undefined ? Boolean(state.enabled) : cfg.enabled === true;
+    const running = Boolean(state.running);
+    const error = String(state.error || '');
+    const paired = Number(state.paired) || 0;
+    const statusLabel = running ? 'Running' : error ? 'Error' : enabled ? 'Ready' : 'Off';
+    const badgeClass = running ? 'green' : error ? 'red' : '';
+    const id = meta.id;
+    const stateLine = id === 'webhook'
+      ? (running ? 'Loopback bridge' : 'Bridge is off')
+      : running && state.botName
+        ? `@${String(state.botName)}`
+        : paired ? `${paired} ${paired === 1 ? 'paired chat' : 'paired chats'}` : 'No paired chats yet.';
+    let fields = '';
+
+    if (id === 'telegram' || id === 'discord') {
+      const hasToken = state.hasToken !== undefined ? Boolean(state.hasToken) : Boolean(cfg.hasToken);
+      const preview = String(state.tokenPreview || cfg.tokenPreview || '');
+      fields = `<div class="messenger-field">
+        <label class="setting-label" for="messenger-${id}-token">Bot token</label>
+        <div class="settings-inline-form">
+          <input class="field-input settings-input" id="messenger-${id}-token" type="password" autocomplete="off" spellcheck="false" placeholder="${hasToken ? 'Saved — paste a new token to replace it' : 'Paste bot token'}" />
+          <button class="btn btn-primary btn-sm" type="button" data-messenger-save="${id}">Save</button>
+          ${hasToken ? `<button class="btn btn-ghost btn-sm" type="button" data-messenger-remove="${id}">Remove</button>` : ''}
+        </div>
+        <div class="setting-note">${hasToken && preview ? `Saved · ${esc(preview)}` : 'Stored only in ~/.blank/config.json and never shown again.'}</div>
+      </div>`;
+    } else if (id === 'slack') {
+      const hasApp = state.hasAppToken !== undefined ? Boolean(state.hasAppToken) : Boolean(cfg.hasAppToken);
+      const hasBot = state.hasBotToken !== undefined ? Boolean(state.hasBotToken) : Boolean(cfg.hasBotToken);
+      const appPreview = String(state.appTokenPreview || cfg.appTokenPreview || '');
+      const botPreview = String(state.botTokenPreview || cfg.botTokenPreview || '');
+      fields = `<div class="messenger-field">
+        <label class="setting-label" for="messenger-slack-app-token">App token</label>
+        <input class="field-input settings-input" id="messenger-slack-app-token" type="password" autocomplete="off" spellcheck="false" placeholder="${hasApp ? 'Saved — paste a new app token to replace it' : 'Paste app-level token (xapp-)'}" />
+      </div>
+      <div class="messenger-field">
+        <label class="setting-label" for="messenger-slack-bot-token">Bot token</label>
+        <input class="field-input settings-input" id="messenger-slack-bot-token" type="password" autocomplete="off" spellcheck="false" placeholder="${hasBot ? 'Saved — paste a new bot token to replace it' : 'Paste bot token (xoxb-)'}" />
+        <div class="settings-inline-form messenger-save-row">
+          <button class="btn btn-primary btn-sm" type="button" data-messenger-save="slack">Save tokens</button>
+          ${hasApp || hasBot ? '<button class="btn btn-ghost btn-sm" type="button" data-messenger-remove="slack">Remove</button>' : ''}
+        </div>
+        <div class="setting-note">${hasApp || hasBot ? `Saved · ${esc(appPreview || '—')} · ${esc(botPreview || '—')}` : 'Stored only in ~/.blank/config.json and never shown again.'}</div>
+      </div>`;
+    } else if (id === 'webhook') {
+      const endpoint = String(state.endpoint || cfg.endpoint || `http://127.0.0.1:${Number(state.port || cfg.port) || 8789}/message`);
+      const secret = String(state.secret || '');
+      const port = Number(state.port || cfg.port) || 8789;
+      const url = String(state.url !== undefined ? state.url : cfg.url || '');
+      fields = `<div class="messenger-field">
+        <div class="setting-label">Endpoint</div>
+        <div class="messenger-code-row"><code>${esc(endpoint)}</code><button class="btn btn-secondary btn-sm" type="button" data-copy-messenger="webhook-endpoint">Copy</button></div>
+        <div class="setting-note">Send POST { "text": "…" } with Authorization: Bearer &lt;secret&gt;.</div>
+      </div>
+      <div class="messenger-field">
+        <div class="setting-label">Secret</div>
+        <div class="messenger-code-row"><span class="messenger-code-value">${secret ? esc(secret) : 'Not generated yet'}</span><button class="btn btn-secondary btn-sm" type="button" data-copy-messenger="webhook-secret" ${secret ? '' : 'disabled'}>Copy</button></div>
+        <div class="setting-note">Requests without this secret are rejected.</div>
+      </div>
+      <div class="messenger-field">
+        <label class="setting-label" for="messenger-webhook-port">Port</label>
+        <div class="settings-inline-form">
+          <input class="setting-inline-input" id="messenger-webhook-port" type="number" min="1024" max="65535" value="${port}" />
+          <button class="btn btn-secondary btn-sm" type="button" data-messenger-port>Apply</button>
+        </div>
+      </div>
+      <div class="messenger-field">
+        <label class="setting-label" for="messenger-webhook-url">Notification URL</label>
+        <div class="settings-inline-form">
+          <input class="field-input settings-input" id="messenger-webhook-url" type="url" placeholder="https://example.com/blank" value="${U.attr(url)}" />
+          <button class="btn btn-secondary btn-sm" type="button" data-messenger-url>Save</button>
+        </div>
+        <div class="setting-note">Used for outbound run and approval notifications. Leave empty to poll the bridge instead.</div>
+      </div>`;
+    }
+
+    const logo = window.MessengerLogos?.for(id);
+
+    return `<article class="messenger-card" data-messenger-card="${id}">
+      <header class="messenger-head">
+        <span class="messenger-icon ${logo ? 'has-logo' : ''}">${logo || icon(meta.icon, 15)}</span>
+        <div class="messenger-head-copy">
+          <div class="messenger-name">${esc(meta.name)}</div>
+          <div class="messenger-state">${esc(stateLine)}</div>
+        </div>
+        <span class="badge ${badgeClass}">${statusLabel}</span>
+      </header>
+      <p class="messenger-desc">${esc(meta.desc)}</p>
+      ${fields}
+      <div class="messenger-foot">
+        <div class="messenger-switch">${UI.switchHtml(enabled, `data-messenger-enable="${id}"`)}<span>${enabled ? 'Enabled' : 'Disabled'}</span></div>
+        <div class="messenger-actions">
+          <button class="btn btn-secondary btn-sm" type="button" data-messenger-test="${id}">Test</button>
+          ${paired && id !== 'webhook' ? `<button class="btn btn-ghost btn-sm" type="button" data-messenger-unpair="${id}">Unpair all</button>` : ''}
+        </div>
+      </div>
+      <div class="setting-note messenger-note" id="messenger-test-${id}"></div>
+      ${error ? `<div class="messenger-error">${icon('shield-alert', 11)}<span>${esc(error)}</span></div>` : ''}
+    </article>`;
+  }
+
   function paintSettings(host) {
     const config = currentConfig();
     const info = appState().info || {};
@@ -2329,6 +2460,11 @@ Start writing, or ask the agent to draft it.
     const remotePort = Number(remoteState.port) || Number(remoteCfg.port) || 8787;
     const remoteToken = remoteRunning ? String(remoteState.token || '') : '';
     const remoteUrls = remoteRunning && Array.isArray(remoteState.urls) ? remoteState.urls : [];
+    const messengerCfg = config.messengers || {};
+    const messengerState = vstate.settings.messengers || {};
+    const messengerPairCode = String(messengerState.pairCode || '');
+    const messengerNotify = messengerState.notify !== undefined ? messengerState.notify !== false : messengerCfg.notify !== false;
+    const messengerCards = MESSENGER_META.map((meta) => messengerCardHtml(meta, messengerState[meta.id], messengerCfg[meta.id]));
     const teamCfg = config.team || { enabled: false, members: [] };
     const teamMembers = Array.isArray(teamCfg.members) ? teamCfg.members : [];
     const schedules = Array.isArray(vstate.settings.schedules) ? vstate.settings.schedules : [];
@@ -2384,6 +2520,7 @@ Start writing, or ask the agent to draft it.
           <button class="settings-nav-item" type="button" data-settings-go="search">${icon('globe', 13)} Web search</button>
           <button class="settings-nav-item" type="button" data-settings-go="computer">${icon('monitor', 13)} Computer</button>
           <button class="settings-nav-item" type="button" data-settings-go="remote">${icon('link', 13)} Remote</button>
+          <button class="settings-nav-item" type="button" data-settings-go="messengers">${icon('message-square', 13)} Messengers</button>
           <button class="settings-nav-item" type="button" data-settings-go="data">${icon('database', 13)} Data & CLI</button>
           <button class="settings-nav-item" type="button" data-settings-go="updates">${icon('download-cloud', 13)} Updates</button>
           <button class="settings-nav-item" type="button" data-settings-go="about">${icon('sparkles', 13)} About</button>
@@ -2768,6 +2905,28 @@ Start writing, or ask the agent to draft it.
               <div class="setting-note">${remoteState.connections || 0} live connection${Number(remoteState.connections) === 1 ? '' : 's'} · token rotates on every start.</div>
             </div>` : `<div class="setting-note" style="margin-top:10px">${icon('lock', 11)} Pairing links and the token appear here after you start remote control.</div>`}
             <div class="settings-permission-note">${icon('shield-alert', 12)} Anyone with the token and network access can talk to this app. Keep LAN off on untrusted Wi-Fi, leave remote approvals off by default, and stop remote control when you are done.</div>
+          </section>
+
+          <section class="settings-section" id="settings-messengers">
+            <h2>Messengers</h2>
+            <p>Chat with blank from Telegram, Discord, Slack or your own webhook. Only paired chats can start runs or approve tools.</p>
+            <div class="messenger-pair">
+              <div class="messenger-pair-copy">
+                <div class="messenger-pair-head">${icon('key', 12)} Pairing code</div>
+                <p>Send /pair &lt;code&gt; from the chat you want to link. The code changes after every pairing.</p>
+                <div class="messenger-code-row">
+                  <code id="messenger-pair-code">${esc(messengerPairCode || '——————')}</code>
+                  <button class="btn btn-secondary btn-sm" type="button" data-copy-messenger="pair-code" ${messengerPairCode ? '' : 'disabled'}>Copy code</button>
+                </div>
+              </div>
+              <div class="messenger-pair-side">
+                <div class="setting-label">Run and approval updates</div>
+                <p class="messenger-pair-desc">Send final answers and approval requests to the paired chat. Desktop runs notify the last active chat.</p>
+                <div class="setting-control">${UI.switchHtml(messengerNotify, 'data-messenger-notify')}</div>
+              </div>
+            </div>
+            <div class="messenger-grid">${messengerCards.join('')}</div>
+            <div class="settings-permission-note">${icon('shield', 12)} Only paired chats can start runs or approve tools. Tokens stay in the main process and never reach this window.</div>
           </section>
 
           <section class="settings-section" id="settings-data">
@@ -3277,6 +3436,147 @@ Start writing, or ask the agent to draft it.
         } finally { button.disabled = false; }
         return;
       }
+      const copyMessenger = event.target.closest('[data-copy-messenger]');
+      if (copyMessenger) {
+        const what = copyMessenger.dataset.copyMessenger;
+        const state = vstate.settings.messengers || {};
+        const value = what === 'pair-code'
+          ? String(state.pairCode || '')
+          : what === 'webhook-secret'
+            ? String(state.webhook?.secret || '')
+            : what === 'webhook-endpoint'
+              ? String(state.webhook?.endpoint || '')
+              : '';
+        if (!value) return;
+        const ok = await U.copyText(value);
+        UI.toast(ok ? 'Copied.' : 'Could not access the clipboard.', ok ? 'success' : 'error');
+        return;
+      }
+      const messengerSave = event.target.closest('[data-messenger-save]');
+      if (messengerSave) {
+        const provider = messengerSave.dataset.messengerSave;
+        const payload = { provider };
+        if (provider === 'slack') {
+          const appToken = host.querySelector('#messenger-slack-app-token')?.value.trim() || '';
+          const botToken = host.querySelector('#messenger-slack-bot-token')?.value.trim() || '';
+          if (!appToken && !botToken) { UI.toast('Paste at least one token first.', 'error'); return; }
+          if (appToken) payload.appToken = appToken;
+          if (botToken) payload.botToken = botToken;
+        } else {
+          const token = host.querySelector(`#messenger-${provider}-token`)?.value.trim() || '';
+          if (!token) { UI.toast('Paste a token first.', 'error'); return; }
+          payload.token = token;
+        }
+        messengerSave.disabled = true;
+        try {
+          vstate.settings.messengers = await API.messengers.configure(payload);
+          paintSettings(host);
+          UI.toast('Messenger settings saved.', 'success');
+        } catch (error) { messengerSave.disabled = false; UI.toast(error.message, 'error'); }
+        return;
+      }
+      const messengerRemove = event.target.closest('[data-messenger-remove]');
+      if (messengerRemove) {
+        const provider = messengerRemove.dataset.messengerRemove;
+        const meta = MESSENGER_META.find((entry) => entry.id === provider);
+        const ok = await UI.confirm({
+          title: 'Remove this token?',
+          message: 'This messenger turns off until a new token is saved.',
+          confirmLabel: 'Remove token',
+          danger: true,
+          detail: meta?.name || provider,
+        });
+        if (!ok) return;
+        try {
+          vstate.settings.messengers = await API.messengers.configure({ provider, clearToken: true });
+          paintSettings(host);
+          UI.toast('Token removed.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      const messengerToggle = event.target.closest('[data-messenger-enable]');
+      if (messengerToggle) {
+        const provider = messengerToggle.dataset.messengerEnable;
+        const next = !messengerToggle.classList.contains('on');
+        messengerToggle.disabled = true;
+        try {
+          vstate.settings.messengers = await API.messengers.configure({ provider, enabled: next });
+          paintSettings(host);
+          UI.toast(next ? 'Messenger enabled.' : 'Messenger disabled.', next ? 'success' : 'warn');
+        } catch (error) { messengerToggle.disabled = false; UI.toast(error.message, 'error'); }
+        return;
+      }
+      const messengerNotify = event.target.closest('[data-messenger-notify]');
+      if (messengerNotify) {
+        const next = !messengerNotify.classList.contains('on');
+        messengerNotify.classList.toggle('on', next);
+        messengerNotify.setAttribute('aria-checked', String(next));
+        try {
+          vstate.settings.messengers = await API.messengers.configure({ notify: next });
+          UI.toast(next ? 'Run updates are on.' : 'Run updates are off.', next ? 'success' : 'warn');
+        } catch (error) {
+          messengerNotify.classList.toggle('on', !next);
+          messengerNotify.setAttribute('aria-checked', String(!next));
+          UI.toast(error.message, 'error');
+        }
+        return;
+      }
+      const messengerTest = event.target.closest('[data-messenger-test]');
+      if (messengerTest) {
+        const provider = messengerTest.dataset.messengerTest;
+        const note = host.querySelector(`#messenger-test-${provider}`);
+        messengerTest.disabled = true;
+        if (note) note.textContent = 'Testing…';
+        try {
+          const result = await API.messengers.test(provider);
+          if (!result.ok) throw new Error(result.error || 'Connection test failed.');
+          if (note) note.textContent = provider === 'webhook'
+            ? `Webhook is running on ${result.name}.`
+            : `Connected as ${result.name}.`;
+          UI.toast('Messenger is ready.', 'success');
+        } catch (error) {
+          if (note) note.textContent = error.message;
+          UI.toast(error.message, 'error');
+        } finally { messengerTest.disabled = false; }
+        return;
+      }
+      const messengerUnpair = event.target.closest('[data-messenger-unpair]');
+      if (messengerUnpair) {
+        const provider = messengerUnpair.dataset.messengerUnpair;
+        const meta = MESSENGER_META.find((entry) => entry.id === provider);
+        const ok = await UI.confirm({
+          title: 'Unpair every chat?',
+          message: 'Chats must pair again with the current code.',
+          confirmLabel: 'Unpair',
+          danger: true,
+          detail: meta?.name || provider,
+        });
+        if (!ok) return;
+        try {
+          vstate.settings.messengers = await API.messengers.configure({ provider, unpair: true });
+          paintSettings(host);
+          UI.toast('Paired chats cleared.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      if (event.target.closest('[data-messenger-port]')) {
+        try {
+          const port = Number(host.querySelector('#messenger-webhook-port')?.value) || 8789;
+          vstate.settings.messengers = await API.messengers.configure({ provider: 'webhook', port });
+          paintSettings(host);
+          UI.toast('Webhook port saved.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      if (event.target.closest('[data-messenger-url]')) {
+        try {
+          const url = host.querySelector('#messenger-webhook-url')?.value.trim() || '';
+          vstate.settings.messengers = await API.messengers.configure({ provider: 'webhook', url });
+          paintSettings(host);
+          UI.toast('Notification URL saved.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
       if (event.target.closest('[data-remote-toggle]')) {
         const button = event.target.closest('[data-remote-toggle]');
         button.disabled = true;
@@ -3427,17 +3727,19 @@ Start writing, or ask the agent to draft it.
     vstate.host = host;
     host.innerHTML = pageLoading('Settings', 'Preferences, approvals and local data.');
     try {
-      const [config, storage, remote, schedules, dictationOptions, updates] = await Promise.all([
+      const [config, storage, remote, schedules, dictationOptions, updates, messengers] = await Promise.all([
         API.config.get(),
         API.media.storage().catch(() => null),
         API.remote?.status ? API.remote.status().catch(() => null) : Promise.resolve(null),
         API.schedules?.list ? API.schedules.list().catch(() => null) : Promise.resolve(null),
         API.dictation?.options ? API.dictation.options().catch(() => null) : Promise.resolve(null),
         API.updates?.status ? API.updates.status().catch(() => null) : Promise.resolve(null),
+        API.messengers?.status ? API.messengers.status().catch(() => null) : Promise.resolve(null),
       ]);
       if (!alive(host, 'settings')) return;
       vstate.media.storage = storage || vstate.media.storage;
       vstate.settings.remote = remote;
+      vstate.settings.messengers = messengers;
       vstate.settings.schedules = schedules?.schedules || [];
       vstate.settings.ssh = config?.ssh || null;
       vstate.settings.dictationOptions = Array.isArray(dictationOptions?.providers) ? dictationOptions : null;

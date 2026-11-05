@@ -44,6 +44,7 @@ node scripts/cdp-shot.js qa/shot.png
 - `electron/main.js` — window lifecycle, protocol handlers, permission policy, single-instance lock.
 - `electron/preload.js` — the only bridge exposed to the renderer as `window.API`.
 - `electron/ipc.js` — IPC handlers, config validation, run lifecycle, approval queues, remote service wiring.
+- `src/core/messengers.js` — Telegram, Discord, Slack and loopback webhook adapters, pairing, approvals and session switching.
 - `electron/updater.js` — electron-updater feed, background download and quit-to-install flow. Updates come from GitHub releases; the release assets must include `latest.yml` and the NSIS blockmap.
 - `src/core/agent.js` — model loop, tool dispatch, subagents, compaction, session persistence.
 - `src/core/tools.js` — tool specs, handlers, permission resolution.
