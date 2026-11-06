@@ -5,9 +5,14 @@
    electron-updater reads latest.yml next to the release assets, verifies the
    installer checksum and hands the install to NSIS/AppImage on quit. Updates
    are only offered by packaged builds; macOS needs a signed build, so the UI
-   sends macOS users to the download page instead of pretending to work. */
+   sends macOS users to the download page instead of pretending to work.
+   Windows copies running from a `win-unpacked` folder or Temp have no
+   installed base to update, so they say so rather than downloading an
+   installer that cannot replace them. */
 
+const os = require('os');
 const { app } = require('electron');
+const { isTemporaryBuildPath } = require('../src/core/update-base');
 
 const FIRST_CHECK_DELAY = 12 * 1000;
 const CHECK_INTERVAL = 6 * 60 * 60 * 1000;
@@ -21,13 +26,16 @@ function createUpdater() {
   let onState = () => {};
   let disposed = false;
 
-  const supported = app.isPackaged && (
+  const unpacked = app.isPackaged
+    && process.platform === 'win32'
+    && isTemporaryBuildPath(process.execPath, os.tmpdir());
+  const supported = app.isPackaged && !unpacked && (
     process.platform === 'win32'
     || (process.platform === 'linux' && Boolean(process.env.APPIMAGE))
   );
 
   let state = {
-    status: supported ? 'idle' : (app.isPackaged ? 'unsupported' : 'dev'),
+    status: supported ? 'idle' : unpacked ? 'unpacked' : (app.isPackaged ? 'unsupported' : 'dev'),
     current: app.getVersion(),
     version: '',
     percent: 0,

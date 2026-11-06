@@ -2246,6 +2246,7 @@ Start writing, or ask the agent to draft it.
     const titles = {
       idle: 'Updates are checked automatically',
       dev: 'Automatic updates run in the installed app',
+      unpacked: 'This copy cannot update itself',
       unsupported: 'Automatic updates are not available on this platform',
       checking: 'Checking for updates',
       current: 'Up to date',
@@ -2258,6 +2259,7 @@ Start writing, or ask the agent to draft it.
     const descriptions = {
       idle: 'blank reads the official GitHub releases at launch and every six hours.',
       dev: 'This development build cannot update itself. Use an installed build to receive updates.',
+      unpacked: 'blank is running from a temporary or unpacked folder. Open the installed app to receive updates, or download the installer again.',
       unsupported: 'Download the latest build from the release page.',
       checking: 'This only takes a moment.',
       current: 'You are running the latest version.',
@@ -2274,7 +2276,7 @@ Start writing, or ask the agent to draft it.
         : status === 'current'
           ? 'ok'
           : ['available', 'downloading'].includes(status) ? 'busy' : '';
-    const canCheck = updates.supported !== false && !['checking', 'downloading', 'installing', 'ready', 'dev', 'unsupported'].includes(status);
+    const canCheck = updates.supported !== false && !['checking', 'downloading', 'installing', 'ready', 'dev', 'unpacked', 'unsupported'].includes(status);
     const badge = version && version !== current ? `v${version}` : (current ? `v${current}` : '');
     const errorDetail = status === 'error' && updates.error ? String(updates.error) : '';
     return `<div class="update-panel" id="update-panel"${errorDetail ? ` title="${U.attr(errorDetail)}"` : ''}>
