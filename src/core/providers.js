@@ -226,15 +226,23 @@ async function* anthropicStream({ resolved, apiKey, system, messages, tools, opt
   if (options.reasoningEffort) {
     const effort = options.reasoningEffort;
     if (options.reasoningTransport === 'anthropic-effort') {
-      body.output_config = { effort };
-      if (effort === 'ultra') body.max_tokens = Math.max(body.max_tokens, 48000);
-      else if (effort === 'max') body.max_tokens = Math.max(body.max_tokens, 32000);
-      else if (effort === 'xhigh') body.max_tokens = Math.max(body.max_tokens, 24000);
-      else if (effort === 'high') body.max_tokens = Math.max(body.max_tokens, 16000);
+      if (effort === 'none') {
+        body.thinking = { type: 'disabled' };
+      } else {
+        body.output_config = { effort };
+        if (effort === 'ultra') body.max_tokens = Math.max(body.max_tokens, 48000);
+        else if (effort === 'max') body.max_tokens = Math.max(body.max_tokens, 32000);
+        else if (effort === 'xhigh') body.max_tokens = Math.max(body.max_tokens, 24000);
+        else if (effort === 'high') body.max_tokens = Math.max(body.max_tokens, 16000);
+      }
     } else if (options.reasoningTransport === 'anthropic-budget') {
-      const budget = { low: 2048, medium: 8192, high: 16384, xhigh: 24576, max: 32768, ultra: 49152 }[effort] || 8192;
-      body.thinking = { type: 'enabled', budget_tokens: budget };
-      body.max_tokens = Math.max(body.max_tokens, budget + 2048);
+      if (effort === 'none') {
+        body.thinking = { type: 'disabled' };
+      } else {
+        const budget = { low: 2048, medium: 8192, high: 16384, xhigh: 24576, max: 32768, ultra: 49152 }[effort] || 8192;
+        body.thinking = { type: 'enabled', budget_tokens: budget };
+        body.max_tokens = Math.max(body.max_tokens, budget + 2048);
+      }
     }
   }
   if (tools && tools.length) {
@@ -475,7 +483,12 @@ function protocolStream({ resolved, apiKey, system, messages, tools, agentOption
 
 async function* streamChat({ modelId, config, system, messages, tools, signal, options = {} }) {
   const { resolved, provider, keys } = resolveRequest(modelId, config);
-  const profile = reasoning.profileFor(resolved.providerId, resolved.id);
+  const fullId = `${resolved.providerId}/${resolved.id}`;
+  const cachedHint = config.reasoningHints?.[fullId];
+  const hint = cachedHint && (cachedHint.source === 'probe' || !resolved.reasoningHint)
+    ? cachedHint
+    : resolved.reasoningHint || cachedHint || null;
+  const profile = reasoning.profileFor(resolved.providerId, resolved.id, hint);
   const effort = reasoning.normalize(profile, options.reasoningEffort || config.agent?.reasoningEffort);
   const agentOptions = {
     temperature: options.temperature ?? config.agent?.temperature ?? null,

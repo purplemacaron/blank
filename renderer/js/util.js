@@ -229,7 +229,8 @@
     ultra: { label: 'Ultra', hint: 'Highest effort and cost' },
   };
   const REASONING_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
-  const REASONING_FULL = ['none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+  const REASONING_BASE = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
+  const REASONING_FULL = [...REASONING_BASE, 'ultra'];
 
   function reasoningFallback(fullId) {
     const value = String(fullId || '');
@@ -245,7 +246,7 @@
       return { levels: [], default: '', transport: 'none', fixed: true, fixedLabel: 'Always on', source: providerId.startsWith('custom_') ? 'fallback' : 'model' };
     }
     if (providerId.startsWith('custom_')) {
-      return { levels: ['low', 'medium', 'high'], default: 'medium', transport: 'openai-effort', fixed: false, source: 'fallback' };
+      return { levels: REASONING_BASE, default: 'medium', transport: 'openai-effort', fixed: false, source: 'fallback' };
     }
     if (/^(deepseek-v|deepseek-chat-v)/.test(id)) {
       return { levels: REASONING_FULL, default: 'medium', transport: 'openai-effort', fixed: false, source: 'model' };

@@ -22,7 +22,10 @@ const LEVELS = {
 };
 
 const ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
-const FULL = ['none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+/* Every adjustable model exposes at least these stages. Providers add minimal
+   or ultra on top when their API names them. */
+const BASE = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
+const FULL = [...BASE, 'ultra'];
 const FULL_WITH_MINIMAL = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 /* 'auto' is accepted from older sessions and configs, then normalized. */
 const EFFORTS = ['auto', ...ORDER];
@@ -98,7 +101,7 @@ function profileFromHint(hint) {
   if (hint.alwaysOn) return { ...fixed(hint.fixedLabel || 'Always on'), source };
   if (hint.supported === false) return { ...off(), source };
   if (hint.supported === true) {
-    const profile = pick(['low', 'medium', 'high'], normalizeLevel(hint.default), 'openai-effort');
+    const profile = pick(BASE, normalizeLevel(hint.default), 'openai-effort');
     profile.source = source;
     return profile;
   }
@@ -106,17 +109,16 @@ function profileFromHint(hint) {
 }
 
 function openaiProfile(id) {
-  if (/^gpt-6\.1|^gpt-6[.-].*sol|^gpt-6.*sol/.test(id)) return pick(['medium', 'high', 'xhigh', 'max', 'ultra'], 'medium', 'openai-effort');
-  if (/^gpt-6.*astra/.test(id)) return pick(['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], 'medium', 'openai-effort');
-  if (/^gpt-6/.test(id)) return pick(['none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'], 'medium', 'openai-effort');
+  if (/^gpt-6\.1|^gpt-6[.-].*sol|^gpt-6.*sol/.test(id)) return pick(FULL, 'medium', 'openai-effort');
+  if (/^gpt-6.*astra/.test(id)) return pick(FULL, 'medium', 'openai-effort');
+  if (/^gpt-6/.test(id)) return pick(FULL, 'medium', 'openai-effort');
   if (/^gpt-5\.5/.test(id)) {
-    if (/-pro/.test(id)) return pick(['medium', 'high', 'xhigh'], 'high', 'openai-effort');
-    return pick(['none', 'low', 'medium', 'high', 'xhigh'], 'medium', 'openai-effort');
+    if (/-pro/.test(id)) return pick(['none', 'low', 'medium', 'high', 'xhigh', 'max'], 'high', 'openai-effort');
+    return pick(['none', 'low', 'medium', 'high', 'xhigh', 'max'], 'medium', 'openai-effort');
   }
   if (/^gpt-5\.1/.test(id)) {
-    if (/-pro/.test(id)) return pick(['medium', 'high', 'xhigh'], 'high', 'openai-effort');
-    if (/codex/.test(id)) return pick(['none', 'low', 'medium', 'high', 'xhigh'], 'medium', 'openai-effort');
-    return pick(['none', 'low', 'medium', 'high'], 'medium', 'openai-effort');
+    if (/-pro/.test(id)) return pick(['none', 'low', 'medium', 'high', 'xhigh', 'max'], 'high', 'openai-effort');
+    return pick(['none', 'low', 'medium', 'high', 'xhigh', 'max'], 'medium', 'openai-effort');
   }
   if (/^gpt-5/.test(id)) {
     if (/-pro/.test(id)) return pick(['high'], 'high', 'openai-effort');
@@ -138,7 +140,7 @@ function anthropicProfile(id) {
   const major = Number(match[1]);
   const minor = Number(match[2] || 0);
   if (legacy) return major === 3 && minor === 7 ? pick(['low', 'medium', 'high'], 'medium', 'anthropic-budget') : off();
-  if (major >= 5) return pick(['low', 'medium', 'high', 'xhigh', 'max'], 'high', 'anthropic-effort');
+  if (major >= 5) return pick(['none', 'low', 'medium', 'high', 'xhigh', 'max'], 'high', 'anthropic-effort');
   if (major === 4 && minor >= 6) return pick(['low', 'medium', 'high', 'max'], 'high', 'anthropic-effort');
   if (major === 4 && minor === 5) return pick(['low', 'medium', 'high'], 'high', 'anthropic-effort');
   if (major === 4) return pick(['low', 'medium', 'high'], 'medium', 'anthropic-budget');
@@ -161,7 +163,7 @@ function xaiProfile(id) {
   if (!match) return null;
   const major = Number(match[1]);
   const minor = Number(match[2] || 0);
-  if (major >= 4 && minor >= 6) return pick(['low', 'medium', 'high', 'xhigh'], 'high', 'xai-effort');
+  if (major >= 4 && minor >= 6) return pick(['none', 'low', 'medium', 'high', 'xhigh', 'max'], 'high', 'xai-effort');
   if (major === 4 && minor === 3) return pick(['none', 'low', 'medium', 'high'], 'medium', 'xai-effort');
   if (major === 4 && minor >= 4) return pick(['low', 'medium', 'high'], 'high', 'xai-effort');
   if (major === 4) return pick(['low', 'high'], 'low', 'xai-effort');
@@ -233,7 +235,7 @@ function customProfile(id, hint) {
      the background probe replace this guess with the endpoint's real set. */
   if (/gpt-oss|gpt_oss/.test(id)) return { ...pick(['low', 'medium', 'high'], 'medium', 'openai-effort'), source: 'fallback' };
   if (/qwen3|qwq|deepseek-r1|reasoner|thinking/.test(id)) return { ...fixed('Always on'), source: 'fallback' };
-  return { ...pick(['low', 'medium', 'high'], 'medium', 'openai-effort'), source: 'fallback' };
+  return { ...pick(BASE, 'medium', 'openai-effort'), source: 'fallback' };
 }
 
 /**

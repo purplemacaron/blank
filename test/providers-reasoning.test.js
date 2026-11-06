@@ -105,3 +105,41 @@ test('probe leaves unknown endpoints alone', async (t) => {
   const hint = await providers.probeReasoningAt({ baseUrl, apiKey: 'test', protocol: 'openai', modelId: 'm' });
   assert.equal(hint, null);
 });
+
+test('requests keep the stages the endpoint probe discovered', async (t) => {
+  let seen = null;
+  const { server, baseUrl } = await endpoint((body, res) => {
+    seen = body;
+    res.setHeader('content-type', 'text/event-stream');
+    res.end('data: [DONE]\n\n');
+  });
+  t.after(() => server.close());
+  const config = {
+    defaultModel: 'custom_probe/m',
+    customProviders: [{
+      id: 'custom_probe',
+      name: 'Probe',
+      protocol: 'openai',
+      baseUrl,
+      models: [{ id: 'm', name: 'm' }],
+    }],
+    providers: { custom_probe: { keys: [{ id: 'k1', key: 'test' }] } },
+    reasoningHints: {
+      'custom_probe/m': {
+        supported: true,
+        levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+        default: 'medium',
+        source: 'probe',
+      },
+    },
+    agent: {},
+  };
+  for await (const _ of providers.streamChat({
+    modelId: 'custom_probe/m',
+    config,
+    system: '',
+    messages: [{ role: 'user', content: 'hi' }],
+    options: { reasoningEffort: 'xhigh' },
+  })) { /* consume the stream */ }
+  assert.equal(seen.reasoning_effort, 'xhigh');
+});

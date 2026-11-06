@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const reasoning = require('../src/core/reasoning');
 
 const FULL = ['none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+const BASE = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 test('the reasoning ladder runs from non-reasoning to ultra', () => {
   assert.deepEqual(reasoning.ORDER, ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
@@ -17,10 +18,15 @@ test('the reasoning ladder runs from non-reasoning to ultra', () => {
 });
 
 test('custom models only claim stages the endpoint reported', () => {
-  /* Until the endpoint answers, show the universal OpenAI effort set. */
+  /* Until the endpoint answers, show the standard ladder every adjustable
+     endpoint understands, including non-reasoning and the deep stages. */
   assert.deepEqual(
     reasoning.profileFor('custom_nvidia-nim', 'mistralai/mistral-large-4-1t-a52b').levels,
-    ['low', 'medium', 'high'],
+    BASE,
+  );
+  assert.deepEqual(
+    reasoning.profileFor('custom_upstage', 'solar-pro4').levels,
+    BASE,
   );
   const api = reasoning.profileFor('custom_nvidia-nim', 'mistralai/mistral-large-4-1t-a52b', {
     supported: true,
@@ -45,14 +51,28 @@ test('custom models only claim stages the endpoint reported', () => {
   assert.equal(reasoning.profileFromHint({ supported: true, levels: ['low', 'ultra', 'bogus'] }).levels.length, 2);
 });
 
+test('every adjustable latest model offers at least the standard ladder', () => {
+  assert.deepEqual(reasoning.profileFromHint({ supported: true }).levels, BASE);
+  for (const [provider, model] of [
+    ['openai', 'gpt-6.1'],
+    ['openai', 'gpt-6'],
+    ['openai', 'gpt-5.5'],
+    ['openai', 'gpt-5.1'],
+    ['anthropic', 'claude-opus-5'],
+    ['xai', 'grok-4.6'],
+    ['custom_upstage', 'solar-pro4'],
+  ]) {
+    const levels = reasoning.profileFor(provider, model).levels;
+    for (const stage of BASE) assert.ok(levels.includes(stage), `${model} is missing ${stage}`);
+  }
+});
+
 test('official models keep their own supported stages', () => {
   assert.deepEqual(reasoning.profileFor('groq', 'openai/gpt-oss-20b').levels, ['low', 'medium', 'high']);
-  assert.deepEqual(reasoning.profileFor('openai', 'gpt-5.1-codex').levels, [
-    'none', 'low', 'medium', 'high', 'xhigh',
-  ]);
-  assert.deepEqual(reasoning.profileFor('anthropic', 'claude-sonnet-5').levels, [
-    'low', 'medium', 'high', 'xhigh', 'max',
-  ]);
+  assert.deepEqual(reasoning.profileFor('openai', 'gpt-5.1-codex').levels, BASE);
+  assert.deepEqual(reasoning.profileFor('openai', 'gpt-5.5').levels, BASE);
+  assert.deepEqual(reasoning.profileFor('anthropic', 'claude-sonnet-5').levels, BASE);
+  assert.deepEqual(reasoning.profileFor('xai', 'grok-4.6').levels, BASE);
   assert.deepEqual(reasoning.profileFor('google', 'gemini-3.1-pro').levels, ['low', 'medium', 'high']);
   assert.deepEqual(reasoning.profileFor('google', 'gemini-3-pro').levels, ['low', 'high']);
 });
