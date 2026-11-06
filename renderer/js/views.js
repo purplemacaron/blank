@@ -2732,7 +2732,7 @@ Start writing, or ask the agent to draft it.
                 </div>
               </div>
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">Desktop pet</div><div class="setting-desc">One paper follows the AI in use, plus one per blank Team member while the team works. Hover to see which AI or team a paper belongs to. Click a paper to type an instruction; drag it anywhere, right-click for more. Turn it off to hide every pet.</div></div>
+                <div class="setting-copy"><div class="setting-label">blank memo</div><div class="setting-desc">A single paper follows the most recently used model. Its color comes from the provider. Click it to type an instruction, drag it anywhere, right-click for more. Turn it off to hide it.</div></div>
                 <div class="setting-control">${UI.switchHtml(config.pet?.enabled !== false, 'data-pet-toggle')}</div>
               </div>
               <div class="setting-row">
@@ -3259,7 +3259,7 @@ Start writing, or ask the agent to draft it.
         try {
           const updated = await API.config.update({ pet: { enabled: next } });
           applyConfig(updated);
-          UI.toast(next ? 'Desktop pets shown.' : 'Desktop pets hidden.', 'success');
+          UI.toast(next ? 'blank memo shown.' : 'blank memo hidden.', 'success');
         } catch (error) {
           petToggle.classList.toggle('on', !next);
           petToggle.setAttribute('aria-checked', String(!next));

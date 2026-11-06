@@ -91,20 +91,34 @@ function registerIpc({ mcp, getWindow }) {
 
   const petModels = () => {
     try {
-      const sessions = store.listSessions()
-        .slice()
-        .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-      const models = [];
-      for (const session of sessions) {
-        const id = String(session.model || '').trim();
-        if (!id || models.includes(id)) continue;
-        models.push(id);
-        if (models.length >= 6) break;
-      }
-      return models;
+      const model = String(configModule.loadConfig().defaultModel || '').trim();
+      return model ? [model] : [];
     } catch {
       return [];
     }
+  };
+
+  /** Resolve the display name and provider that color the blank memo. */
+  const describePetModel = (model, config = configModule.loadConfig()) => {
+    const id = String(model || '').trim();
+    if (!id) return { id: '', name: '', providerId: '', providerName: '' };
+    let found = null;
+    try {
+      found = catalog.findModel(id, config);
+      if (!found) {
+        const bare = id.includes('/') ? id.slice(id.indexOf('/') + 1) : id;
+        found = catalog.allModels(config).find(
+          (item) => item.fullId === id || item.id === id || item.id === bare,
+        ) || null;
+      }
+    } catch {}
+    const name = found?.name || (id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id);
+    return {
+      id,
+      name,
+      providerId: found?.providerId || '',
+      providerName: found?.providerName || '',
+    };
   };
 
   const pet = createPet({
@@ -145,33 +159,11 @@ function registerIpc({ mcp, getWindow }) {
       case 'tool:end':
         sendPet({ type: 'tool:end', ...common, name: payload.name });
         break;
-      case 'agent:start': {
-        const agent = payload.agent && typeof payload.agent === 'object' ? payload.agent : {};
-        if (agent.team) {
-          pet.sendTeam(
-            { id: agent.memberId, name: agent.name, teamName: 'blank Team', model: agent.model, runId: payload.runId },
-            { type: 'agent:start', ...common, team: true, name: agent.name, model: agent.model },
-            { ensure: true },
-          );
-        }
+      case 'agent:start':
         sendPet({ type: 'agent:start', ...common });
         break;
-      }
-      case 'agent:end': {
-        const agent = payload.agent && typeof payload.agent === 'object' ? payload.agent : {};
-        if (agent.team) {
-          pet.sendTeam(
-            { id: agent.memberId, name: agent.name, teamName: 'blank Team', model: agent.model, runId: payload.runId },
-            {
-              type: 'run:done',
-              ...common,
-              outcome: agent.status === 'error' ? { ok: false, error: true } : { ok: true },
-            },
-            { retire: 6500 },
-          );
-        }
+      case 'agent:end':
         break;
-      }
       case 'approval':
         sendPet({ type: 'approval', ...common, approvalId: payload.approvalId });
         break;
@@ -638,27 +630,10 @@ function registerIpc({ mcp, getWindow }) {
 
   ipcMainHandle('pet:init', async (event) => {
     const entry = fromPet(event);
-    if (!entry) throw new Error('Only a desktop pet can call this.');
+    if (!entry) throw new Error('Only a blank memo can call this.');
     const config = configModule.loadConfig();
     const theme = config.theme === 'dark' ? 'dark' : 'light';
-    const model = String(entry.model || '').trim();
-    let modelName = model;
-    let providerName = '';
-    if (model) {
-      try {
-        let found = catalog.findModel(model, config);
-        if (!found) {
-          const bare = model.includes('/') ? model.slice(model.indexOf('/') + 1) : model;
-          found = catalog.allModels(config).find(
-            (item) => item.fullId === model || item.id === model || item.id === bare,
-          ) || null;
-        }
-        if (found) {
-          modelName = found.name || model;
-          providerName = found.providerName || '';
-        }
-      } catch {}
-    }
+    const model = describePetModel(entry.model, config);
     return {
       language: config.language === 'en' ? 'en' : 'ko',
       theme,
@@ -666,29 +641,29 @@ function registerIpc({ mcp, getWindow }) {
       position: pet.position(entry.key),
       key: entry.key,
       kind: entry.kind,
-      model,
-      modelName,
-      providerName,
-      name: entry.name,
-      teamName: entry.teamName || '',
-      palette: petPalette(entry.model, theme),
+      model: model.id,
+      modelName: model.name,
+      providerName: model.providerName,
+      palette: petPalette(model.providerId || model.providerName || model.id, theme),
     };
   });
 
   ipcMainHandle('pet:palette', async (event, model, theme) => {
-    if (!fromPet(event)) throw new Error('Only a desktop pet can call this.');
-    return petPalette(String(model || '').slice(0, 200), theme === 'dark' ? 'dark' : 'light');
+    if (!fromPet(event)) throw new Error('Only a blank memo can call this.');
+    const config = configModule.loadConfig();
+    const info = describePetModel(String(model || '').slice(0, 200), config);
+    return petPalette(info.providerId || info.providerName || info.id, theme === 'dark' ? 'dark' : 'light');
   });
 
   ipcMainHandle('pet:focus', async (event, value) => {
     const entry = fromPet(event);
-    if (!entry) throw new Error('Only a desktop pet can call this.');
+    if (!entry) throw new Error('Only a blank memo can call this.');
     return pet.focus(entry.key, Boolean(value));
   });
 
   ipcMainHandle('pet:prompt', async (event, raw) => {
     const entry = fromPet(event);
-    if (!entry) throw new Error('Only a desktop pet can call this.');
+    if (!entry) throw new Error('Only a blank memo can call this.');
     const text = String(raw || '').replace(/\r/g, '').trim().slice(0, 4000);
     if (!text) throw new Error('Instruction is empty.');
     const config = configModule.loadConfig();
@@ -711,42 +686,42 @@ function registerIpc({ mcp, getWindow }) {
 
   ipcMainHandle('pet:position', async (event) => {
     const entry = fromPet(event);
-    if (!entry) throw new Error('Only a desktop pet can call this.');
+    if (!entry) throw new Error('Only a blank memo can call this.');
     return pet.position(entry.key);
   });
 
   ipcMainHandle('pet:move', async (event, point = {}) => {
     const entry = fromPet(event);
-    if (!entry) throw new Error('Only a desktop pet can call this.');
+    if (!entry) throw new Error('Only a blank memo can call this.');
     return pet.move(entry.key, point);
   });
 
   ipcMainHandle('pet:save', async (event, point = {}) => {
     const entry = fromPet(event);
-    if (!entry) throw new Error('Only a desktop pet can call this.');
+    if (!entry) throw new Error('Only a blank memo can call this.');
     return pet.save(entry.key, point);
   });
 
   ipcMainHandle('pet:reset', async (event) => {
     const entry = fromPet(event);
-    if (!entry) throw new Error('Only a desktop pet can call this.');
+    if (!entry) throw new Error('Only a blank memo can call this.');
     return pet.reset(entry.key);
   });
 
   ipcMainHandle('pet:interactive', async (event, value) => {
     const entry = fromPet(event);
-    if (!entry) throw new Error('Only a desktop pet can call this.');
+    if (!entry) throw new Error('Only a blank memo can call this.');
     pet.setInteractive(entry.key, Boolean(value));
     return true;
   });
 
   ipcMainHandle('pet:open', async (event) => {
-    if (!fromPet(event)) throw new Error('Only a desktop pet can call this.');
+    if (!fromPet(event)) throw new Error('Only a blank memo can call this.');
     return pet.openApp();
   });
 
   ipcMainHandle('pet:hide', async (event) => {
-    if (!fromPet(event)) throw new Error('Only a desktop pet can call this.');
+    if (!fromPet(event)) throw new Error('Only a blank memo can call this.');
     const config = configModule.loadConfig();
     config.pet = { ...(config.pet || {}), enabled: false };
     configModule.saveConfig(config);

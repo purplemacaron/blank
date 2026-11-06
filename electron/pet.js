@@ -1,10 +1,9 @@
 'use strict';
 
 /**
- * The blank desktop pets: one quiet paper for the AI currently in use, plus
- * one per blank Team member while the team works. Each pet mirrors the run
- * routed to it, passes clicks through outside the paper, and only takes focus
- * while its inline composer is open.
+ * blank memo: one quiet paper that follows the most recently used model. It
+ * mirrors the run routed to it, passes clicks through outside the paper, and
+ * only takes focus while its inline composer is open.
  */
 
 const path = require('path');
@@ -13,7 +12,6 @@ const { BrowserWindow, screen } = require('electron');
 const WIDTH = 216;
 const HEIGHT = 264;
 const MARGIN = 24;
-const TEAM_PREFIX = '__team__:';
 const DEFAULT_KEY = '__default__';
 
 function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
@@ -52,7 +50,7 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
     return DEFAULT_KEY;
   }
 
-  /** One paper for the AI in use, not one for every model ever seen. */
+  /** One paper for the default model; a run may switch it to that model. */
   function baseModel() {
     let models = [];
     try {
@@ -109,42 +107,20 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
     return clamp({ x: stored.x ?? defaultPosition().x, y: stored.y ?? defaultPosition().y }) || defaultPosition();
   }
 
-  /** Line additional papers up to the left of the primary paper. */
-  function slotPosition(index) {
-    const base = basePosition();
-    const area = primaryArea();
-    const step = WIDTH + 6;
-    const columns = Math.max(1, Math.floor((base.x - area.x) / step) + 1);
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    const point = { x: base.x - column * step, y: base.y - row * (HEIGHT + 4) };
-    return clamp(point) || base;
-  }
-
-  function slotFor(entry) {
-    if (entry.kind === 'model' && entry.order === 0) return basePosition();
-    return slotPosition(entry.order);
-  }
-
   function startPosition(entry) {
     const saved = petConfig().positions[entry.key];
     const stored = saved ? clamp(saved) : null;
-    if (stored) return stored;
-    return slotFor(entry);
+    return stored || basePosition();
   }
 
-  function createEntry({ key, kind, model, name, teamName, order }) {
+  function createEntry(key, model) {
     const entry = {
       key,
-      kind,
+      kind: 'model',
       model: String(model || ''),
-      name: String(name || ''),
-      teamName: String(teamName || ''),
-      order: Number.isFinite(order) ? order : 0,
       win: null,
       lastPosition: null,
       interactive: false,
-      retiring: null,
       runId: '',
     };
     entries.set(key, entry);
@@ -214,8 +190,6 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
   function destroyEntry(key) {
     const entry = entries.get(key);
     if (!entry) return;
-    clearTimeout(entry.retiring);
-    entry.retiring = null;
     entries.delete(key);
     const win = entry.win;
     entry.win = null;
@@ -238,19 +212,15 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       return;
     }
     const entry = ensureBase(baseModel());
-    for (const [key, item] of [...entries]) {
-      if (item.kind === 'model' && key !== entry.key) destroyEntry(key);
-    }
-    for (const item of entries.values()) {
-      if (item.kind === 'team') showEntry(item);
+    for (const key of [...entries.keys()]) {
+      if (key !== entry.key) destroyEntry(key);
     }
   }
 
   function ensureBase(model) {
     const id = String(model || '').trim();
     let entry = entries.get(DEFAULT_KEY);
-    if (!entry) entry = createEntry({ key: DEFAULT_KEY, kind: 'model', model: id, order: 0 });
-    entry.order = 0;
+    if (!entry) entry = createEntry(DEFAULT_KEY, id);
     entry.model = id;
     if (petConfig().enabled) showEntry(entry);
     return entry;
@@ -261,57 +231,6 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
     const entry = ensureBase(model || baseModel());
     if (model) entry.model = String(model);
     return entry.key;
-  }
-
-  function teamKey(member) {
-    const id = String(member?.id || member?.name || '').trim();
-    if (!id) return '';
-    return `${TEAM_PREFIX}${id.slice(0, 80)}`;
-  }
-
-  function ensureTeam(member = {}) {
-    if (disposed) return null;
-    const key = teamKey(member);
-    if (!key) return null;
-    const config = petConfig();
-    let entry = entries.get(key);
-    if (!entry) {
-      const teamCount = [...entries.values()].filter((item) => item.kind === 'team').length;
-      entry = createEntry({
-        key,
-        kind: 'team',
-        model: String(member.model || config.defaultModel || ''),
-        name: String(member.name || ''),
-        teamName: String(member.teamName || 'blank Team'),
-        order: Math.min(teamCount + 1, 7),
-      });
-    }
-    entry.model = String(member.model || config.defaultModel || '');
-    entry.name = String(member.name || '').slice(0, 60);
-    entry.teamName = String(member.teamName || entry.teamName || 'blank Team').slice(0, 60);
-    entry.runId = String(member.runId || entry.runId || '');
-    clearTimeout(entry.retiring);
-    entry.retiring = null;
-    if (config.enabled) showEntry(entry);
-    return key;
-  }
-
-  function retireTeam(key, delay = 6000) {
-    const entry = entries.get(key);
-    if (!entry || entry.kind !== 'team') return;
-    clearTimeout(entry.retiring);
-    entry.retiring = setTimeout(() => {
-      entry.retiring = null;
-      destroyEntry(key);
-    }, Math.max(500, Number(delay) || 6000));
-  }
-
-  function retireTeamsForRun(runId, delay = 5000) {
-    if (!runId) return;
-    for (const entry of entries.values()) {
-      if (entry.kind !== 'team' || entry.runId !== String(runId)) continue;
-      retireTeam(entry.key, delay);
-    }
   }
 
   function sendTo(key, payload) {
@@ -347,21 +266,7 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       else return false;
     }
     const sent = sendTo(key, payload);
-    if (payload.type === 'run:done' && payload.runId) {
-      runKeys.delete(payload.runId);
-      retireTeamsForRun(payload.runId);
-    }
-    return sent;
-  }
-
-  function sendTeam(member, payload, options = {}) {
-    if (disposed) return false;
-    const key = options.ensure ? ensureTeam(member) : teamKey(member);
-    if (!key) return false;
-    const entry = entries.get(key);
-    if (!entry) return false;
-    const sent = sendTo(key, payload);
-    if (options.retire) retireTeam(key, options.retireDelay);
+    if (payload.type === 'run:done' && payload.runId) runKeys.delete(payload.runId);
     return sent;
   }
 
@@ -372,7 +277,7 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
     const entry = entries.get(key);
     if (!entry || !entry.win || entry.win.isDestroyed()) return null;
     if (entry.win.webContents !== sender) return null;
-    return { key: entry.key, kind: entry.kind, model: entry.model, name: entry.name, teamName: entry.teamName };
+    return { key: entry.key, kind: entry.kind, model: entry.model, name: '', teamName: '' };
   }
 
   function currentPosition(key) {
@@ -414,7 +319,7 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
   function reset(key) {
     const entry = entries.get(key);
     if (!entry) return null;
-    const point = slotFor(entry);
+    const point = basePosition();
     const placed = move(key, point);
     if (placed && entry.kind === 'model' && typeof savePosition === 'function') {
       try { savePosition(entry.key, placed, entry.key === primaryKey()); } catch {}
@@ -469,7 +374,6 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       key: entry.key,
       kind: entry.kind,
       model: entry.model,
-      name: entry.name,
       visible: Boolean(entry.win && !entry.win.isDestroyed() && entry.win.isVisible()),
       position: currentPosition(entry.key),
     }));
@@ -480,8 +384,6 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
     ensureModel,
     send,
     sendTo,
-    sendTeam,
-    retireTeamsForRun,
     position: currentPosition,
     move,
     save,

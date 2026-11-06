@@ -13,6 +13,7 @@
 
   const COPY = {
     ko: {
+      name: 'blank memo',
       working: '작업 중이에요',
       reading: '파일을 살펴보는 중',
       editing: '파일을 고치는 중',
@@ -27,17 +28,17 @@
       error: '문제가 생겼어요',
       open: 'blank 열기',
       reset: '위치 초기화',
-      hide: '모든 펫 숨기기',
-      label: 'blank 데스크톱 펫. 클릭해서 지시를 입력하세요.',
+      hide: 'blank memo 숨기기',
+      label: '클릭해서 지시를 입력하세요.',
       compose: '지시를 입력…',
-      composeLabel: 'blank에게 보낼 지시',
+      composeLabel: 'blank memo에게 보낼 지시',
       send: '보내기',
       sent: '맡겨 두세요',
       failed: '보내지 못했어요',
       noModel: '모델을 먼저 연결해 주세요',
-      teamMember: '팀원',
     },
     en: {
+      name: 'blank memo',
       working: 'Working',
       reading: 'Reading files',
       editing: 'Editing a file',
@@ -52,15 +53,14 @@
       error: 'Something went wrong',
       open: 'Open blank',
       reset: 'Reset position',
-      hide: 'Hide all pets',
-      label: 'blank desktop pet. Click to type an instruction.',
+      hide: 'Hide blank memo',
+      label: 'Click to type an instruction.',
       compose: 'Type an instruction…',
-      composeLabel: 'Instruction for blank',
+      composeLabel: 'Instruction for blank memo',
       send: 'Send',
       sent: 'On it',
       failed: 'Could not send that',
       noModel: 'Connect a model first',
-      teamMember: 'Team member',
     },
   };
 
@@ -95,36 +95,6 @@
     agent: 'team',
   };
 
-  const TOOL_ACTIVITY = {
-    read_file: 'file',
-    list_dir: 'file',
-    project_map: 'file',
-    git_diff: 'file',
-    read_paper: 'file',
-    list_papers: 'file',
-    read_skill: 'file',
-    list_media: 'file',
-    deliver_file: 'file',
-    write_file: 'keyboard',
-    edit_file: 'keyboard',
-    run_command: 'keyboard',
-    ssh_run: 'keyboard',
-    run_checks: 'keyboard',
-    glob: 'search',
-    grep: 'search',
-    web_search: 'search',
-    web_fetch: 'search',
-    memory_search: 'search',
-    computer_screenshot: 'camera',
-    computer_use: 'camera',
-    generate_media: 'media',
-    edit_media: 'media',
-    delegate: 'team',
-    delegate_many: 'team',
-    team_delegate: 'team',
-    agent: 'team',
-  };
-
   let lang = 'ko';
   let theme = 'light';
   let state = 'idle';
@@ -138,8 +108,7 @@
   let drag = null;
   let defaultModel = '';
   let currentModel = '';
-  let petName = '';
-  let identity = { kind: 'model', model: '', modelName: '', providerName: '', name: '', teamName: '' };
+  let identity = { model: '', modelName: '', providerName: '' };
 
   const copy = () => COPY[lang];
 
@@ -166,14 +135,9 @@
     colorFor(currentModel);
   }
 
-  function setActivity(next) {
-    body.dataset.activity = next || '';
-  }
-
   function setState(next, text) {
     state = next;
     body.dataset.state = next;
-    if (next !== 'working') setActivity('');
     bubbleText.textContent = text || '';
     clearTimeout(idleTimer);
     if (next === 'done') {
@@ -195,16 +159,9 @@
   }
 
   function identityText() {
-    const team = identity.kind === 'team';
     const modelName = identity.modelName || identity.model;
-    if (team) {
-      const main = identity.name || copy().teamMember;
-      const teamName = identity.teamName || 'blank Team';
-      return { main, sub: modelName ? `${teamName} · ${modelName}` : teamName };
-    }
-    const main = modelName || petName || 'blank';
-    const sub = identity.providerName || (identity.model ? '' : copy().noModel);
-    return { main, sub };
+    const sub = [identity.providerName, modelName].filter(Boolean).join(' · ');
+    return { main: copy().name, sub: sub || copy().noModel };
   }
 
   function renderIdentity() {
@@ -214,6 +171,7 @@
     petIdSub.hidden = !who.sub;
     const parts = [who.main, who.sub, copy().label].filter(Boolean);
     pet.setAttribute('aria-label', parts.join(' · '));
+    document.title = copy().name;
   }
 
   function applyCopy() {
@@ -240,14 +198,10 @@
       lang = info.language === 'en' ? 'en' : 'ko';
       theme = info.theme === 'dark' ? 'dark' : 'light';
       defaultModel = info.model || '';
-      petName = info.name || '';
       identity = {
-        kind: info.kind === 'team' ? 'team' : 'model',
         model: String(info.model || ''),
         modelName: String(info.modelName || info.model || ''),
         providerName: String(info.providerName || ''),
-        name: String(info.name || ''),
-        teamName: String(info.teamName || ''),
       };
       if (!activeRuns.size) currentModel = defaultModel;
       body.dataset.theme = theme;
@@ -271,12 +225,10 @@
         break;
       case 'tool:start':
         if (approvalPending) break;
-        setActivity(TOOL_ACTIVITY[event.name] || '');
         setState('working', toolCopy(event.name));
         break;
       case 'tool:end':
         if (approvalPending) break;
-        setActivity('');
         if (activeRuns.size) setState('working', copy().working);
         break;
       case 'agent:start':
@@ -285,7 +237,6 @@
           currentModel = event.model;
           colorFor(currentModel);
         }
-        setActivity('team');
         setState('working', event.name ? `${event.name} · ${copy().working}` : copy().team);
         break;
       case 'approval':

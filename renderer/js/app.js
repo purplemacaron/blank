@@ -198,7 +198,7 @@
     const enabled = state.config?.pet?.enabled !== false;
     button.classList.toggle('is-off', !enabled);
     button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-    button.title = enabled ? 'Hide desktop pets' : 'Show desktop pets';
+    button.title = enabled ? 'Hide blank memo' : 'Show blank memo';
     button.setAttribute('aria-label', button.title);
   }
 
@@ -210,7 +210,7 @@
       const config = await API.config.update({ pet: { enabled: next } });
       if (config) setConfig(config);
       updatePetToggle();
-      UI.toast(next ? 'Desktop pets shown.' : 'Desktop pets hidden.', 'success');
+      UI.toast(next ? 'blank memo shown.' : 'blank memo hidden.', 'success');
     } catch (error) {
       UI.toast(error.message, 'error');
     } finally {
