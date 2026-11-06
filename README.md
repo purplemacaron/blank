@@ -1,8 +1,26 @@
-# blank
+<p align="center">
+  <a href="https://purplemacaron.github.io/blank/">
+    <img src="docs/media/readme-hero.png" alt="blank — a quiet, local-first agent harness for your desktop" width="100%">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/purplemacaron/blank/releases/latest"><img src="https://img.shields.io/github/v/release/purplemacaron/blank?style=flat-square&color=2f6bff&label=release" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/purplemacaron/blank?style=flat-square&color=2f6bff" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-2f6bff?style=flat-square" alt="Windows, macOS and Linux">
+  <img src="https://img.shields.io/badge/Electron-45-2f6bff?style=flat-square&logo=electron&logoColor=white" alt="Electron 45">
+  <a href="https://purplemacaron.github.io/blank/"><img src="https://img.shields.io/badge/site-purplemacaron.github.io-2f6bff?style=flat-square" alt="Download site"></a>
+</p>
+
+<p align="center">
+  <a href="https://purplemacaron.github.io/blank/"><strong>Download blank</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/purplemacaron/blank/releases">Releases</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/purplemacaron/blank">Source</a>
+</p>
 
 A quiet, local-first agent harness for your desktop. White by default, blue accent, keyboard friendly, and built to span chat, code, tools, media, Paper, and remote control — not just one of them.
-
-[Download blank](https://purplemacaron.github.io/blank/) · [Source](https://github.com/purplemacaron/blank) · [Releases](https://github.com/purplemacaron/blank/releases)
 
 ```
 npm install
@@ -10,6 +28,12 @@ npm start
 ```
 
 The first launch walks through connecting a provider and choosing a model. Nothing is sent until you add a key or start a local runtime.
+
+<p align="center">
+  <a href="docs/media/readme-chat.png"><img src="docs/media/readme-chat.png" alt="blank chat with a live plan rail, tool runs and delivered file cards" width="100%"></a>
+  <br>
+  <sub>Chat, live plans, tool runs and file cards — in English or Korean.</sub>
+</p>
 
 ## What it does
 
@@ -146,3 +170,7 @@ scripts/         site QA harness
 - Local providers (Ollama, LM Studio) need their runtime running; local providers otherwise appear ready because they require no key.
 - Computer use needs OS-level input access. Review the approval matrix before granting `computer_use` broad permissions.
 - Remote control is off by default. Keep LAN access off on untrusted networks and stop remote control when you are done.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
