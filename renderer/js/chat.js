@@ -705,6 +705,39 @@
     return (Chat.generatedMedia && Chat.generatedMedia[key]) || [];
   }
 
+  function sessionGeneratedMedia() {
+    const seen = new Set();
+    const out = [];
+    for (const message of Chat.session?.messages || []) {
+      if (message.role !== 'tool' || !Array.isArray(message.meta?.media)) continue;
+      if (message.name !== 'generate_media' && message.name !== 'edit_media') continue;
+      for (const asset of message.meta.media) {
+        if (!asset || !asset.id || seen.has(asset.id)) continue;
+        seen.add(asset.id);
+        out.push(asset);
+      }
+    }
+    return out;
+  }
+
+  /* Studio jobs live in memory; agent tool results persist in session messages. */
+  function allGeneratedMedia() {
+    const seen = new Set();
+    const out = [];
+    for (const asset of [...sessionGeneratedMedia(), ...generatedMediaFor()]) {
+      if (!asset || !asset.id || seen.has(asset.id)) continue;
+      seen.add(asset.id);
+      out.push(asset);
+    }
+    return out;
+  }
+
+  function hasMediaCard(id) {
+    const thread = document.querySelector('.chat-thread');
+    if (!thread || !id) return false;
+    return [...thread.querySelectorAll('[data-media-asset]')].some((node) => node.dataset.mediaAsset === id);
+  }
+
   function toggleMediaPanel() {
     const panel = document.getElementById('chat-media-panel');
     if (!panel) return;
@@ -897,7 +930,7 @@
     if (!list.some((item) => item.id === asset.id)) list.push(asset);
     const thread = ensureThread();
     if (!thread) return;
-    thread.insertAdjacentHTML('beforeend', generatedMediaMarkup(asset));
+    if (!hasMediaCard(asset.id)) thread.insertAdjacentHTML('beforeend', generatedMediaMarkup(asset));
     U.scrollToBottom(document.getElementById('chat-scroll'), true);
   };
 
@@ -984,7 +1017,7 @@
   function renderThread(options = {}) {
     const scroll = document.getElementById('chat-scroll');
     if (!scroll) return;
-    if ((!Chat.session || !(Chat.session.messages || []).length) && !generatedMediaFor().length) {
+    if ((!Chat.session || !(Chat.session.messages || []).length) && !allGeneratedMedia().length) {
       showEmpty();
       return;
     }
@@ -1010,7 +1043,7 @@
         thread.appendChild(buildAssistantMessage(message, results));
       }
     }
-    for (const asset of generatedMediaFor()) thread.insertAdjacentHTML('beforeend', generatedMediaMarkup(asset));
+    for (const asset of allGeneratedMedia()) thread.insertAdjacentHTML('beforeend', generatedMediaMarkup(asset));
     if (Chat.running) {
       const status = document.createElement('div');
       status.className = 'notice-inline';
@@ -1209,6 +1242,15 @@
     if ((payload.name === 'write_file' || payload.name === 'edit_file' || payload.name === 'deliver_file') && payload.meta?.path) {
       Chat.session.files = [...new Set([...(Chat.session.files || []), payload.meta.path])];
       App.refreshRail();
+    }
+    if ((payload.name === 'generate_media' || payload.name === 'edit_media') && Array.isArray(payload.meta?.media) && payload.meta.media.length) {
+      const thread = ensureThread();
+      if (thread) {
+        for (const asset of payload.meta.media) {
+          if (!asset?.id || hasMediaCard(asset.id)) continue;
+          thread.insertAdjacentHTML('beforeend', generatedMediaMarkup(asset));
+        }
+      }
     }
     if (payload.isError && payload.name !== 'run_command') {
       UI.toast(payload.content ? clip(payload.content, 180) : 'A tool failed.', 'warn', { title: `${toolLabel(payload.name)} failed` });

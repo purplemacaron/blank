@@ -432,7 +432,7 @@ const TOOL_SPECS = [
   {
     name: 'generate_media',
     label: 'Generate media',
-    description: 'Generate an image, video, music track or 3D model through an engine connected in Studio. Requires a saved API key (OpenAI Images, Google Imagen/Veo, Higgsfield, Stability, ElevenLabs, Replicate, fal), a ComfyUI endpoint, or the system voice for speech. Call list_media_engines first to see what is ready. When engine is omitted the first available engine for that kind is used. Jobs are saved to the media library and can optionally be copied into the workspace.',
+    description: 'Generate an image, video, music track or 3D model through an engine connected in Engines. Requires a saved API key (OpenAI Images, Google Imagen/Veo, Higgsfield, Stability, ElevenLabs, Replicate, fal), a ComfyUI endpoint, or the system voice for speech. Call list_media_engines first to see what is ready. When engine is omitted the first available engine for that kind is used. The finished asset is shown in the chat as a media card, saved to the media library, and can optionally be copied into the workspace.',
     parameters: {
       type: 'object',
       properties: {

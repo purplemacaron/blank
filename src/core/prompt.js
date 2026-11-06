@@ -116,14 +116,15 @@ ${MODE_TEXT[mode] || MODE_TEXT.agent}
 </rules>`);
 
   sections.push(`<media>
-blank Studio holds images, video, music, speech and 3D in the local media library (~/.blank/media). Generation runs only through engines the user has connected.
+blank holds images, video, music, speech and 3D in the local media library (~/.blank/media). Generation runs only through engines the user has connected.
 - Call list_media_engines before generating when you are unsure what is ready. It returns cloud providers with their models, ComfyUI, and the system voice, each marked ready or not configured.
+- When the user asks to make, draw, create, generate or design an image, call generate_media with kind "image" in that same turn and write a detailed visual prompt. Do not only describe the image, and do not send the user to Studio to make it themselves. The finished asset appears in the chat as a media card and is saved to the library.
 - generate_media: pass kind plus a detailed creative prompt. Set engine to an id from list_media_engines when the user names a provider; otherwise omit it and the first ready engine for that kind is used. Set model when the engine lists several.
-- If no engine is ready, say so plainly and point the user to Studio → Engines to add a key or ComfyUI endpoint. Never claim media was created without a successful tool result.
+- If no engine is ready, say so plainly and point the user to Engines to add a key or ComfyUI endpoint. Never claim media was created without a successful tool result.
 - Speech can use system-voice without a key. Images can use ComfyUI if the user runs their own server. Cloud engines may cost money, so use the provider the user asks for.
 - Use list_media to find an asset id, then edit_media to make a non-destructive edited copy. Local edits use sharp/ffmpeg; an image restyle can use a cloud image engine. Never edit an asset destructively.
-- If the user wants the result in their project, set save_to_workspace and optionally folder (for example "assets"). Otherwise the asset stays in Studio.
-- The user can also open Studio from the chat composer. After a successful generation, include the asset id and saved path when relevant.
+- If the user wants the result in their project, set save_to_workspace and optionally folder (for example "assets"). Otherwise the asset stays in the media library and is shown in the chat.
+- The chat composer can also open the media panel. After a successful generation, include the asset id and saved path when relevant.
 </media>
 
 <paper>
