@@ -13,9 +13,10 @@ const { runAgent, compactSession } = require('../src/core/agent');
 const { MCPManager } = require('../src/core/mcp');
 const learn = require('../src/core/learn');
 const { summarizeArgs } = require('../src/core/tools');
+const { MODES, parseArgs, pickContinueSession, resolveSession, completeLine, composePrompt } = require('../src/cli/support');
 
 const pkg = require('../package.json');
-const colorEnabled = process.stdout.isTTY && !process.env.NO_COLOR;
+const colorEnabled = process.stdout.isTTY && !process.env.NO_COLOR && !process.argv.includes('--no-color');
 const style = (code) => (text) => (colorEnabled ? `\x1b[${code}m${text}\x1b[0m` : String(text));
 const blue = style('38;2;47;107;255');
 const bold = style('1');
@@ -130,6 +131,24 @@ function printMcp(config) {
   blankLine();
 }
 
+function printSessionChoices(activeId) {
+  const sessions = store.listSessions().slice(0, 15);
+  blankLine();
+  if (!sessions.length) {
+    log(dim('  No sessions yet.'));
+    blankLine();
+    return;
+  }
+  for (const [index, item] of sessions.entries()) {
+    const active = item.id === activeId ? blue('●') : dim('○');
+    const folder = item.workspace ? ` · ${path.basename(item.workspace)}` : '';
+    log(`  ${String(index + 1).padStart(2)} ${active} ${item.title}  ${dim(`${item.id} · ${item.model}${folder}`)}`);
+  }
+  blankLine();
+  log(dim('  /resume <n|id> to switch · /rename <title> to name this session'));
+  blankLine();
+}
+
 function helpText() {
   const rows = [
     ['/help', 'Show this help'],
@@ -137,6 +156,8 @@ function helpText() {
     ['/mode [agent|coding|design|plan|ask]', 'Switch mode'],
     ['/new', 'Start a new session'],
     ['/sessions', 'List recent sessions'],
+    ['/resume [n|id]', 'Switch to a session'],
+    ['/rename <title>', 'Rename the current session'],
     ['/compact', 'Summarize earlier context'],
     ['/memory [query]', 'List or search memory'],
     ['/memory add <text>', 'Save a memory'],
@@ -155,7 +176,7 @@ function helpText() {
   blankLine();
   for (const [cmd, text] of rows) log(`  ${blue(cmd.padEnd(26))} ${dim(text)}`);
   blankLine();
-  log(dim('  Enter to send · Ctrl+C to stop a run or exit · approvals ask first by default'));
+  log(dim('  Enter to send · Tab completes commands · Ctrl+C stops a run or exits · approvals ask first by default'));
   blankLine();
 }
 
@@ -257,9 +278,10 @@ async function sendMessage(session, text, { config, autoYes, verbose, onDone }) 
   };
 
   const requestApproval = (request) => askApproval(request, config, autoYes);
+  let outcome = null;
 
   try {
-    const outcome = await runAgent({
+    outcome = await runAgent({
       session,
       config,
       emit,
@@ -274,6 +296,7 @@ async function sendMessage(session, text, { config, autoYes, verbose, onDone }) 
       log(dim('  stopped'));
     }
   } catch (err) {
+    outcome = { ok: false, error: err.message };
     blankLine();
     log(`  ${red('✕')} ${err.message}`);
   } finally {
@@ -281,10 +304,12 @@ async function sendMessage(session, text, { config, autoYes, verbose, onDone }) 
     store.saveSession(session);
     onDone?.();
   }
+  return outcome;
 }
 
 async function handleCommand(input, context) {
-  const { session, config, workspace } = context;
+  const { session, workspace } = context;
+  let { config } = context;
   const [command, ...rest] = input.trim().split(/\s+/);
   const argText = input.trim().slice(command.length).trim();
   switch (command) {
@@ -309,7 +334,7 @@ async function handleCommand(input, context) {
     }
     case '/mode': {
       if (!argText) { log(`  mode is ${bold(session.mode)}`); return; }
-      if (!['agent', 'coding', 'design', 'plan', 'ask'].includes(argText)) { log(red('  mode must be agent, coding, design, plan, or ask')); return; }
+      if (!MODES.includes(argText)) { log(red(`  mode must be ${MODES.join(', ')}`)); return; }
       session.mode = argText;
       store.saveSession(session);
       log(`  ${blue('●')} mode → ${bold(argText)}`);
@@ -319,13 +344,31 @@ async function handleCommand(input, context) {
       context.newSession();
       return;
     case '/sessions': {
-      const sessions = store.listSessions().slice(0, 15);
-      blankLine();
-      for (const item of sessions) {
-        const active = item.id === session.id ? blue('●') : dim('○');
-        log(`  ${active} ${item.title}  ${dim(`${item.id} · ${item.model}`)}`);
-      }
-      blankLine();
+      printSessionChoices(session.id);
+      return;
+    }
+    case '/resume': {
+      if (!argText) { printSessionChoices(session.id); return; }
+      if (activeController) { log(dim('  a run is in progress — Ctrl+C to stop')); return; }
+      const sessions = store.listSessions();
+      const result = resolveSession(sessions, argText);
+      if (result.error === 'empty') { log(dim('  Usage: /resume <n|id> · /sessions lists them')); return; }
+      if (result.error === 'range') { log(red('  No session at that number. Use /sessions.')); return; }
+      if (result.error === 'ambiguous') { log(red('  That id prefix matches more than one session. Use the full id.')); return; }
+      if (result.error === 'missing') { log(red(`  No session matches: ${argText}`)); return; }
+      if (result.session.id === session.id) { log(dim('  already in that session')); return; }
+      const target = store.getSession(result.session.id);
+      if (!target) { log(red('  Could not load that session.')); return; }
+      context.resumeSession(target);
+      return;
+    }
+    case '/rename': {
+      if (!argText) { log(`  title is ${bold(session.title)}  ${dim('· /rename <title>')}`); return; }
+      const title = argText.replace(/\s+/g, ' ').trim().slice(0, 80);
+      session.title = title;
+      session.titleSource = 'manual';
+      store.saveSession(session);
+      log(`  ${blue('●')} renamed → ${bold(title)}`);
       return;
     }
     case '/compact': {
@@ -460,27 +503,40 @@ function createCliSession(workspace, config, mode) {
   });
 }
 
-async function startRepl({ config, workspace, mode, autoYes, verbose, sessionId }) {
+async function startRepl({ config, workspace, mode, model, autoYes, verbose, sessionId }) {
   let session = sessionId ? store.getSession(sessionId) : null;
+  if (sessionId && !session) throw new Error(`Session not found: ${sessionId}`);
   if (!session) session = createCliSession(workspace, config, mode);
+  if (model) session.model = model;
   let currentConfig = config;
-  let currentWorkspace = workspace;
+  let currentWorkspace = session.workspace || workspace;
 
   rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    terminal: true,
+    terminal: Boolean(process.stdin.isTTY),
     historySize: 200,
+    completer: (line) => {
+      try {
+        const models = line.startsWith('/model ') && !line.slice(7).includes(' ')
+          ? catalog.allModels(currentConfig).map((item) => item.fullId)
+          : [];
+        return completeLine(line, { models });
+      } catch {
+        return [[], line];
+      }
+    },
   });
 
   banner(currentConfig, currentWorkspace, session);
+  if (sessionId) log(`  ${dim('resumed')} ${bold(session.title)}  ${dim(session.id)}`);
 
   let shuttingDown = false;
   const shutdown = () => {
     if (shuttingDown) return;
     shuttingDown = true;
     activeController?.abort();
-    if (session && !session.messages.length) store.deleteSession(session.id);
+    if (session && Array.isArray(session.messages) && session.messages.length === 0) store.deleteSession(session.id);
     mcp.closeAll().finally(() => {
       closed = true;
       rl.close();
@@ -490,10 +546,19 @@ async function startRepl({ config, workspace, mode, autoYes, verbose, sessionId 
   };
 
   const newSession = () => {
-    if (session && !session.messages.length) store.deleteSession(session.id);
+    if (session && Array.isArray(session.messages) && session.messages.length === 0) store.deleteSession(session.id);
     session = createCliSession(currentWorkspace, currentConfig, session?.mode || mode);
     log(`  ${blue('●')} new session ${dim(session.id)}`);
     banner(currentConfig, currentWorkspace, session);
+  };
+
+  const resumeSession = (target) => {
+    if (!target) return;
+    if (session && Array.isArray(session.messages) && session.messages.length === 0) store.deleteSession(session.id);
+    session = target;
+    currentWorkspace = session.workspace || currentWorkspace;
+    banner(currentConfig, currentWorkspace, session);
+    log(`  ${dim('resumed')} ${bold(session.title)}  ${dim(session.id)}`);
   };
 
   rl.on('SIGINT', () => {
@@ -536,6 +601,7 @@ async function startRepl({ config, workspace, mode, autoYes, verbose, sessionId 
         workspace: currentWorkspace,
         shutdown,
         newSession,
+        resumeSession,
       });
       continue;
     }
@@ -550,21 +616,12 @@ async function startRepl({ config, workspace, mode, autoYes, verbose, sessionId 
   if (!closed) shutdown();
 }
 
-function parseArgs(argv) {
-  const args = { _: [], flags: {} };
-  for (let i = 0; i < argv.length; i += 1) {
-    const value = argv[i];
-    if (value === '--model' || value === '-m') args.flags.model = argv[++i];
-    else if (value === '--mode') args.flags.mode = argv[++i];
-    else if (value === '--workspace' || value === '-w') args.flags.workspace = argv[++i];
-    else if (value === '--session') args.flags.session = argv[++i];
-    else if (value === '--yes' || value === '-y') args.flags.yes = true;
-    else if (value === '--verbose' || value === '-v') args.flags.verbose = true;
-    else if (value === '--help' || value === '-h') args.flags.help = true;
-    else if (value === '--version' || value === '-V') args.flags.version = true;
-    else args._.push(value);
-  }
-  return args;
+async function readStdinText() {
+  if (process.stdin.isTTY) return '';
+  process.stdin.setEncoding('utf8');
+  let text = '';
+  for await (const chunk of process.stdin) text += chunk;
+  return text;
 }
 
 async function oneShot({ prompt, config, workspace, mode, model, autoYes, verbose }) {
@@ -584,12 +641,14 @@ async function oneShot({ prompt, config, workspace, mode, model, autoYes, verbos
     rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   }
   try {
-    await sendMessage(session, prompt, {
+    const outcome = await sendMessage(session, prompt, {
       config,
       autoYes,
       verbose,
       onDone: () => {},
     });
+    log(dim(`  session ${session.id} · resume with blank --session ${session.id}`));
+    if (outcome && !outcome.ok && !outcome.stopped) process.exitCode = 1;
   } finally {
     if (rl) { rl.close(); rl = null; }
     await mcp.closeAll();
@@ -616,7 +675,9 @@ async function main() {
 
   ${dim('Usage')}
     blank                          Interactive session
+    blank -c                       Continue the latest session here
     blank run "<prompt>"           One-shot task
+    blank run -                    Prompt from stdin
     blank models                   List models
     blank sessions                 List recent sessions
     blank memory [list|add|search] Inspect memory
@@ -631,7 +692,8 @@ async function main() {
     -m, --model <id>       Override the model
         --mode <mode>      agent | coding | design | plan | ask
     -w, --workspace <dir>  Workspace for this run
-        --session <id>     Resume a session
+    -c, --continue         Resume the most recent session
+        --session <id>     Resume a specific session
     -y, --yes              Auto-approve tools (use carefully)
     -v, --verbose          Show tool output and reasoning
         --no-color         Disable ANSI colors
@@ -644,30 +706,43 @@ async function main() {
   if (config.workspace && fs.existsSync(config.workspace) === false) config.workspace = workspace;
 
   if (command === 'chat') {
+    let model = '';
     if (args.flags.model) {
       const found = findModelByQuery(args.flags.model, config);
-      if (found) { config.defaultModel = found.fullId; }
+      if (!found) throw new Error(`Unknown model: ${args.flags.model}`);
+      model = found.fullId;
+      config.defaultModel = model;
     }
-    const mode = ['agent', 'coding', 'design', 'plan', 'ask'].includes(args.flags.mode) ? args.flags.mode : (args.flags.model ? undefined : 'agent');
+    let sessionId = args.flags.session;
+    if (!sessionId && args.flags.continue) {
+      const picked = pickContinueSession(store.listSessions(), workspace);
+      if (picked) sessionId = picked.id;
+      else log(dim('  no sessions to continue — starting a new one'));
+    }
+    const mode = MODES.includes(args.flags.mode) ? args.flags.mode : (args.flags.model ? undefined : 'agent');
     await startRepl({
       config,
       workspace,
       mode,
+      model,
       autoYes: Boolean(args.flags.yes),
       verbose: Boolean(args.flags.verbose),
-      sessionId: args.flags.session,
+      sessionId,
     });
     return;
   }
 
   if (command === 'run') {
-    const prompt = args._.slice(1).join(' ').trim();
-    if (!prompt) throw new Error('Usage: blank run "<prompt>"');
+    let prompt = args._.slice(1).join(' ').trim();
+    if (!prompt || prompt === '-') {
+      if (!process.stdin.isTTY) prompt = composePrompt(prompt, await readStdinText());
+    }
+    if (!prompt) throw new Error('Usage: blank run "<prompt>" (or pipe a prompt on stdin)');
     await oneShot({
       prompt,
       config,
       workspace,
-      mode: ['agent', 'coding', 'design', 'plan', 'ask'].includes(args.flags.mode) ? args.flags.mode : 'agent',
+      mode: MODES.includes(args.flags.mode) ? args.flags.mode : 'agent',
       model: args.flags.model,
       autoYes: Boolean(args.flags.yes),
       verbose: Boolean(args.flags.verbose),

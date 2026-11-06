@@ -65,6 +65,19 @@ Press send during a run and the message is queued in the composer tray. The queu
 | `npm test` | Run the Node test suite |
 | `npm run dist` | Build an installer with electron-builder (NSIS, DMG, AppImage) |
 
+### Terminal
+
+The terminal client shares providers, configuration and sessions with the desktop app.
+
+```sh
+node bin/blank.js                 # interactive session
+node bin/blank.js -c              # continue the latest session in this folder
+node bin/blank.js run "..."       # one-shot task
+git diff | node bin/blank.js run -  # prompt from stdin
+```
+
+Inside a session, `/sessions` lists recent conversations, `/resume <n|id>` switches to one, and `/rename <title>` names the current session. Tab completes commands, `/model` and `/mode`. Sessions started in the app resume in the terminal and the other way around.
+
 ## Install site (GitHub Pages)
 
 The live site is [purplemacaron.github.io/blank](https://purplemacaron.github.io/blank/). `docs/` is a dependency-free static download page. At runtime it reads the latest GitHub Release, detects the visitor's OS and architecture, and points the primary button at the matching installer. Without a configured repository it shows a neutral "downloads not configured" state.
@@ -117,6 +130,7 @@ renderer/        Chromium UI (classic scripts, no build step)
   js/            app shell, chat, views, components, API bridge
 src/core/        agent loop, providers, tools, config, MCP, paper,
                  schedules, OAuth, search, plugins, remote, media engines
+src/cli/         terminal argument, session and completion helpers
 bin/             terminal client
 examples/        MCP echo server used in the MCP examples
 assets/          app icon assets

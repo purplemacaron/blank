@@ -53,6 +53,7 @@ node scripts/cdp-shot.js qa/shot.png
 - `src/core/providers.js` / `catalog.js` — real provider transports and live model discovery.
 - `src/core/media/` — media engines, local processing, system-voice speech.
 - `src/core/paper.js` — versioned local Paper library.
+- `src/cli/support.js` — terminal argument parsing, session lookup and tab completion. The REPL itself lives in `bin/blank.js`.
 - `renderer/index.html`, `renderer/js/*.js`, `renderer/styles.css` — the app UI. Scripts are classic, ordered `<script>` files; do not add ESM or a build step.
 - `renderer/js/i18n.js` — runtime Korean translation dictionaries and patterns.
 - `docs/` — the static site served by GitHub Pages. `docs/config.js` is filled by the Pages workflow.
