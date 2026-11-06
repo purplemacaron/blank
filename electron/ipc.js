@@ -653,6 +653,7 @@ function registerIpc({ mcp, getWindow }) {
     const next = configModule.patchConfig(clean);
     if (clean.theme) nativeTheme.themeSource = clean.theme;
     if (clean.pet) pet.sync();
+    if (Object.prototype.hasOwnProperty.call(clean, 'defaultModel')) pet.refreshDefault();
     if (clean.updates) updater.configure({ auto: next.updates?.auto !== false });
     broadcast({ type: 'config:updated' });
     return configWithRuntime(next);
@@ -1070,6 +1071,7 @@ function registerIpc({ mcp, getWindow }) {
     if (config.discoveredModels) delete config.discoveredModels[providerId];
     if (String(config.defaultModel).startsWith(`${providerId}/`)) config.defaultModel = '';
     configModule.saveConfig(config);
+    pet.refreshDefault();
     broadcast({ type: 'config:updated' });
     return configWithRuntime(config);
   });

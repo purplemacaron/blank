@@ -1320,7 +1320,7 @@
   function onboardingModelChoices() {
     const preferred = [
       ['anthropic', 'claude-sonnet-4-5', 'Long-horizon agent work', 'Strong tool use and code reasoning.'],
-      ['openai', 'gpt-5.1', 'Frontier reasoning', 'Broad capability across coding and analysis.'],
+      ['openai', '', 'Frontier reasoning', 'Broad capability across coding and analysis.'],
       ['google', 'gemini-2.5-pro', 'Huge context window', 'Useful for large repositories and documents.'],
       ['ollama', '', 'Runs on this machine', 'Point at a local model when Ollama is installed.'],
     ];

@@ -275,6 +275,16 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
     return entry.key;
   }
 
+  /** Put the base memo back on the configured default when no run is active. */
+  function refreshDefault() {
+    if (disposed || runKeys.size) return false;
+    const entry = entries.get(DEFAULT_KEY);
+    if (!entry || entry.kind !== 'model') return false;
+    entry.order = 0;
+    entry.model = baseModel();
+    return true;
+  }
+
   function teamKey(member) {
     const id = String(member?.id || member?.name || '').trim();
     if (!id) return '';
@@ -363,12 +373,12 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       else if (petConfig().enabled) key = ensureModel('');
       else return false;
     }
-    const sent = sendTo(key, payload);
     if (payload.type === 'run:done' && payload.runId) {
       runKeys.delete(payload.runId);
       retireTeamsForRun(payload.runId);
+      refreshDefault();
     }
-    return sent;
+    return sendTo(key, payload);
   }
 
   function sendTeam(member, payload, options = {}) {
@@ -506,6 +516,7 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
   return {
     sync,
     ensureModel,
+    refreshDefault,
     send,
     sendTo,
     sendTeam,

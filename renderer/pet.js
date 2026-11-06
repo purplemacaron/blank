@@ -284,6 +284,7 @@
           setState('idle');
           resetToDefaultModel();
         } else setState('error', copy().error);
+        refreshConfig();
         break;
       }
       case 'config:updated':
