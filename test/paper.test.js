@@ -86,6 +86,63 @@ test('export names use the right extension', () => {
   assert.equal(paper.exportFileName({ title: 'Guard', kind: 'code', language: 'py' }), 'Guard.py');
 });
 
+test('version history keeps prior content and restores it as a new version', () => {
+  const created = paper.createPaper({ title: 'History', kind: 'markdown', content: '# One' });
+  assert.equal(paper.listVersions(created.id).versions.length, 1);
+  paper.updatePaper(created.id, { content: '# Two' });
+  paper.updatePaper(created.id, { content: '# Three' });
+
+  const versions = paper.listVersions(created.id).versions;
+  assert.deepEqual(versions.map((item) => item.version), [3, 2, 1]);
+  assert.equal(versions[0].current, true);
+  assert.equal(versions[1].current, false);
+  assert.match(versions[1].excerpt, /Two/);
+
+  const old = paper.getVersionContent(created.id, 1);
+  assert.equal(old.version, 1);
+  assert.match(old.content, /One/);
+
+  const restored = paper.restoreVersion(created.id, 1);
+  assert.equal(restored.id, created.id);
+  assert.equal(restored.version, 4);
+  assert.match(paper.getPaperContent(created.id).content, /One/);
+
+  const after = paper.listVersions(created.id).versions;
+  assert.equal(after[0].version, 4);
+  assert.ok(after.some((item) => item.version === 3 && item.current === false));
+  assert.match(paper.getVersionContent(created.id, 3).content, /Three/);
+  assert.equal(restored.versionCount, 4);
+});
+
+test('version snapshots are capped at MAX_VERSIONS', () => {
+  const created = paper.createPaper({ title: 'Many edits', kind: 'html', content: '<p>v1</p>' });
+  for (let version = 2; version <= 26; version += 1) {
+    paper.updatePaper(created.id, { content: `<p>v${version}</p>` });
+  }
+  const versions = paper.listVersions(created.id).versions;
+  assert.equal(versions.length, paper.MAX_VERSIONS + 1);
+  assert.equal(versions[0].version, 26);
+  assert.equal(versions[1].version, 25);
+  assert.equal(versions[versions.length - 1].version, 6);
+  assert.throws(() => paper.getVersionContent(created.id, 1), /no longer/i);
+});
+
+test('saving unchanged content does not create a version', () => {
+  const created = paper.createPaper({ title: 'Same', kind: 'markdown', content: '# Same' });
+  const updated = paper.updatePaper(created.id, { content: '# Same' });
+  assert.equal(updated.version, 1);
+  assert.equal(paper.listVersions(created.id).versions.length, 1);
+  assert.equal(paper.getPaperContent(created.id).content, '# Same');
+});
+
+test('restoring a missing version fails without changing content', () => {
+  const created = paper.createPaper({ title: 'Safe restore', kind: 'markdown', content: '# Stay' });
+  paper.updatePaper(created.id, { content: '# New' });
+  assert.throws(() => paper.restoreVersion(created.id, 9), /no longer/i);
+  assert.match(paper.getPaperContent(created.id).content, /New/);
+  assert.equal(paper.getPaper(created.id).version, 2);
+});
+
 test('remove deletes the paper folder', () => {
   const created = paper.createPaper({ title: 'Remove me', kind: 'markdown', content: '# Remove me' });
   const dir = path.join(home, 'papers', created.id);

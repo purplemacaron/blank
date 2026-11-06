@@ -2451,6 +2451,10 @@ ${commands}
   ipcMainHandle('papers:list', async (_event, options = {}) => paperStore.listPapers(options));
   ipcMainHandle('papers:count', async () => paperStore.paperCount());
   ipcMainHandle('papers:get', async (_event, id) => paperStore.getPaperContent(String(id || '')));
+  ipcMainHandle('papers:versions', async (_event, id) => paperStore.listVersions(String(id || '')));
+  ipcMainHandle('papers:version', async (_event, input = {}) => (
+    paperStore.getVersionContent(String(input.id || ''), Number(input.version))
+  ));
 
   ipcMainHandle('papers:create', async (_event, input = {}) => {
     const paper = paperStore.createPaper({
@@ -2474,6 +2478,12 @@ ${commands}
       language: input.language,
     });
     broadcast({ type: 'paper:changed', action: 'updated', paper });
+    return paper;
+  });
+
+  ipcMainHandle('papers:restore', async (_event, input = {}) => {
+    const paper = paperStore.restoreVersion(String(input.id || ''), Number(input.version));
+    broadcast({ type: 'paper:changed', action: 'restored', paper });
     return paper;
   });
 

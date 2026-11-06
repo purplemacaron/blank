@@ -5769,6 +5769,33 @@ Start writing, or ask the agent to draft it.
 
   function paperKind(kind) { return PAPER_KIND[kind] || PAPER_KIND.html; }
 
+  function paperWords(content) {
+    const text = String(content || '')
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/[#>*_`~[\]()!-]+/g, ' ');
+    const words = text.match(/[A-Za-z0-9가-힣\u3040-\u30ff\u4e00-\u9fff]+/g) || [];
+    return words.length;
+  }
+
+  function paperLineCount(content) {
+    const text = String(content || '');
+    if (!text) return 0;
+    return text.split('\n').length;
+  }
+
+  function markdownHeadings(content) {
+    const headings = [];
+    let fenced = false;
+    String(content || '').split(/\r?\n/).forEach((line) => {
+      if (/^\s*(```|~~~)/.test(line)) { fenced = !fenced; return; }
+      if (fenced) return;
+      const match = line.match(/^(#{1,4})\s+(.+?)\s*#*$/);
+      if (match) headings.push({ level: match[1].length, text: match[2].replace(/[*_`~]/g, '') });
+    });
+    return headings;
+  }
+
   function paperTotal() {
     const counts = vstate.paper.counts || {};
     return (counts.html || 0) + (counts.markdown || 0) + (counts.svg || 0) + (counts.code || 0);
@@ -5986,6 +6013,8 @@ Start writing, or ask the agent to draft it.
     const startKind = paper?.kind || options.kind || 'html';
     let currentKind = startKind;
     let busy = false;
+    let previewOn = startKind === 'markdown' && window.innerWidth >= 900;
+    let previewTimer = 0;
 
     const body = document.createElement('div');
     body.className = 'paper-compose';
@@ -5996,10 +6025,24 @@ Start writing, or ask the agent to draft it.
           ? `<div class="paper-compose-kind"><span class="field-label">Kind</span><span class="paper-compose-kindchip">${icon(paperKind(currentKind).icon, 12)} ${esc(paperKind(currentKind).label)}</span></div>`
           : `<label class="field paper-compose-kind"><span class="field-label">Kind</span><select class="field-select" id="paper-kind">${Object.entries(PAPER_KIND).map(([id, meta]) => `<option value="${id}" ${currentKind === id ? 'selected' : ''}>${meta.label}</option>`).join('')}</select></label>`}
       </div>
-      <label class="field paper-compose-body">
-        <span class="field-label">Content <small>${paper ? 'changes raise the version' : 'under 2 MB'}</small></span>
-        <textarea class="field-textarea paper-content-input" id="paper-content" spellcheck="false" placeholder="${U.attr(PAPER_PLACEHOLDERS[currentKind])}">${esc(content)}</textarea>
-      </label>
+      <div class="field paper-compose-body">
+        <label class="field-label" for="paper-content">Content <small>${paper ? 'changes raise the version' : 'under 2 MB'}</small></label>
+        <div class="paper-md-tools" data-md-tools ${currentKind === 'markdown' ? '' : 'hidden'}>
+          <button class="paper-md-tool" type="button" data-md-action="heading" title="Heading" aria-label="Heading">${icon('type', 13)}</button>
+          <button class="paper-md-tool" type="button" data-md-action="bold" title="Bold" aria-label="Bold">${icon('bold', 13)}</button>
+          <button class="paper-md-tool" type="button" data-md-action="italic" title="Italic" aria-label="Italic">${icon('italic', 13)}</button>
+          <button class="paper-md-tool" type="button" data-md-action="list" title="Bulleted list" aria-label="Bulleted list">${icon('list', 13)}</button>
+          <button class="paper-md-tool" type="button" data-md-action="quote" title="Quote" aria-label="Quote">${icon('quote', 13)}</button>
+          <button class="paper-md-tool" type="button" data-md-action="code" title="Inline code" aria-label="Inline code">${icon('code', 13)}</button>
+          <button class="paper-md-tool" type="button" data-md-action="link" title="Link" aria-label="Link">${icon('link', 13)}</button>
+          <span class="paper-md-tools-spacer"></span>
+          <button class="paper-md-preview ${previewOn ? 'active' : ''}" type="button" data-md-preview aria-pressed="${previewOn ? 'true' : 'false'}">${icon('eye', 13)}<span>Preview</span></button>
+        </div>
+        <div class="paper-compose-workspace ${previewOn && currentKind === 'markdown' ? 'split' : ''}" data-md-workspace>
+          <textarea class="field-textarea paper-content-input" id="paper-content" spellcheck="false" placeholder="${U.attr(PAPER_PLACEHOLDERS[currentKind])}">${esc(content)}</textarea>
+          <div class="paper-compose-preview md" data-md-preview-pane ${previewOn && currentKind === 'markdown' ? '' : 'hidden'}></div>
+        </div>
+      </div>
       ${paper?.kind === 'code' ? `<label class="field paper-compose-language"><span class="field-label">Language <small>optional</small></span><input class="field-input" id="paper-language" type="text" maxlength="24" placeholder="js, py, sh…" value="${U.attr(paper.language || '')}" spellcheck="false" /></label>` : paper ? '' : `<label class="field paper-compose-language" data-paper-language ${currentKind === 'code' ? '' : 'hidden'}><span class="field-label">Language <small>optional</small></span><input class="field-input" id="paper-language" type="text" maxlength="24" placeholder="js, py, sh…" spellcheck="false" /></label>`}
     `;
 
@@ -6024,6 +6067,134 @@ Start writing, or ask the agent to draft it.
     const languageInput = () => body.querySelector('#paper-language');
     const kindSelect = body.querySelector('#paper-kind');
     const saveButton = footer.querySelector('[data-paper-save]');
+    const tools = body.querySelector('[data-md-tools]');
+    const workspace = body.querySelector('[data-md-workspace]');
+    const previewPane = body.querySelector('[data-md-preview-pane]');
+    const previewButton = body.querySelector('[data-md-preview]');
+
+    function renderPreview() {
+      if (!previewPane || currentKind !== 'markdown') return;
+      previewPane.innerHTML = MD.render(contentInput.value);
+    }
+
+    function schedulePreview() {
+      if (!previewOn || currentKind !== 'markdown') return;
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(renderPreview, 80);
+    }
+
+    function syncEditorMode() {
+      const markdown = currentKind === 'markdown';
+      if (!markdown) previewOn = false;
+      if (tools) tools.hidden = !markdown;
+      if (previewButton) {
+        previewButton.classList.toggle('active', markdown && previewOn);
+        previewButton.setAttribute('aria-pressed', markdown && previewOn ? 'true' : 'false');
+      }
+      if (workspace) workspace.classList.toggle('split', markdown && previewOn);
+      if (previewPane) previewPane.hidden = !(markdown && previewOn);
+      if (markdown && previewOn) renderPreview();
+    }
+
+    function wrapSelection(before, after, placeholder) {
+      const start = contentInput.selectionStart;
+      const end = contentInput.selectionEnd;
+      const value = contentInput.value;
+      const picked = value.slice(start, end) || placeholder;
+      contentInput.value = `${value.slice(0, start)}${before}${picked}${after}${value.slice(end)}`;
+      const from = start + before.length;
+      contentInput.setSelectionRange(from, from + picked.length);
+      contentInput.focus();
+      schedulePreview();
+    }
+
+    function toggleLinePrefix(prefix) {
+      const start = contentInput.selectionStart;
+      const end = contentInput.selectionEnd;
+      const value = contentInput.value;
+      const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+      let lineEnd = value.indexOf('\n', end);
+      if (lineEnd < 0) lineEnd = value.length;
+      const lines = value.slice(lineStart, lineEnd).split('\n');
+      if (lines.length === 1 && !lines[0].trim()) {
+        contentInput.value = `${value.slice(0, lineStart)}${prefix}${value.slice(lineEnd)}`;
+        contentInput.setSelectionRange(lineStart + prefix.length, lineStart + prefix.length);
+        contentInput.focus();
+        schedulePreview();
+        return;
+      }
+      const active = lines.every((line) => !line.trim() || line.startsWith(prefix));
+      const next = lines.map((line) => {
+        if (!line.trim()) return line;
+        return active ? line.slice(prefix.length) : `${prefix}${line}`;
+      }).join('\n');
+      contentInput.value = `${value.slice(0, lineStart)}${next}${value.slice(lineEnd)}`;
+      contentInput.setSelectionRange(lineStart, lineStart + next.length);
+      contentInput.focus();
+      schedulePreview();
+    }
+
+    function toggleHeading() {
+      const start = contentInput.selectionStart;
+      const end = contentInput.selectionEnd;
+      const value = contentInput.value;
+      const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+      let lineEnd = value.indexOf('\n', end);
+      if (lineEnd < 0) lineEnd = value.length;
+      const lines = value.slice(lineStart, lineEnd).split('\n');
+      if (lines.length === 1 && !lines[0].trim()) {
+        contentInput.value = `${value.slice(0, lineStart)}## ${value.slice(lineEnd)}`;
+        contentInput.setSelectionRange(lineStart + 3, lineStart + 3);
+        contentInput.focus();
+        schedulePreview();
+        return;
+      }
+      const active = lines.every((line) => !line.trim() || /^#{1,4}\s+/.test(line));
+      const next = lines.map((line) => {
+        if (!line.trim()) return line;
+        const bare = line.replace(/^#{1,4}\s+/, '');
+        return active ? bare : `## ${bare}`;
+      }).join('\n');
+      contentInput.value = `${value.slice(0, lineStart)}${next}${value.slice(lineEnd)}`;
+      contentInput.setSelectionRange(lineStart, lineStart + next.length);
+      contentInput.focus();
+      schedulePreview();
+    }
+
+    function insertLink() {
+      const start = contentInput.selectionStart;
+      const end = contentInput.selectionEnd;
+      const value = contentInput.value;
+      const label = value.slice(start, end) || 'Link text';
+      const url = 'https://';
+      const insertion = `[${label}](${url})`;
+      contentInput.value = `${value.slice(0, start)}${insertion}${value.slice(end)}`;
+      const urlStart = start + label.length + 3;
+      contentInput.setSelectionRange(urlStart, urlStart + url.length);
+      contentInput.focus();
+      schedulePreview();
+    }
+
+    tools?.addEventListener('click', (event) => {
+      if (event.target.closest('[data-md-preview]')) {
+        previewOn = !previewOn;
+        syncEditorMode();
+        contentInput.focus();
+        return;
+      }
+      const button = event.target.closest('[data-md-action]');
+      if (!button) return;
+      const action = button.dataset.mdAction;
+      if (action === 'heading') toggleHeading();
+      else if (action === 'bold') wrapSelection('**', '**', 'bold text');
+      else if (action === 'italic') wrapSelection('*', '*', 'italic text');
+      else if (action === 'list') toggleLinePrefix('- ');
+      else if (action === 'quote') toggleLinePrefix('> ');
+      else if (action === 'code') wrapSelection('`', '`', 'code');
+      else if (action === 'link') insertLink();
+    });
+
+    contentInput.addEventListener('input', schedulePreview);
 
     kindSelect?.addEventListener('change', () => {
       const next = kindSelect.value;
@@ -6036,7 +6207,11 @@ Start writing, or ask the agent to draft it.
       contentInput.placeholder = PAPER_PLACEHOLDERS[next];
       const languageField = body.querySelector('[data-paper-language]');
       if (languageField) languageField.hidden = next !== 'code';
+      if (next === 'markdown' && previewOn === false && window.innerWidth >= 900) previewOn = true;
+      syncEditorMode();
     });
+
+    syncEditorMode();
 
     async function save() {
       if (busy) return;
@@ -6075,6 +6250,22 @@ Start writing, or ask the agent to draft it.
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
         event.preventDefault();
         save();
+        return;
+      }
+      if (currentKind !== 'markdown') return;
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        const start = contentInput.selectionStart;
+        contentInput.setRangeText('  ', start, contentInput.selectionEnd, 'end');
+        schedulePreview();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'b') {
+        event.preventDefault();
+        wrapSelection('**', '**', 'bold text');
+      } else if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'i') {
+        event.preventDefault();
+        wrapSelection('*', '*', 'italic text');
       }
     });
     setTimeout(() => { titleInput.focus(); }, 60);
@@ -6094,6 +6285,7 @@ Start writing, or ask the agent to draft it.
     if (!paper) { UI.toast('That paper is no longer in the library.', 'warn'); return; }
     let tab = 'preview';
     let device = 'desktop';
+    let outlineOpen = true;
 
     const body = document.createElement('div');
     body.className = 'paper-viewer';
@@ -6101,11 +6293,15 @@ Start writing, or ask the agent to draft it.
     function metaLabel() { return `${paperKind(paper.kind).label} · v${paper.version}`; }
 
     function stageMarkup() {
+      const hasOutline = paper.kind === 'markdown' && markdownHeadings(content).length > 1;
+      const words = paper.kind === 'markdown' ? paperWords(content) : 0;
+      const lines = paper.kind === 'code' ? paperLineCount(content) : 0;
       return `<div class="paper-viewer-bar">
         <div class="paper-tabs" role="tablist">
           <button class="paper-tab ${tab === 'preview' ? 'active' : ''}" type="button" role="tab" data-paper-tab="preview">${icon('eye', 12)} Preview</button>
           <button class="paper-tab ${tab === 'code' ? 'active' : ''}" type="button" role="tab" data-paper-tab="code">${icon('code', 12)} Code</button>
         </div>
+        ${hasOutline && tab === 'preview' ? `<button class="paper-outline-toggle ${outlineOpen ? 'active' : ''}" type="button" data-paper-outline aria-pressed="${outlineOpen ? 'true' : 'false'}" title="Contents">${icon('list', 12)} Contents</button>` : ''}
         <div class="paper-devices" ${paper.kind === 'html' && tab === 'preview' ? '' : 'hidden'}>
           <button class="paper-device ${device === 'desktop' ? 'active' : ''}" type="button" data-paper-device="desktop" title="Desktop">${icon('monitor', 13)}</button>
           <button class="paper-device ${device === 'tablet' ? 'active' : ''}" type="button" data-paper-device="tablet" title="Tablet">${icon('tablet', 13)}</button>
@@ -6114,6 +6310,7 @@ Start writing, or ask the agent to draft it.
         <span class="paper-bar-spacer"></span>
         <div class="paper-viewer-actions">
           <button class="mini-icon ${paper.favorite ? 'fav-on' : ''}" type="button" data-paper-action="favorite" title="${paper.favorite ? 'Remove from favorites' : 'Add to favorites'}">${icon('heart', 13)}</button>
+          <button class="mini-icon" type="button" data-paper-action="history" title="Version history">${icon('history', 13)}</button>
           <button class="mini-icon" type="button" data-paper-action="copy" title="Copy content">${icon('copy', 13)}</button>
           <button class="mini-icon" type="button" data-paper-action="export" title="Export">${icon('download', 13)}</button>
           <button class="mini-icon" type="button" data-paper-action="reveal" title="Show file">${icon('folder-open', 13)}</button>
@@ -6125,6 +6322,8 @@ Start writing, or ask the agent to draft it.
       <div class="paper-stage" data-paper-stage data-kind="${U.attr(paper.kind)}" data-device="${paper.kind === 'html' ? device : 'fluid'}"></div>
       <div class="paper-viewer-foot">
         <span>${esc(paperKind(paper.kind).label)}</span><span class="sep"></span><span>v${paper.version}</span><span class="sep"></span><span>${U.fmtBytes(paper.bytes)}</span>
+        ${paper.kind === 'markdown' ? `<span class="sep"></span><span>${words} words</span><span class="sep"></span><span>${Math.max(1, Math.ceil(words / 220))} min read</span>` : ''}
+        ${paper.kind === 'code' ? `<span class="sep"></span><span>${lines} lines</span>` : ''}
         <span class="paper-foot-note">${esc(paper.source === 'agent' ? 'Made by the agent' : 'Made by you')}</span>
       </div>`;
     }
@@ -6137,7 +6336,23 @@ Start writing, or ask the agent to draft it.
         return;
       }
       if (paper.kind === 'markdown') {
-        stage.innerHTML = `<article class="paper-doc md">${MD.render(content)}</article>`;
+        stage.innerHTML = `<div class="paper-doc-layout">
+          ${outlineOpen ? '<aside class="paper-outline" data-paper-outline-rail></aside>' : ''}
+          <article class="paper-doc md">${MD.render(content)}</article>
+        </div>`;
+        const rail = stage.querySelector('[data-paper-outline-rail]');
+        const article = stage.querySelector('.paper-doc');
+        if (rail && article) {
+          const headings = [...article.querySelectorAll('h3, h4, h5, h6')];
+          if (headings.length > 1) {
+            headings.forEach((heading, index) => { heading.id = `paper-heading-${index + 1}`; });
+            rail.innerHTML = `<div class="paper-outline-title">Contents</div>${headings.map((heading, index) => (
+              `<button class="paper-outline-link depth-${Number(heading.tagName.slice(1)) - 3}" type="button" data-outline-target="paper-heading-${index + 1}">${esc(heading.textContent)}</button>`
+            )).join('')}`;
+          } else {
+            rail.remove();
+          }
+        }
         return;
       }
       const frame = document.createElement('iframe');
@@ -6172,11 +6387,88 @@ Start writing, or ask the agent to draft it.
       if (descNode) descNode.textContent = metaLabel();
     }
 
+    async function openHistory() {
+      let data;
+      try {
+        data = await API.papers.versions(paper.id);
+      } catch (error) {
+        UI.toast(error.message || 'Could not load version history.', 'error');
+        return;
+      }
+      const versions = Array.isArray(data?.versions) ? data.versions : [];
+      const list = document.createElement('div');
+      list.className = 'paper-history';
+      list.innerHTML = versions.map((version) => `<article class="paper-history-row ${version.current ? 'current' : ''}">
+        <div class="paper-history-head">
+          <span class="paper-history-version">v${version.version}</span>
+          ${version.current ? '<span class="paper-history-current">Current</span>' : ''}
+          <span class="paper-history-time">${esc(U.relativeTime(version.savedAt))} · ${esc(U.fmtBytes(version.bytes))}</span>
+        </div>
+        <p class="paper-history-excerpt">${esc(version.excerpt || 'No preview text')}</p>
+        ${version.current ? '' : `<button class="btn btn-secondary btn-xs" type="button" data-paper-restore="${version.version}">Restore</button>`}
+      </article>`).join('') + (versions.length <= 1
+        ? '<p class="paper-history-note">Edits will appear here after you save a change.</p>'
+        : '');
+      const historyHandle = UI.modal({
+        title: 'Version history',
+        description: 'Saved content versions for this paper.',
+        body: list,
+        size: 'wide',
+        className: 'paper-history-modal',
+      });
+      list.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-paper-restore]');
+        if (!button) return;
+        const version = Number(button.dataset.paperRestore);
+        try {
+          const snapshot = await API.papers.version(paper.id, version);
+          if (String(snapshot?.content ?? '') === String(content)) {
+            UI.toast('This version matches the current content.', 'info');
+            return;
+          }
+        } catch { /* the restore call below reports the real error */ }
+        const confirmed = await UI.confirm({
+          title: `Restore version ${version}?`,
+          message: `Version ${version} will replace the current content.`,
+          detail: 'The current content is saved to version history. Only the content changes. The title and description stay as they are.',
+          confirmLabel: 'Restore',
+        });
+        if (!confirmed) return;
+        button.disabled = true;
+        try {
+          const updated = await API.papers.restore(paper.id, version);
+          const fresh = await API.papers.get(paper.id);
+          paper = { ...paper, ...updated };
+          content = String(fresh?.content || '');
+          updateHead();
+          paintViewer();
+          await refreshPapers();
+          historyHandle.close();
+          UI.toast(`Restored version ${version}.`, 'success');
+        } catch (error) {
+          button.disabled = false;
+          UI.toast(error.message || 'Could not restore this version.', 'error');
+        }
+      });
+    }
+
     body.addEventListener('click', async (event) => {
       const tabButton = event.target.closest('[data-paper-tab]');
       if (tabButton) {
         tab = tabButton.dataset.paperTab === 'code' ? 'code' : 'preview';
         paintViewer();
+        return;
+      }
+      if (event.target.closest('[data-paper-outline]')) {
+        outlineOpen = !outlineOpen;
+        paintViewer();
+        return;
+      }
+      const outlineLink = event.target.closest('[data-outline-target]');
+      if (outlineLink) {
+        const heading = body.querySelector(`#${outlineLink.dataset.outlineTarget}`);
+        const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        if (heading) heading.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
         return;
       }
       const deviceButton = event.target.closest('[data-paper-device]');
@@ -6197,6 +6489,10 @@ Start writing, or ask the agent to draft it.
           action.title = paper.favorite ? 'Remove from favorites' : 'Add to favorites';
           refreshPapers();
         } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      if (name === 'history') {
+        await openHistory();
         return;
       }
       if (name === 'copy') {

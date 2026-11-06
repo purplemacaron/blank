@@ -33,6 +33,7 @@ const MAX_TITLE = 120;
 const MAX_DESCRIPTION = 280;
 const MAX_LANGUAGE = 24;
 const MAX_PAPERS = 400;
+const MAX_VERSIONS = 20;
 
 function papersRoot() {
   return path.join(appPaths().root, 'papers');
@@ -148,6 +149,11 @@ function normalizeKind(kind) {
   return value;
 }
 
+function keptHistory(meta) {
+  if (!meta || !Array.isArray(meta.history)) return [];
+  return meta.history.filter((entry) => entry && entry.file && Number(entry.version));
+}
+
 function publicPaper(meta) {
   if (!meta) return null;
   const metaKind = KIND_META[meta.kind] || KIND_META.html;
@@ -163,6 +169,7 @@ function publicPaper(meta) {
     sessionId: meta.sessionId || '',
     favorite: Boolean(meta.favorite),
     version: Number(meta.version) || 1,
+    versionCount: keptHistory(meta).length + 1,
     bytes: Number(meta.bytes) || 0,
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
@@ -170,6 +177,33 @@ function publicPaper(meta) {
       ? `blank-paper://view/${encodeURIComponent(meta.id)}?v=${Number(meta.version) || 1}`
       : '',
   };
+}
+
+/* Keep the copy that is about to be replaced. Snapshots carry the version
+   number and timestamp they were saved with, so history is readable even
+   after many edits. The current content file stays the source of truth. */
+function snapshotCurrent(meta) {
+  const source = contentPath(meta);
+  if (!fs.existsSync(source)) return;
+  const directory = path.join(paperDir(meta.id), 'versions');
+  fs.mkdirSync(directory, { recursive: true });
+  const version = Number(meta.version) || 1;
+  const name = `v${version}${path.extname(source)}`;
+  fs.copyFileSync(source, path.join(directory, name));
+  const history = keptHistory(meta).filter((entry) => Number(entry.version) !== version);
+  history.push({
+    version,
+    savedAt: meta.updatedAt || new Date().toISOString(),
+    bytes: Number(meta.bytes) || 0,
+    excerpt: meta.excerpt || '',
+    file: name,
+  });
+  history.sort((a, b) => b.version - a.version);
+  while (history.length > MAX_VERSIONS) {
+    const dropped = history.pop();
+    try { fs.unlinkSync(path.join(directory, dropped.file)); } catch { /* already gone */ }
+  }
+  meta.history = history;
 }
 
 function listPapers(options = {}) {
@@ -232,6 +266,66 @@ function getPaperContent(id) {
   }
 }
 
+function publicVersion(entry, current) {
+  return {
+    version: Number(entry.version) || 1,
+    savedAt: entry.savedAt || '',
+    bytes: Number(entry.bytes) || 0,
+    excerpt: entry.excerpt || '',
+    current: Boolean(current),
+  };
+}
+
+function listVersions(id) {
+  const meta = readMeta(String(id || ''));
+  if (!meta) throw new Error('Paper not found.');
+  const current = publicVersion({
+    version: meta.version,
+    savedAt: meta.updatedAt,
+    bytes: meta.bytes,
+    excerpt: meta.excerpt,
+  }, true);
+  const history = keptHistory(meta)
+    .filter((entry) => Number(entry.version) !== Number(meta.version))
+    .map((entry) => publicVersion(entry, false));
+  return {
+    paper: publicPaper(meta),
+    versions: [current, ...history].sort((a, b) => b.version - a.version),
+  };
+}
+
+function versionFile(meta, version) {
+  const entry = keptHistory(meta).find((item) => Number(item.version) === Number(version));
+  if (!entry) throw new Error('That version is no longer kept.');
+  const file = path.join(paperDir(meta.id), 'versions', entry.file);
+  if (!fs.existsSync(file)) throw new Error('That version is no longer on disk.');
+  return file;
+}
+
+function getVersionContent(id, version) {
+  const meta = readMeta(String(id || ''));
+  if (!meta) throw new Error('Paper not found.');
+  const wanted = Number(version) || 0;
+  if (wanted === Number(meta.version)) return getPaperContent(meta.id);
+  const content = fs.readFileSync(versionFile(meta, wanted), 'utf8');
+  return {
+    paper: publicPaper(meta),
+    version: wanted,
+    content,
+  };
+}
+
+/* Restoring writes the old content forward as a new version, so the version
+   that was current is still reachable from history. */
+function restoreVersion(id, version) {
+  const meta = readMeta(String(id || ''));
+  if (!meta) throw new Error('Paper not found.');
+  const wanted = Number(version) || 0;
+  if (wanted === Number(meta.version)) return publicPaper(meta);
+  const content = fs.readFileSync(versionFile(meta, wanted), 'utf8');
+  return updatePaper(meta.id, { content });
+}
+
 function createPaper({ title = '', kind = 'html', content = '', language = '', description = '', source = 'agent', sessionId = '' } = {}) {
   ensurePapers();
   const nextKind = normalizeKind(kind);
@@ -265,11 +359,15 @@ function updatePaper(id, patch = {}) {
   let contentChanged = false;
   if (patch.content !== undefined) {
     const body = cleanContent(patch.content);
-    atomicWrite(contentPath(meta), body);
+    const previous = fs.existsSync(contentPath(meta)) ? fs.readFileSync(contentPath(meta), 'utf8') : null;
+    if (body !== previous) {
+      snapshotCurrent(meta);
+      atomicWrite(contentPath(meta), body);
+      meta.version = (Number(meta.version) || 1) + 1;
+      contentChanged = true;
+    }
     meta.bytes = Buffer.byteLength(body, 'utf8');
     meta.excerpt = excerptOf(body);
-    meta.version = (Number(meta.version) || 1) + 1;
-    contentChanged = true;
     if (!patch.title && !meta.title) meta.title = deriveTitle(body, meta.kind);
   }
   if (typeof patch.title === 'string' && patch.title.trim()) meta.title = cleanTitle(patch.title);
@@ -350,6 +448,7 @@ module.exports = {
   KINDS,
   KIND_META,
   MAX_CONTENT,
+  MAX_VERSIONS,
   papersRoot,
   ensurePapers,
   validId,
@@ -359,6 +458,9 @@ module.exports = {
   listPapers,
   getPaper,
   getPaperContent,
+  listVersions,
+  getVersionContent,
+  restoreVersion,
   createPaper,
   updatePaper,
   toggleFavorite,
