@@ -196,7 +196,7 @@
     /* ------------------------------------------------------ language, team, ssh */
     'Interface language': '인터페이스 언어',
     'Interface font': '인터페이스 글꼴',
-    'A single paper follows the most recently used model. Its color comes from the provider. Click it to type an instruction, drag it anywhere, right-click for more. Turn it off to hide it.': '최근 사용한 모델 하나만 따라가는 종이 메모입니다. 색은 제공자마다 다릅니다. 클릭해 지시를 입력하고 어디든 끌어다 놓으세요. 오른쪽 클릭하면 더 많은 메뉴가 열립니다. 끄면 사라집니다.',
+    'One paper follows the most recently used model. While blank Team works, each member gets its own paper. Colors come from the provider. Click a paper to type an instruction, drag it anywhere, right-click for more. Turn it off to hide every paper.': '최근 사용한 모델 하나를 따라가는 종이 메모입니다. blank 팀이 작업하는 동안에는 팀원마다 종이 메모가 하나씩 생깁니다. 색은 제공자마다 다릅니다. 클릭해 지시를 입력하고 어디든 끌어다 놓으세요. 오른쪽 클릭하면 더 많은 메뉴가 열립니다. 끄면 모든 메모가 사라집니다.',
     'blank memo shown.': 'blank memo를 표시합니다.',
     'blank memo hidden.': 'blank memo를 숨겼습니다.',
     'Hide blank memo': 'blank memo 숨기기',

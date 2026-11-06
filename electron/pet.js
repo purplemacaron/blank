@@ -1,9 +1,10 @@
 'use strict';
 
 /**
- * blank memo: one quiet paper that follows the most recently used model. It
- * mirrors the run routed to it, passes clicks through outside the paper, and
- * only takes focus while its inline composer is open.
+ * blank memo: one quiet paper that follows the most recently used model, plus
+ * one paper per blank Team member while the team works. Each pet mirrors the
+ * run routed to it, passes clicks through outside the paper, and only takes
+ * focus while its inline composer is open.
  */
 
 const path = require('path');
@@ -12,6 +13,7 @@ const { BrowserWindow, screen } = require('electron');
 const WIDTH = 216;
 const HEIGHT = 264;
 const MARGIN = 24;
+const TEAM_PREFIX = '__team__:';
 const DEFAULT_KEY = '__default__';
 
 function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
@@ -35,10 +37,16 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
         positions[key] = { x: Math.round(x), y: Math.round(y) };
       }
     }
+    const savedX = pet.x === null || pet.x === undefined || pet.x === ''
+      ? null
+      : (Number.isFinite(Number(pet.x)) ? Math.round(Number(pet.x)) : null);
+    const savedY = pet.y === null || pet.y === undefined || pet.y === ''
+      ? null
+      : (Number.isFinite(Number(pet.y)) ? Math.round(Number(pet.y)) : null);
     return {
       enabled: pet.enabled !== false,
-      x: Number.isFinite(Number(pet.x)) ? Math.round(Number(pet.x)) : null,
-      y: Number.isFinite(Number(pet.y)) ? Math.round(Number(pet.y)) : null,
+      x: savedX,
+      y: savedY,
       positions,
       language: config.language === 'en' ? 'en' : 'ko',
       theme: config.theme === 'dark' ? 'dark' : 'light',
@@ -107,20 +115,44 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
     return clamp({ x: stored.x ?? defaultPosition().x, y: stored.y ?? defaultPosition().y }) || defaultPosition();
   }
 
+  /** Line additional papers up to the left of the primary paper. */
+  function slotPosition(index) {
+    const base = basePosition();
+    const area = primaryArea();
+    const step = WIDTH + 6;
+    const columns = Math.max(1, Math.floor((base.x - area.x) / step) + 1);
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const point = { x: base.x - column * step, y: base.y - row * (HEIGHT + 4) };
+    return clamp(point) || base;
+  }
+
+  function slotFor(entry) {
+    if (entry.kind === 'model' && entry.order === 0) return basePosition();
+    return slotPosition(entry.order);
+  }
+
   function startPosition(entry) {
     const saved = petConfig().positions[entry.key];
     const stored = saved ? clamp(saved) : null;
-    return stored || basePosition();
+    if (stored) return stored;
+    return slotFor(entry);
   }
 
-  function createEntry(key, model) {
+  function createEntry({ key, kind, model, name, teamName, order }) {
     const entry = {
       key,
-      kind: 'model',
+      kind,
       model: String(model || ''),
+      name: String(name || ''),
+      teamName: String(teamName || ''),
+      order: Number.isFinite(order) ? order : 0,
       win: null,
+      ready: false,
+      pending: [],
       lastPosition: null,
       interactive: false,
+      retiring: null,
       runId: '',
     };
     entries.set(key, entry);
@@ -161,6 +193,7 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       },
     });
     entry.win = win;
+    entry.ready = false;
     const senderId = win.webContents.id;
     senderKeys.set(senderId, entry.key);
     try { win.setIgnoreMouseEvents(!entry.interactive, { forward: true }); } catch {}
@@ -170,6 +203,9 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       if (disposed || !entry.win || entry.win.isDestroyed()) return;
       if (!petConfig().enabled) return;
       showEntry(entry);
+      entry.ready = true;
+      const pending = entry.pending.splice(0);
+      for (const payload of pending) sendTo(entry.key, payload);
     });
     win.loadFile(path.join(__dirname, '..', 'renderer', 'pet.html'));
     win.on('closed', () => {
@@ -190,6 +226,8 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
   function destroyEntry(key) {
     const entry = entries.get(key);
     if (!entry) return;
+    clearTimeout(entry.retiring);
+    entry.retiring = null;
     entries.delete(key);
     const win = entry.win;
     entry.win = null;
@@ -212,15 +250,19 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       return;
     }
     const entry = ensureBase(baseModel());
-    for (const key of [...entries.keys()]) {
-      if (key !== entry.key) destroyEntry(key);
+    for (const [key, item] of [...entries]) {
+      if (item.kind === 'model' && key !== entry.key) destroyEntry(key);
+    }
+    for (const item of entries.values()) {
+      if (item.kind === 'team') showEntry(item);
     }
   }
 
   function ensureBase(model) {
     const id = String(model || '').trim();
     let entry = entries.get(DEFAULT_KEY);
-    if (!entry) entry = createEntry(DEFAULT_KEY, id);
+    if (!entry) entry = createEntry({ key: DEFAULT_KEY, kind: 'model', model: id, order: 0 });
+    entry.order = 0;
     entry.model = id;
     if (petConfig().enabled) showEntry(entry);
     return entry;
@@ -233,9 +275,65 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
     return entry.key;
   }
 
+  function teamKey(member) {
+    const id = String(member?.id || member?.name || '').trim();
+    if (!id) return '';
+    return `${TEAM_PREFIX}${id.slice(0, 80)}`;
+  }
+
+  /** A blank Team member gets its own paper while it works. */
+  function ensureTeam(member = {}) {
+    if (disposed) return null;
+    const key = teamKey(member);
+    if (!key) return null;
+    const config = petConfig();
+    let entry = entries.get(key);
+    if (!entry) {
+      const teamCount = [...entries.values()].filter((item) => item.kind === 'team').length;
+      entry = createEntry({
+        key,
+        kind: 'team',
+        model: String(member.model || config.defaultModel || ''),
+        name: String(member.name || ''),
+        teamName: String(member.teamName || 'blank team'),
+        order: Math.min(teamCount + 1, 7),
+      });
+    }
+    entry.model = String(member.model || config.defaultModel || '');
+    entry.name = String(member.name || '').slice(0, 60);
+    entry.teamName = String(member.teamName || entry.teamName || 'blank team').slice(0, 60);
+    entry.runId = String(member.runId || entry.runId || '');
+    clearTimeout(entry.retiring);
+    entry.retiring = null;
+    if (config.enabled) showEntry(entry);
+    return key;
+  }
+
+  function retireTeam(key, delay = 6000) {
+    const entry = entries.get(key);
+    if (!entry || entry.kind !== 'team') return;
+    clearTimeout(entry.retiring);
+    entry.retiring = setTimeout(() => {
+      entry.retiring = null;
+      destroyEntry(key);
+    }, Math.max(500, Number(delay) || 6000));
+  }
+
+  function retireTeamsForRun(runId, delay = 5000) {
+    if (!runId) return;
+    for (const entry of entries.values()) {
+      if (entry.kind !== 'team' || entry.runId !== String(runId)) continue;
+      retireTeam(entry.key, delay);
+    }
+  }
+
   function sendTo(key, payload) {
     const entry = key ? entries.get(key) : null;
     if (!entry || !entry.win || entry.win.isDestroyed()) return false;
+    if (!entry.ready) {
+      entry.pending.push(payload);
+      return true;
+    }
     try {
       entry.win.webContents.send('blank:event', payload);
       return true;
@@ -266,7 +364,25 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       else return false;
     }
     const sent = sendTo(key, payload);
-    if (payload.type === 'run:done' && payload.runId) runKeys.delete(payload.runId);
+    if (payload.type === 'run:done' && payload.runId) {
+      runKeys.delete(payload.runId);
+      retireTeamsForRun(payload.runId);
+    }
+    return sent;
+  }
+
+  function sendTeam(member, payload, options = {}) {
+    if (disposed) return false;
+    const key = options.ensure ? ensureTeam(member) : teamKey(member);
+    if (!key) return false;
+    const entry = entries.get(key);
+    if (!entry) return false;
+    const sent = sendTo(key, payload);
+    if (options.retire) {
+      const delay = Number(options.retireDelay)
+        || (typeof options.retire === 'number' ? options.retire : 6000);
+      retireTeam(key, delay);
+    }
     return sent;
   }
 
@@ -277,7 +393,13 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
     const entry = entries.get(key);
     if (!entry || !entry.win || entry.win.isDestroyed()) return null;
     if (entry.win.webContents !== sender) return null;
-    return { key: entry.key, kind: entry.kind, model: entry.model, name: '', teamName: '' };
+    return {
+      key: entry.key,
+      kind: entry.kind,
+      model: entry.model,
+      name: entry.name,
+      teamName: entry.teamName,
+    };
   }
 
   function currentPosition(key) {
@@ -319,7 +441,7 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
   function reset(key) {
     const entry = entries.get(key);
     if (!entry) return null;
-    const point = basePosition();
+    const point = slotFor(entry);
     const placed = move(key, point);
     if (placed && entry.kind === 'model' && typeof savePosition === 'function') {
       try { savePosition(entry.key, placed, entry.key === primaryKey()); } catch {}
@@ -374,6 +496,8 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       key: entry.key,
       kind: entry.kind,
       model: entry.model,
+      name: entry.name,
+      teamName: entry.teamName,
       visible: Boolean(entry.win && !entry.win.isDestroyed() && entry.win.isVisible()),
       position: currentPosition(entry.key),
     }));
@@ -384,6 +508,7 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
     ensureModel,
     send,
     sendTo,
+    sendTeam,
     position: currentPosition,
     move,
     save,

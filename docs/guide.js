@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var cfg = Object.assign({ repo: '', version: '1.3.3' }, window.BLANK_SITE || {});
+  var cfg = Object.assign({ repo: '', version: '1.3.4' }, window.BLANK_SITE || {});
   var repo = String(cfg.repo || '').trim();
   var repoUrl = repo ? 'https://github.com/' + repo : '';
   var releasesUrl = repoUrl ? repoUrl + '/releases' : '';

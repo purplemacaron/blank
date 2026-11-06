@@ -29,6 +29,7 @@
       open: 'blank 열기',
       reset: '위치 초기화',
       hide: 'blank memo 숨기기',
+      hideAll: '모든 펫 숨기기',
       label: '클릭해서 지시를 입력하세요.',
       compose: '지시를 입력…',
       composeLabel: 'blank memo에게 보낼 지시',
@@ -36,6 +37,7 @@
       sent: '맡겨 두세요',
       failed: '보내지 못했어요',
       noModel: '모델을 먼저 연결해 주세요',
+      teamMember: '팀원',
     },
     en: {
       name: 'blank memo',
@@ -54,6 +56,7 @@
       open: 'Open blank',
       reset: 'Reset position',
       hide: 'Hide blank memo',
+      hideAll: 'Hide all pets',
       label: 'Click to type an instruction.',
       compose: 'Type an instruction…',
       composeLabel: 'Instruction for blank memo',
@@ -61,6 +64,7 @@
       sent: 'On it',
       failed: 'Could not send that',
       noModel: 'Connect a model first',
+      teamMember: 'Team member',
     },
   };
 
@@ -108,7 +112,7 @@
   let drag = null;
   let defaultModel = '';
   let currentModel = '';
-  let identity = { model: '', modelName: '', providerName: '' };
+  let identity = { kind: 'model', model: '', modelName: '', providerName: '', name: '', teamName: '' };
 
   const copy = () => COPY[lang];
 
@@ -160,6 +164,12 @@
 
   function identityText() {
     const modelName = identity.modelName || identity.model;
+    if (identity.kind === 'team') {
+      const main = identity.name || copy().teamMember;
+      const teamName = identity.teamName || 'blank team';
+      const sub = [teamName, identity.providerName, modelName].filter(Boolean).join(' · ');
+      return { main, sub };
+    }
     const sub = [identity.providerName, modelName].filter(Boolean).join(' · ');
     return { main: copy().name, sub: sub || copy().noModel };
   }
@@ -171,7 +181,9 @@
     petIdSub.hidden = !who.sub;
     const parts = [who.main, who.sub, copy().label].filter(Boolean);
     pet.setAttribute('aria-label', parts.join(' · '));
-    document.title = copy().name;
+    document.title = identity.kind === 'team'
+      ? [identity.name, identity.teamName || 'blank team'].filter(Boolean).join(' · ')
+      : copy().name;
   }
 
   function applyCopy() {
@@ -183,7 +195,8 @@
     composeSend.setAttribute('aria-label', copy().send);
     for (const key of ['open', 'reset', 'hide']) {
       const node = menu.querySelector(`[data-menu-label="${key}"]`);
-      if (node) node.textContent = copy()[key];
+      if (!node) continue;
+      node.textContent = key === 'hide' && identity.kind === 'team' ? copy().hideAll : copy()[key];
     }
     if (state === 'working') bubbleText.textContent = copy().working;
     else if (state === 'waiting') bubbleText.textContent = copy().waiting;
@@ -199,9 +212,12 @@
       theme = info.theme === 'dark' ? 'dark' : 'light';
       defaultModel = info.model || '';
       identity = {
+        kind: info.kind === 'team' ? 'team' : 'model',
         model: String(info.model || ''),
         modelName: String(info.modelName || info.model || ''),
         providerName: String(info.providerName || ''),
+        name: String(info.name || ''),
+        teamName: String(info.teamName || ''),
       };
       if (!activeRuns.size) currentModel = defaultModel;
       body.dataset.theme = theme;

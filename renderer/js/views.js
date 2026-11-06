@@ -2732,7 +2732,7 @@ Start writing, or ask the agent to draft it.
                 </div>
               </div>
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">blank memo</div><div class="setting-desc">A single paper follows the most recently used model. Its color comes from the provider. Click it to type an instruction, drag it anywhere, right-click for more. Turn it off to hide it.</div></div>
+                <div class="setting-copy"><div class="setting-label">blank memo</div><div class="setting-desc">One paper follows the most recently used model. While blank Team works, each member gets its own paper. Colors come from the provider. Click a paper to type an instruction, drag it anywhere, right-click for more. Turn it off to hide every paper.</div></div>
                 <div class="setting-control">${UI.switchHtml(config.pet?.enabled !== false, 'data-pet-toggle')}</div>
               </div>
               <div class="setting-row">

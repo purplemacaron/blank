@@ -159,11 +159,45 @@ function registerIpc({ mcp, getWindow }) {
       case 'tool:end':
         sendPet({ type: 'tool:end', ...common, name: payload.name });
         break;
-      case 'agent:start':
+      case 'agent:start': {
+        const agent = payload.agent && typeof payload.agent === 'object' ? payload.agent : {};
+        if (agent.team) {
+          pet.sendTeam(
+            {
+              id: agent.memberId,
+              name: agent.name,
+              teamName: 'blank team',
+              model: agent.model,
+              runId: payload.runId,
+            },
+            { type: 'agent:start', ...common, team: true, name: agent.name, model: agent.model },
+            { ensure: true },
+          );
+        }
         sendPet({ type: 'agent:start', ...common });
         break;
-      case 'agent:end':
+      }
+      case 'agent:end': {
+        const agent = payload.agent && typeof payload.agent === 'object' ? payload.agent : {};
+        if (agent.team) {
+          pet.sendTeam(
+            {
+              id: agent.memberId,
+              name: agent.name,
+              teamName: 'blank team',
+              model: agent.model,
+              runId: payload.runId,
+            },
+            {
+              type: 'run:done',
+              ...common,
+              outcome: agent.status === 'error' ? { ok: false, error: true } : { ok: true },
+            },
+            { retire: 6500 },
+          );
+        }
         break;
+      }
       case 'approval':
         sendPet({ type: 'approval', ...common, approvalId: payload.approvalId });
         break;
@@ -644,6 +678,8 @@ function registerIpc({ mcp, getWindow }) {
       model: model.id,
       modelName: model.name,
       providerName: model.providerName,
+      name: entry.name,
+      teamName: entry.teamName || '',
       palette: petPalette(model.providerId || model.providerName || model.id, theme),
     };
   });
