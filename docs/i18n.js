@@ -126,6 +126,7 @@
       'footer.github': `GitHub`,
       'footer.privacy': `Privacy`,
       'footer.terms': `Terms`,
+      'footer.signing': `Code signing policy`,
       'footer.source': `Source code`,
       'footer.documents': `Docs`,
       'footer.hosted': `Hosted on GitHub Pages.`,
@@ -216,7 +217,16 @@
 <p>blank may add, change or discontinue features or distribution without prior notice. The official site and releases are provided through GitHub, and blank does not guarantee GitHub's availability.</p>
 <h2>7. Governing law</h2>
 <p>These terms are interpreted under the laws of the Republic of Korea. Disputes will be resolved in the courts with jurisdiction under applicable law.</p>
-<h2>8. Contact</h2>
+<h2 id="code-signing">8. Code signing policy</h2>
+<p>Free code signing provided by <a href="https://signpath.io/" target="_blank" rel="noreferrer">SignPath.io</a>, certificate by <a href="https://signpath.org/" target="_blank" rel="noreferrer">SignPath Foundation</a>.</p>
+<p>Windows release installers are built by this repository's GitHub Actions workflow and signed after manual approval. The signature links the installer to the public source repository.</p>
+<ul>
+<li>Committers and reviewers: <a href="https://github.com/purplemacaron" target="_blank" rel="noreferrer">@purplemacaron</a></li>
+<li>Approvers: <a href="https://github.com/purplemacaron" target="_blank" rel="noreferrer">@purplemacaron</a></li>
+</ul>
+<p>Only artifacts built from this repository are signed. Third-party components bundled with blank are not signed by this certificate.</p>
+<p>Privacy policy: <a href="privacy.html">Privacy Policy</a>. blank does not transfer information to other networked systems unless you request it or configure a provider.</p>
+<h2>9. Contact</h2>
 <p>For questions about these terms, please use <a href="https://github.com/purplemacaron/blank/issues" target="_blank" rel="noreferrer">GitHub Issues</a>.</p>
 <div class="inline-actions"><a class="btn btn-ghost" href="privacy.html">View Privacy</a><a class="btn btn-ghost" href="index.html">Back to home</a></div>`
     },
@@ -302,6 +312,7 @@
       'footer.github': `GitHub`,
       'footer.privacy': `プライバシーポリシー`,
       'footer.terms': `利用規約`,
+      'footer.signing': `コード署名ポリシー`,
       'footer.source': `ソースコード`,
       'footer.documents': `ドキュメント`,
       'footer.hosted': `GitHub Pages でホストされています。`,
@@ -392,7 +403,16 @@
 <p>blank は事前の通知なく機能を追加、変更、または配布を中止することがあります。公式サイトとリリースは GitHub を通じて提供され、GitHub の可用性は blank が保証しません。</p>
 <h2>7. 準拠法</h2>
 <p>本規約は大韓民国の法律に従って解釈されます。紛争が生じた場合は、関連法が定める管轄裁判所で解決します。</p>
-<h2>8. お問い合わせ</h2>
+<h2 id="code-signing">8. コード署名ポリシー (Code signing policy)</h2>
+<p>Free code signing provided by <a href="https://signpath.io/" target="_blank" rel="noreferrer">SignPath.io</a>, certificate by <a href="https://signpath.org/" target="_blank" rel="noreferrer">SignPath Foundation</a>.</p>
+<p>Windows リリースのインストーラーは、このリポジトリの GitHub Actions ワークフローでビルドされ、手動承認後に署名されます。署名はインストーラーと公開ソースリポジトリを結び付けます。</p>
+<ul>
+<li>コミッターとレビュアー: <a href="https://github.com/purplemacaron" target="_blank" rel="noreferrer">@purplemacaron</a></li>
+<li>承認者: <a href="https://github.com/purplemacaron" target="_blank" rel="noreferrer">@purplemacaron</a></li>
+</ul>
+<p>このリポジトリからビルドされた成果物のみに署名します。blank に同梱されるサードパーティ製コンポーネントは、この証明書では署名されません。</p>
+<p>プライバシーポリシー: <a href="privacy.html">プライバシーポリシー</a>。blank は、ユーザーが要求するかプロバイダーを設定しない限り、他のネットワークシステムに情報を送信しません。</p>
+<h2>9. お問い合わせ</h2>
 <p>本規約に関するご質問は <a href="https://github.com/purplemacaron/blank/issues" target="_blank" rel="noreferrer">GitHub Issues</a> までお寄せください。</p>
 <div class="inline-actions"><a class="btn btn-ghost" href="privacy.html">プライバシーポリシーを見る</a><a class="btn btn-ghost" href="index.html">ホームへ</a></div>`
     },
@@ -478,6 +498,7 @@
       'footer.github': `GitHub`,
       'footer.privacy': `隐私政策`,
       'footer.terms': `使用条款`,
+      'footer.signing': `代码签名政策`,
       'footer.source': `源代码`,
       'footer.documents': `文档`,
       'footer.hosted': `由 GitHub Pages 托管。`,
@@ -568,7 +589,16 @@
 <p>blank 可能在不事先通知的情况下增加、更改功能或停止分发。官方网站和发行版通过 GitHub 提供，blank 不保证 GitHub 的可用性。</p>
 <h2>7. 适用法律</h2>
 <p>本条款根据大韩民国法律解释。发生争议时，由相关法律规定的有管辖权法院解决。</p>
-<h2>8. 联系方式</h2>
+<h2 id="code-signing">8. 代码签名政策 (Code signing policy)</h2>
+<p>Free code signing provided by <a href="https://signpath.io/" target="_blank" rel="noreferrer">SignPath.io</a>, certificate by <a href="https://signpath.org/" target="_blank" rel="noreferrer">SignPath Foundation</a>.</p>
+<p>Windows 发行版安装程序由此仓库的 GitHub Actions 工作流构建，并在人工批准后签名。签名将安装程序与公开源代码仓库关联起来。</p>
+<ul>
+<li>提交者与审核者：<a href="https://github.com/purplemacaron" target="_blank" rel="noreferrer">@purplemacaron</a></li>
+<li>批准者：<a href="https://github.com/purplemacaron" target="_blank" rel="noreferrer">@purplemacaron</a></li>
+</ul>
+<p>仅对此仓库构建的产物签名。blank 捆绑的第三方组件不使用此证书签名。</p>
+<p>隐私政策：<a href="privacy.html">隐私政策</a>。除非您请求或配置了提供商，否则 blank 不会向其他网络系统传输信息。</p>
+<h2>9. 联系方式</h2>
 <p>如对本条款有疑问，请通过 <a href="https://github.com/purplemacaron/blank/issues" target="_blank" rel="noreferrer">GitHub Issues</a> 联系我们。</p>
 <div class="inline-actions"><a class="btn btn-ghost" href="privacy.html">查看隐私政策</a><a class="btn btn-ghost" href="index.html">返回首页</a></div>`
     }

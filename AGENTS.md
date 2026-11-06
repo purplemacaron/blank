@@ -103,6 +103,17 @@ node scripts/cdp-shot.js qa/shot.png
 - `electron-builder` can fail on Windows when `dist/win-unpacked` is locked by a running app.
 - Never display a real API key after saving it. Show only a masked state and a replace action.
 
+## Windows code signing
+
+Windows installers use free code signing from SignPath.io with a certificate issued to SignPath Foundation. The public policy lives in the Terms page (`docs/terms.html#code-signing`) and `README.md`; keep the exact SignPath statement and team roles current.
+
+The release workflow signs only when the following repository variables and secret exist. Without them, the Windows job warns and publishes an unsigned installer.
+
+- Variables: `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG`
+- Secret: `SIGNPATH_API_TOKEN`
+
+SignPath requires manual approval for every signing request, so a release can wait up to the workflow timeout at the signing step. After SignPath returns the installer, `scripts/finalize-windows-signing.js` replaces the unsigned file, updates `latest.yml`, and rebuilds the blockmap. Never publish a signed installer with metadata generated from the unsigned bytes.
+
 ## Release checklist
 
 1. Bump `package.json` and `docs/config.js` to the same version.
@@ -111,4 +122,5 @@ node scripts/cdp-shot.js qa/shot.png
 4. Commit with a focused message; do not commit secrets or generated output.
 5. Tag `vX.Y.Z`, push the tag and `main`.
 6. Wait for the installers and Pages workflows; verify the release assets, including `latest.yml` and the NSIS blockmap, and the live site.
-7. Report exactly what was verified and link the release and site.
+7. Verify the Windows installer's Authenticode signature shows SignPath Foundation when SignPath is configured.
+8. Report exactly what was verified and link the release and site.

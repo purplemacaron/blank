@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   build:
@@ -34,6 +35,43 @@ jobs:
       - run: npm ci
       - name: Build installer
         run: npm run dist
+      - name: Upload unsigned Windows installer
+        id: windows-unsigned
+        if: matrix.target == 'windows' && vars.SIGNPATH_PROJECT_SLUG != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: blank-windows-unsigned
+          path: dist/blank-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 1
+      - name: Sign Windows installer
+        if: matrix.target == 'windows' && vars.SIGNPATH_PROJECT_SLUG != ''
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.windows-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: '3600'
+          output-artifact-directory: signed-windows
+      - name: Rebuild Windows update metadata for the signed installer
+        if: matrix.target == 'windows' && vars.SIGNPATH_PROJECT_SLUG != ''
+        shell: pwsh
+        run: |
+          $signed = Get-ChildItem signed-windows -Recurse -Filter 'blank-Setup-*.exe' | Select-Object -First 1
+          if (-not $signed) { throw 'SignPath did not return a signed Windows installer.' }
+          node scripts/finalize-windows-signing.js "$($signed.FullName)" dist
+          $installer = Get-ChildItem dist -Filter 'blank-Setup-*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'The signed Windows installer is missing from dist.' }
+          $signature = Get-AuthenticodeSignature $installer.FullName
+          if ($signature.Status -ne 'Valid') { throw "Windows signature is not valid: $($signature.Status)" }
+          Write-Host "Signed by $($signature.SignerCertificate.Subject)"
+      - name: Warn about an unsigned Windows build
+        if: matrix.target == 'windows' && vars.SIGNPATH_PROJECT_SLUG == ''
+        shell: pwsh
+        run: Write-Host '::warning::Windows installer is unsigned. Configure the SignPath repository variables to enable signing.'
       - uses: actions/upload-artifact@v4
         with:
           name: blank-${{ matrix.target }}

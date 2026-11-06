@@ -81,6 +81,17 @@ Publishing is automated:
 
 The site reads `https://api.github.com/repos/<owner>/<repo>/releases/latest`, so it updates as soon as a release is published. For local checks, serve `docs/` over HTTP with any static file server, or run `npx electron scripts/qa-site.js` to capture desktop and mobile screenshots in `qa/`.
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). Windows release installers are built by this repository's GitHub Actions workflow and signed after manual approval. The signature links the installer to the public source repository.
+
+- Committers and reviewers: [@purplemacaron](https://github.com/purplemacaron)
+- Approvers: [@purplemacaron](https://github.com/purplemacaron)
+- Privacy policy: [docs/privacy.html](docs/privacy.html)
+- Site policy: [purplemacaron.github.io/blank/terms.html#code-signing](https://purplemacaron.github.io/blank/terms.html#code-signing)
+
+The same policy appears in the site footer and the Terms page. Only artifacts built from this repository are signed; third-party components bundled with blank are not signed by this certificate.
+
 ## Where data lives
 
 Everything is plain files under `~/.blank`:
