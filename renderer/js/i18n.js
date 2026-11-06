@@ -129,7 +129,7 @@
     'Update check failed': '업데이트를 확인하지 못했습니다',
     'blank reads the official GitHub releases at launch and every six hours.': 'blank는 앱을 열 때와 6시간마다 공식 GitHub 릴리스를 확인합니다.',
     'This development build cannot update itself. Use an installed build to receive updates.': '개발 빌드는 스스로 업데이트할 수 없습니다. 설치된 빌드에서 업데이트를 받을 수 있습니다.',
-    'blank is running from a temporary or unpacked folder. Open the installed app to receive updates, or download the installer again.': 'blank가 임시 폴더나 압축을 푼 폴더에서 실행 중입니다. 설치된 앱을 열면 업데이트를 받을 수 있고, 필요하면 설치 파일을 다시 내려받을 수 있습니다.',
+    'blank is running from a temporary folder. Quit this window completely, then open the installed blank from the Start menu. This copy cannot update itself.': 'blank가 임시 폴더에서 실행 중입니다. 이 창을 완전히 닫고 시작 메뉴에서 설치된 blank를 여세요. 이 복사본은 스스로 업데이트할 수 없습니다.',
     'Download the latest build from the release page.': '릴리스 페이지에서 최신 빌드를 내려받으세요.',
     'This only takes a moment.': '잠시만 기다려 주세요.',
     'You are running the latest version.': '최신 버전을 사용하고 있습니다.',

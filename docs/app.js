@@ -204,6 +204,13 @@
     return os === 'windows' ? 'Windows' : os === 'mac' ? 'macOS' : os === 'linux' ? 'Linux' : t('os.thisDevice');
   }
 
+  function guideUrl(os, arch) {
+    var query = [];
+    if (os === 'windows' || os === 'mac' || os === 'linux') query.push('os=' + os);
+    if (arch) query.push('arch=' + encodeURIComponent(arch));
+    return 'install.html' + (query.length ? '?' + query.join('&') : '');
+  }
+
   function setPrimary(asset, href) {
     var primary = document.getElementById('primary-download');
     var closing = document.getElementById('closing-download');
@@ -247,16 +254,16 @@
 
   function fillCards(assets) {
     var copy = {
-      windows: { idle: t('download.installer'), missing: t('download.viewRelease') },
-      mac: { idle: t('download.disk'), missing: t('download.viewRelease') },
-      linux: { idle: t('download.appimage'), missing: t('download.viewRelease') }
+      windows: { idle: t('download.guide'), missing: t('download.viewRelease') },
+      mac: { idle: t('download.guide'), missing: t('download.viewRelease') },
+      linux: { idle: t('download.guide'), missing: t('download.viewRelease') }
     };
     ['windows', 'mac', 'linux'].forEach(function (os) {
       var asset = assets[os] || null;
       var link = document.querySelector('[data-download="' + os + '"]');
       var assetLabel = document.querySelector('[data-asset="' + os + '"]');
       if (asset) {
-        enableLink(link, asset.browser_download_url);
+        enableLink(link, guideUrl(os, os === 'mac' && state.os === 'mac' ? state.arch : ''));
         setLinkLabel(link, copy[os].idle);
         if (link) { link.removeAttribute('target'); link.removeAttribute('rel'); }
         if (assetLabel) assetLabel.textContent = assetCaption(asset);
@@ -277,7 +284,7 @@
       var other = assets.mac === assets.macArm ? assets.macIntel : assets.macArm;
       if (assets.mac && other && other !== assets.mac) {
         alt.hidden = false;
-        alt.href = other.browser_download_url;
+        alt.href = guideUrl('mac', other === assets.macArm ? 'arm64' : 'x64');
         alt.textContent = other === assets.macArm ? t('download.macAltArm') : t('download.macAltIntel');
       } else {
         alt.hidden = true;
@@ -294,7 +301,7 @@
     state.assets = release ? pickAssets(release) : { windows: null, mac: null, macIntel: null, linux: null, all: [] };
     var recommendedAsset = state.assets[state.os] || null;
     if (recommendedAsset) {
-      setPrimary(recommendedAsset, recommendedAsset.browser_download_url);
+      setPrimary(recommendedAsset, guideUrl(state.os, state.os === 'mac' ? state.arch : ''));
     } else if (release && state.releasesUrl) {
       var primary = document.getElementById('primary-download');
       var closing = document.getElementById('closing-download');

@@ -2259,7 +2259,7 @@ Start writing, or ask the agent to draft it.
     const descriptions = {
       idle: 'blank reads the official GitHub releases at launch and every six hours.',
       dev: 'This development build cannot update itself. Use an installed build to receive updates.',
-      unpacked: 'blank is running from a temporary or unpacked folder. Open the installed app to receive updates, or download the installer again.',
+      unpacked: 'blank is running from a temporary folder. Quit this window completely, then open the installed blank from the Start menu. This copy cannot update itself.',
       unsupported: 'Download the latest build from the release page.',
       checking: 'This only takes a moment.',
       current: 'You are running the latest version.',
@@ -2277,7 +2277,9 @@ Start writing, or ask the agent to draft it.
           ? 'ok'
           : ['available', 'downloading'].includes(status) ? 'busy' : '';
     const canCheck = updates.supported !== false && !['checking', 'downloading', 'installing', 'ready', 'dev', 'unpacked', 'unsupported'].includes(status);
-    const badge = version && version !== current ? `v${version}` : (current ? `v${current}` : '');
+    const hasNewer = Boolean(version && version !== current);
+    const badge = hasNewer ? `v${current} → v${version}` : (current ? `v${current}` : '');
+    const badgeTitle = hasNewer ? `Current v${current}, available v${version}` : (current ? `Current v${current}` : '');
     const errorDetail = status === 'error' && updates.error ? String(updates.error) : '';
     return `<div class="update-panel" id="update-panel"${errorDetail ? ` title="${U.attr(errorDetail)}"` : ''}>
       <div class="update-head">
@@ -2286,7 +2288,7 @@ Start writing, or ask the agent to draft it.
           <div class="update-title">${esc(titles[status] || titles.idle)}</div>
           <div class="update-desc">${esc(descriptions[status] || descriptions.idle)}</div>
         </div>
-        ${badge ? `<span class="badge">${esc(badge)}</span>` : ''}
+        ${badge ? `<span class="badge"${badgeTitle ? ` title="${U.attr(badgeTitle)}"` : ''}>${esc(badge)}</span>` : ''}
       </div>
       ${['available', 'downloading'].includes(status) ? `<progress class="update-progress" max="100" value="${percent}">${percent}%</progress><div class="update-progress-meta"><span>${percent}%</span>${updates.bytesPerSecond ? `<span>${esc(U.fmtBytes(updates.bytesPerSecond))}/s</span>` : ''}</div>` : ''}
       <div class="update-actions">
@@ -3134,6 +3136,7 @@ Start writing, or ask the agent to draft it.
                   <h3>blank</h3>
                   <p>A quiet, local-first agent harness. Chat, code, plan and create media from one calm surface — with keys, sessions and memory kept on your machine.</p>
                   <div class="about-versions">
+                    <span class="badge">blank ${esc(info.version || runtime.version || '—')}</span>
                     <span class="badge">Electron ${esc(info.electron || runtime.electron || '—')}</span>
                     <span class="badge">Node ${esc(info.node || runtime.node || '—')}</span>
                     <span class="badge">${esc({ win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[info.platform || runtime.platform] || info.platform || runtime.platform || '')}</span>

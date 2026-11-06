@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title data-i18n="meta.guideTitle">설치 안내 — blank</title>
+  <meta name="description" content="Windows, macOS, Linux용 blank 설치 안내. 서명 전 Windows 빌드의 SmartScreen 경고를 통과하는 방법을 포함합니다." data-i18n-attr="content:meta.guideDescription" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="icon" href="media/icon.svg?v=127" type="image/svg+xml" />
+  <link rel="icon" type="image/png" sizes="64x64" href="media/favicon.png?v=127" />
+  <link rel="apple-touch-icon" href="media/icon.png?v=127" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self'; script-src 'self'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'; object-src 'none'" />
+  <meta property="og:title" content="blank 설치 안내" data-i18n-attr="content:meta.guideTitle" />
+  <meta property="og:description" content="내려받고, 실행하고, 이 기기에서 시작하세요. Windows SmartScreen 단계를 포함합니다." data-i18n-attr="content:meta.guideDescription" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://purplemacaron.github.io/blank/media/social.png?v=127" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="stylesheet" href="styles.css?v=127" />
+  <script src="config.js?v=127" defer></script>
+  <script src="i18n.js?v=129" defer></script>
+  <script src="guide.js?v=127" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main" data-i18n="skip">본문으로 건너뛰기</a>
+
+  <header class="site-head">
+    <div class="shell head-inner">
+      <a class="wordmark" href="index.html" aria-label="blank 홈" data-i18n-attr="aria-label:brand.home">
+        <img src="media/icon.svg?v=127" alt="" width="26" height="26" />
+        <span>blank</span>
+      </a>
+      <nav class="nav" aria-label="주요 메뉴" data-i18n-attr="aria-label:nav.main">
+        <a href="index.html#features" data-i18n="nav.features">기능</a>
+        <a href="install.html" aria-current="page" data-i18n="nav.install">설치</a>
+        <a href="https://github.com/purplemacaron/blank" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+      </nav>
+      <div class="head-actions">
+        <div class="lang-picker" data-lang-picker>
+          <button class="lang-btn" type="button" aria-haspopup="listbox" aria-expanded="false" data-lang-btn data-i18n-attr="aria-label:lang.label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.2 2.3 3.4 5.2 3.4 8.5s-1.2 6.2-3.4 8.5c-2.2-2.3-3.4-5.2-3.4-8.5S9.8 5.8 12 3.5Z" /></svg>
+            <span data-lang-code>KO</span>
+            <svg class="lang-chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
+          </button>
+          <div class="lang-menu" role="listbox" data-lang-menu hidden data-i18n-attr="aria-label:lang.label">
+            <button type="button" role="option" data-lang-option="ko" aria-selected="true">한국어</button>
+            <button type="button" role="option" data-lang-option="en" aria-selected="false">English</button>
+            <button type="button" role="option" data-lang-option="ja" aria-selected="false">日本語</button>
+            <button type="button" role="option" data-lang-option="zh" aria-selected="false">简体中文</button>
+          </div>
+        </div>
+        <a class="btn btn-primary btn-sm" data-guide-header href="#guide-download" data-i18n="nav.download">다운로드</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="guide">
+    <div class="shell guide-shell">
+      <div class="guide-lead">
+        <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span><span data-i18n="guide.eyebrow">설치 안내</span></p>
+        <h1 data-i18n="guide.title">blank 설치하기</h1>
+        <p class="lead" data-i18n="guide.lead">내려받고, 실행하고, 이 기기에서 시작하세요. Windows는 아직 서명 전이라 SmartScreen이 한 번 묻습니다.</p>
+        <div class="guide-meta">
+          <span class="release-pill live"><span class="pill-dot" aria-hidden="true"></span><span data-guide-release>v1.3.2</span></span>
+          <span class="hero-sep" aria-hidden="true"></span>
+          <span>Windows 10+ · macOS 11+ · Linux</span>
+        </div>
+      </div>
+
+      <div class="os-tabs" role="tablist" aria-label="플랫폼" data-i18n-attr="aria-label:guide.tabsLabel">
+        <button class="os-tab" type="button" role="tab" id="tab-windows" aria-controls="guide-windows" aria-selected="true" tabindex="0" data-os-tab="windows">
+          <span>Windows</span><small>10+</small>
+        </button>
+        <button class="os-tab" type="button" role="tab" id="tab-mac" aria-controls="guide-mac" aria-selected="false" tabindex="-1" data-os-tab="mac">
+          <span>macOS</span><small>11+</small>
+        </button>
+        <button class="os-tab" type="button" role="tab" id="tab-linux" aria-controls="guide-linux" aria-selected="false" tabindex="-1" data-os-tab="linux">
+          <span>Linux</span><small>AppImage</small>
+        </button>
+      </div>
+
+      <div class="guide-grid">
+        <div class="guide-main">
+          <section class="guide-card" id="guide-windows" role="tabpanel" aria-labelledby="tab-windows" data-guide-panel="windows">
+            <div class="guide-card-head">
+              <div>
+                <h2>Windows</h2>
+                <p data-i18n="guide.winMeta">Windows 10 이상 · x64 · 설치 파일</p>
+              </div>
+              <span class="guide-version" data-guide-version>v1.3.2</span>
+            </div>
+
+            <div class="guide-download" id="guide-download">
+              <a class="download-btn" data-guide-download="windows" href="https://github.com/purplemacaron/blank/releases/latest">
+                <span class="download-copy">
+                  <span class="btn-label" data-i18n="guide.downloadWin">설치 파일 받기</span>
+                  <span class="btn-sub" data-guide-file="windows" data-i18n="guide.checking">최신 릴리스 확인 중…</span>
+                </span>
+                <span class="download-arrow" aria-hidden="true">↓</span>
+              </a>
+              <p class="guide-download-note" data-guide-status="windows" data-i18n="guide.downloadNote">GitHub Releases에서 직접 내려받습니다.</p>
+            </div>
+
+            <ol class="guide-steps">
+              <li>
+                <span class="step-num">1</span>
+                <div>
+                  <h3 data-i18n="guide.win1Title">설치 파일 실행</h3>
+                  <p data-i18n="guide.win1Body">다운로드 폴더에서 설치 파일을 엽니다. Windows가 변경을 허용할지 물으면 ‘예’를 선택합니다.</p>
+                </div>
+              </li>
+              <li>
+                <span class="step-num">2</span>
+                <div>
+                  <h3 data-i18n="guide.win2Title">SmartScreen 한 번 통과</h3>
+                  <p data-i18n="guide.win2Body">‘Windows에서 PC를 보호했습니다’가 뜨면 추가 정보를 누르고, 이어서 실행을 누릅니다. 아직 서명 전이라 한 번 표시되는 경고입니다.</p>
+                  <div class="smart-preview" aria-hidden="true">
+                    <div class="smart-preview-head"><span class="smart-shield">!</span><b data-i18n="guide.smartDialogTitle">Windows에서 PC를 보호했습니다</b></div>
+                    <p data-i18n="guide.smartDialogBody">Microsoft Defender SmartScreen에서 인식할 수 없는 앱의 시작을 차단했습니다.</p>
+                    <div class="smart-preview-actions">
+                      <span data-i18n="guide.smartDontRun">실행 안 함</span>
+                      <span class="smart-more" data-i18n="guide.smartMore">추가 정보</span>
+                      <span class="smart-run" data-i18n="guide.smartRun">실행</span>
+                    </div>
+                  </div>
+                </div>
+              </li>
+              <li>
+                <span class="step-num">3</span>
+                <div>
+                  <h3 data-i18n="guide.win3Title">설치를 마치고 blank 열기</h3>
+                  <p data-i18n="guide.win3Body">기본 설치 위치 그대로 마치고 시작 메뉴에서 blank를 엽니다. 이전 blank 창이 열려 있으면 먼저 완전히 닫습니다.</p>
+                </div>
+              </li>
+            </ol>
+
+            <div class="guide-callout">
+              <b data-i18n="guide.smartTitle">경고가 뜨는 이유</b>
+              <p data-i18n-html="guide.signBody">현재 Windows 설치 파일은 아직 코드 서명 전입니다. SignPath Foundation 심사가 끝나면 서명된 빌드로 바뀝니다. SmartScreen을 끄거나 제외 항목에 추가하지 마세요. 이 페이지와 GitHub Actions에서 만든 파일만 받으면 됩니다. <a href="terms.html#code-signing">코드 서명 정책</a></p>
+            </div>
+          </section>
+
+          <section class="guide-card" id="guide-mac" role="tabpanel" aria-labelledby="tab-mac" data-guide-panel="mac" hidden>
+            <div class="guide-card-head">
+              <div>
+                <h2>macOS</h2>
+                <p data-i18n="guide.macMeta">macOS 11 이상 · Apple silicon 또는 Intel</p>
+              </div>
+              <span class="guide-version" data-guide-version>v1.3.2</span>
+            </div>
+
+            <div class="guide-download">
+              <a class="download-btn" data-guide-download="mac" href="https://github.com/purplemacaron/blank/releases/latest">
+                <span class="download-copy">
+                  <span class="btn-label" data-i18n="guide.downloadMac">디스크 이미지 받기</span>
+                  <span class="btn-sub" data-guide-file="mac" data-i18n="guide.checking">최신 릴리스 확인 중…</span>
+                </span>
+                <span class="download-arrow" aria-hidden="true">↓</span>
+              </a>
+              <p class="guide-download-note" data-guide-status="mac" data-i18n="guide.downloadNote">GitHub Releases에서 직접 내려받습니다.</p>
+              <a class="guide-alt" data-guide-alt hidden href="https://github.com/purplemacaron/blank/releases/latest">Intel Mac 빌드</a>
+            </div>
+
+            <ol class="guide-steps">
+              <li>
+                <span class="step-num">1</span>
+                <div>
+                  <h3 data-i18n="guide.mac1Title">디스크 이미지 내려받기</h3>
+                  <p data-i18n="guide.mac1Body">Mac에 맞춰 Apple silicon 또는 Intel 빌드를 고릅니다. 이 기기에 맞는 빌드가 먼저 선택되어 있습니다.</p>
+                </div>
+              </li>
+              <li>
+                <span class="step-num">2</span>
+                <div>
+                  <h3 data-i18n="guide.mac2Title">Applications로 옮기기</h3>
+                  <p data-i18n="guide.mac2Body">.dmg를 열고 blank를 Applications 폴더로 끌어다 놓습니다.</p>
+                </div>
+              </li>
+              <li>
+                <span class="step-num">3</span>
+                <div>
+                  <h3 data-i18n="guide.mac3Title">처음 한 번 열기</h3>
+                  <p data-i18n="guide.mac3Body">Applications에서 blank를 엽니다. macOS가 확인할 수 없다고 하면 blank를 오른쪽 클릭하거나 Control-클릭해 열기를 고르고, 한 번 더 엽니다.</p>
+                </div>
+              </li>
+            </ol>
+
+            <div class="guide-callout">
+              <b data-i18n="guide.macNoteTitle">공증 전 빌드</b>
+              <p data-i18n-html="guide.macNoteBody">macOS 빌드는 아직 공증되지 않았습니다. 그래도 열리지 않으면 시스템 설정 → 개인정보 보호 및 보안에서 허용하세요. 데이터는 <code>~/.blank</code>에 남습니다.</p>
+            </div>
+          </section>
+
+          <section class="guide-card" id="guide-linux" role="tabpanel" aria-labelledby="tab-linux" data-guide-panel="linux" hidden>
+            <div class="guide-card-head">
+              <div>
+                <h2>Linux</h2>
+                <p data-i18n="guide.linuxMeta">Linux · x64 · AppImage</p>
+              </div>
+              <span class="guide-version" data-guide-version>v1.3.2</span>
+            </div>
+
+            <div class="guide-download">
+              <a class="download-btn" data-guide-download="linux" href="https://github.com/purplemacaron/blank/releases/latest">
+                <span class="download-copy">
+                  <span class="btn-label" data-i18n="guide.downloadLinux">AppImage 받기</span>
+                  <span class="btn-sub" data-guide-file="linux" data-i18n="guide.checking">최신 릴리스 확인 중…</span>
+                </span>
+                <span class="download-arrow" aria-hidden="true">↓</span>
+              </a>
+              <p class="guide-download-note" data-guide-status="linux" data-i18n="guide.downloadNote">GitHub Releases에서 직접 내려받습니다.</p>
+            </div>
+
+            <ol class="guide-steps">
+              <li>
+                <span class="step-num">1</span>
+                <div>
+                  <h3 data-i18n="guide.linux1Title">AppImage 내려받기</h3>
+                  <p data-i18n="guide.linux1Body">AppImage는 파일 하나로 동작하며 별도 설치 프로그램이 필요 없습니다.</p>
+                </div>
+              </li>
+              <li>
+                <span class="step-num">2</span>
+                <div>
+                  <h3 data-i18n="guide.linux2Title">실행 권한 주기</h3>
+                  <p data-i18n-html="guide.linux2Body">터미널에서 내려받은 파일에 <code>chmod +x</code>를 실행합니다.</p>
+                </div>
+              </li>
+              <li>
+                <span class="step-num">3</span>
+                <div>
+                  <h3 data-i18n="guide.linux3Title">blank 실행</h3>
+                  <p data-i18n="guide.linux3Body">터미널에서 AppImage를 실행하거나, 파일 관리자가 허용하면 더블클릭합니다. 자동 업데이트는 AppImage를 직접 실행할 때 동작합니다.</p>
+                </div>
+              </li>
+            </ol>
+
+            <div class="guide-callout">
+              <b data-i18n="guide.linuxNoteTitle">업데이트와 데이터</b>
+              <p data-i18n="guide.linuxNoteBody">업데이트는 GitHub 릴리스에서 제공되며 AppImage 파일을 그대로 두어야 합니다. 압축을 푼 빌드는 스스로 업데이트할 수 없습니다.</p>
+            </div>
+          </section>
+        </div>
+
+        <aside class="guide-side">
+          <div class="guide-side-card">
+            <p class="side-label" data-i18n="guide.deviceLabel">이 기기</p>
+            <div class="device-line"><b data-guide-device>Windows</b><span class="detected-tag" data-guide-detected data-i18n="guide.detected">감지됨</span></div>
+            <p data-i18n="guide.deviceNote">이 기기에 맞는 빌드를 먼저 보여드립니다. 다른 플랫폼은 위 탭에서 고르세요.</p>
+            <button class="link-btn" type="button" data-guide-jump data-i18n="guide.showSteps">설치 단계 보기 →</button>
+          </div>
+          <div class="guide-side-card">
+            <p class="side-label" data-i18n="guide.releaseLabel">최신 릴리스</p>
+            <div class="device-line"><b data-guide-release>v1.3.2</b></div>
+            <a class="link-btn" data-guide-notes href="https://github.com/purplemacaron/blank/releases/latest" target="_blank" rel="noreferrer"><span data-i18n="guide.notes">릴리스 노트</span> ↗</a>
+            <a class="link-btn" data-guide-all href="https://github.com/purplemacaron/blank/releases" target="_blank" rel="noreferrer"><span data-i18n="guide.allReleases">모든 릴리스</span> ↗</a>
+          </div>
+          <div class="guide-side-card">
+            <p class="side-label" data-i18n="guide.dataLabel">데이터</p>
+            <code class="guide-data-path">~/.blank</code>
+            <p data-i18n="guide.dataNote">키와 세션은 이 기기에 남습니다.</p>
+          </div>
+        </aside>
+      </div>
+
+      <section class="guide-already" id="already">
+        <div>
+          <h2 data-i18n="guide.alreadyTitle">설치했는데도 계속 설치하라고 뜨나요?</h2>
+          <p data-i18n="guide.alreadyBody">설정 → 정보에서 실행 중인 버전을 확인하세요. 최신 릴리스보다 낮으면 임시 폴더의 예전 복사본이 열려 있을 수 있습니다. blank 창을 모두 닫고 시작 메뉴 또는 Applications에서 설치된 blank를 다시 엽니다. 설치 파일은 설치된 복사본만 바꾸며, 설치를 실행한 예전 창은 바뀌지 않습니다.</p>
+        </div>
+        <div class="inline-actions">
+          <a class="btn btn-ghost" href="index.html" data-i18n="guide.backHome">홈으로</a>
+          <a class="btn btn-ghost" href="terms.html#code-signing" data-i18n="footer.signing">코드 서명 정책</a>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-foot">
+    <div class="shell foot-inner">
+      <div class="foot-brand">
+        <a class="wordmark" href="index.html" aria-label="blank 홈" data-i18n-attr="aria-label:brand.home">
+          <img src="media/icon.svg?v=127" alt="" width="24" height="24" />
+          <span>blank</span>
+        </a>
+        <span class="foot-version" data-guide-release>v1.3.2</span>
+      </div>
+      <div class="foot-links">
+        <div class="foot-col">
+          <span data-i18n="footer.product">제품</span>
+          <a href="index.html#features" data-i18n="footer.features">기능</a>
+          <a href="index.html#install" data-i18n="footer.install">설치</a>
+          <a href="https://github.com/purplemacaron/blank/releases" target="_blank" rel="noreferrer" data-i18n="footer.releases">릴리스</a>
+        </div>
+        <div class="foot-col">
+          <span data-i18n="footer.resources">리소스</span>
+          <a href="https://github.com/purplemacaron/blank" target="_blank" rel="noreferrer" data-i18n="footer.github">GitHub</a>
+          <a href="privacy.html" data-i18n="footer.privacy">개인정보처리방침</a>
+          <a href="terms.html" data-i18n="footer.terms">이용약관</a>
+          <a href="terms.html#code-signing" data-i18n="footer.signing">코드 서명 정책</a>
+        </div>
+      </div>
+    </div>
+    <div class="shell foot-bottom">
+      <span>© <span id="year">2026</span> blank · MIT License</span>
+      <span data-i18n="footer.localFirst">로컬 우선 · 계정 없음</span>
+    </div>
+  </footer>
+</body>
+</html>
