@@ -126,3 +126,99 @@ test('deleteSchedule removes the entry', () => {
   assert.equal(schedules.deleteSchedule(created.id), false);
   assert.equal(schedules.getSchedule(created.id), null);
 });
+
+test('legacy records migrate on load and keep running', () => {
+  const file = path.join(home, 'schedules.json');
+  fs.writeFileSync(file, JSON.stringify({
+    schedules: [{
+      id: 'sch_legacy',
+      title: 'Legacy',
+      prompt: 'Still here.',
+      cadence: 'daily',
+      date: '',
+      time: '07:15',
+      everyMinutes: 30,
+      enabled: true,
+      runCount: 4,
+      history: [],
+    }],
+  }));
+  const records = schedules.listSchedules();
+  const legacy = records.find((entry) => entry.id === 'sch_legacy');
+  assert.equal(legacy.trigger.type, 'schedule');
+  assert.equal(legacy.trigger.config.time, '07:15');
+  assert.equal(legacy.runCount, 4);
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.ok(raw.schedules[0].trigger);
+});
+
+test('non-schedule triggers keep nextRunAt empty and preserve identity on partial saves', () => {
+  const created = schedules.saveSchedule({
+    title: 'Watch a file',
+    prompt: 'Summarize the change.',
+    trigger: {
+      type: 'file',
+      config: { paths: [__filename], events: ['change'], debounceSeconds: 3 },
+    },
+  });
+  assert.equal(created.trigger.type, 'file');
+  assert.equal(created.nextRunAt, '');
+  assert.equal(created.cadence, 'manual');
+
+  const paused = schedules.saveSchedule({ id: created.id, enabled: false });
+  assert.equal(paused.trigger.type, 'file');
+  assert.deepEqual(paused.trigger.config.paths, [__filename]);
+  assert.equal(paused.enabled, false);
+  assert.equal(paused.nextRunAt, '');
+
+  const resumed = schedules.saveSchedule({ id: created.id, enabled: true });
+  assert.equal(resumed.trigger.type, 'file');
+  assert.equal(resumed.enabled, true);
+});
+
+test('only schedule triggers are due', () => {
+  schedules.saveSchedule({
+    title: 'File not due',
+    prompt: 'Nope.',
+    trigger: { type: 'file', config: { paths: [__filename] } },
+  });
+  const file = path.join(home, 'schedules.json');
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const entry = raw.schedules.find((row) => row.title === 'File not due');
+  entry.nextRunAt = '2026-11-03T23:00:00.000Z';
+  fs.writeFileSync(file, JSON.stringify(raw));
+  const due = schedules.dueSchedules(new Date('2026-11-04T00:00:00.000Z'));
+  assert.ok(!due.some((row) => row.id === entry.id));
+});
+
+test('webhook tokens survive updates and rotate on demand', () => {
+  const created = schedules.saveSchedule({
+    title: 'Hook',
+    prompt: 'Handle it.',
+    trigger: { type: 'webhook', config: {} },
+  });
+  const token = created.trigger.config.token;
+  assert.ok(token);
+  const updated = schedules.saveSchedule({ id: created.id, title: 'Hook 2' });
+  assert.equal(updated.trigger.config.token, token);
+  const rotated = schedules.rotateWebhookToken(created.id);
+  assert.notEqual(rotated.trigger.config.token, token);
+  assert.equal(schedules.rotateWebhookToken('sch_missing'), null);
+});
+
+test('markRun stores trigger history and leaves non-schedule nextRunAt empty', () => {
+  const created = schedules.saveSchedule({
+    title: 'Session watcher',
+    prompt: 'React.',
+    trigger: { type: 'session', config: { on: 'complete' } },
+  });
+  const ran = schedules.markRun(created.id, {
+    status: 'ok',
+    sessionId: 's_trigger',
+    at: '2026-11-07T00:00:00.000Z',
+    trigger: { type: 'session', summary: 'A chat completed' },
+  });
+  assert.equal(ran.nextRunAt, '');
+  assert.equal(ran.history[0].trigger.type, 'session');
+  assert.equal(ran.history[0].trigger.summary, 'A chat completed');
+});

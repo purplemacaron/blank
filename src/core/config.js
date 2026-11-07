@@ -9,7 +9,7 @@ const DEFAULTS = {
   fallbackModel: '',
   workspace: '',
   theme: 'light',
-  language: 'ko',
+  language: 'auto',
   onboarded: false,
   providers: {},
   customProviders: [],
@@ -116,6 +116,10 @@ const DEFAULTS = {
     discord: { enabled: false, token: '', links: {}, lastChatId: '' },
     slack: { enabled: false, appToken: '', botToken: '', links: {}, lastChatId: '' },
     webhook: { enabled: false, port: 8789, secret: '', url: '', links: {}, lastChatId: '' },
+  },
+  triggers: {
+    webhookPort: 47821,
+    webhookAllowLan: false,
   },
   notifications: {
     enabled: true,
@@ -411,6 +415,13 @@ function maskKey(key) {
   return `${key.slice(0, 4)}…${key.slice(-4)}`;
 }
 
+/** Explicit choices win; otherwise follow the system locale, defaulting to English. */
+function resolveLanguage(value, locale) {
+  if (value === 'ko' || value === 'en') return value;
+  const tag = String(locale || '').trim().toLowerCase();
+  return tag.startsWith('ko') ? 'ko' : 'en';
+}
+
 function publicConfig(config, catalog) {
   const mediaKeys = Object.keys(config.media?.keys || {}).filter((id) => config.media.keys[id]);
   const media = {
@@ -475,7 +486,7 @@ function publicConfig(config, catalog) {
     fallbackModel: config.fallbackModel,
     workspace: config.workspace,
     theme: config.theme,
-    language: config.language === 'en' ? 'en' : 'ko',
+    language: ['ko', 'en', 'auto'].includes(config.language) ? config.language : 'auto',
     onboarded: config.onboarded,
     providers,
     customProviders: config.customProviders,
@@ -576,4 +587,5 @@ module.exports = {
   DEFAULTS, loadConfig, saveConfig, patchConfig, resolveKey, setProvider, maskKey,
   publicConfig, deepMerge, normalizeProviderKeys, normalizeMediaDefaults, normalizeModelDefaults,
   keyCandidates, addProviderKey, removeProviderKey, setActiveProviderKey, noteKeyUsage,
+  resolveLanguage,
 };

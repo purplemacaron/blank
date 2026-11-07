@@ -142,17 +142,21 @@
 
   function syncLanguage(config) {
     if (!config || !Object.prototype.hasOwnProperty.call(config, 'language')) return;
-    const fromConfig = config.language === 'en' ? 'en' : 'ko';
+    const fromConfig = ['ko', 'en', 'auto'].includes(config.language) ? config.language : 'auto';
     let stored = null;
     try { stored = localStorage.getItem('blank.lang'); } catch {}
-    if (stored === 'ko' || stored === 'en') {
+    if (stored === 'ko' || stored === 'en' || stored === 'auto') {
       /* A choice made in Settings is explicit and always wins. Never let a
          stale or reset config file flip the interface back to Korean. */
       if (stored !== fromConfig) API.config.update({ language: stored }).catch(() => {});
       return;
     }
     try { localStorage.setItem('blank.lang', fromConfig); } catch {}
-    if (fromConfig === 'en') location.reload();
+    const resolved = fromConfig === 'auto'
+      ? (String(navigator.language || '').toLowerCase().startsWith('ko') ? 'ko' : 'en')
+      : fromConfig;
+    const booted = document.documentElement.lang === 'en' ? 'en' : 'ko';
+    if (resolved !== booted) location.reload();
   }
 
   function refreshSidebarModel() {

@@ -1,7 +1,7 @@
 {
   "name": "blank",
   "productName": "blank",
-  "version": "1.3.6",
+  "version": "1.3.7",
   "description": "A quiet, local-first agent harness for your workspace.",
   "main": "electron/main.js",
   "license": "MIT",
@@ -13,7 +13,7 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "cli": "node bin/blank.js",
-    "test": "node --test test/",
+    "test": "node --test",
     "dist": "electron-builder --publish never"
   },
   "devDependencies": {

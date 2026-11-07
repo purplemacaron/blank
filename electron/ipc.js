@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
-const { app, BrowserWindow, dialog, shell, nativeTheme, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, shell, nativeTheme, ipcMain, clipboard } = require('electron');
 const { appPaths, ensureHome, uid, slugify } = require('../src/core/paths');
 const configModule = require('../src/core/config');
 const catalog = require('../src/core/catalog');
@@ -23,6 +23,8 @@ const { petPalette } = require('./pet-palette');
 const { createUpdater } = require('./updater');
 const plugins = require('../src/core/plugins');
 const schedulesModule = require('../src/core/schedules');
+const triggers = require('../src/core/triggers');
+const { createTriggerEngine } = require('./trigger-engine');
 const oauthModule = require('../src/core/oauth');
 const paperStore = require('../src/core/paper');
 const notifications = require('./notifications');
@@ -61,6 +63,7 @@ function attachWindowEvents(win, state) {
 
 function registerIpc({ mcp, getWindow }) {
   const state = createState();
+  let triggerEngine = null;
   ensureHome();
   notifications.configure({ getWindow });
 
@@ -146,6 +149,45 @@ function registerIpc({ mcp, getWindow }) {
     try { pet.send(payload); } catch {}
   };
 
+  /* While the agent drives the desktop its memo tracks the pointer; the memo
+     returns to where it was a moment after the last computer action. */
+  const PET_FOLLOW_TOOLS = new Set(['computer_use', 'computer_screenshot']);
+  const petFollow = new Map();
+  const holdPetFollow = (runId) => {
+    const id = String(runId || '');
+    if (!id) return;
+    const current = petFollow.get(id);
+    if (current) {
+      clearTimeout(current.release);
+      current.release = null;
+      return;
+    }
+    const state = { timer: null, release: null };
+    state.timer = setInterval(() => {
+      try { pet.followCursor(id); } catch {}
+    }, 120);
+    petFollow.set(id, state);
+    try { pet.followCursor(id); } catch {}
+  };
+  const releasePetFollow = (runId, immediate = false) => {
+    const id = String(runId || '');
+    const state = petFollow.get(id);
+    if (!state) return;
+    clearTimeout(state.release);
+    state.release = setTimeout(() => {
+      clearInterval(state.timer);
+      petFollow.delete(id);
+      try { pet.stopFollow(id); } catch {}
+    }, immediate ? 0 : 2500);
+  };
+  const stopAllPetFollow = () => {
+    for (const state of petFollow.values()) {
+      clearInterval(state.timer);
+      clearTimeout(state.release);
+    }
+    petFollow.clear();
+  };
+
   /** The pets only need the shape of a run, never transcript or tool payloads. */
   const sendPetEvent = (payload = {}) => {
     const common = { runId: payload.runId, sessionId: payload.sessionId };
@@ -155,9 +197,11 @@ function registerIpc({ mcp, getWindow }) {
         break;
       case 'tool:start':
         sendPet({ type: 'tool:start', ...common, name: payload.name });
+        if (PET_FOLLOW_TOOLS.has(payload.name)) holdPetFollow(payload.runId);
         break;
       case 'tool:end':
         sendPet({ type: 'tool:end', ...common, name: payload.name });
+        if (PET_FOLLOW_TOOLS.has(payload.name)) releasePetFollow(payload.runId);
         break;
       case 'agent:start': {
         const agent = payload.agent && typeof payload.agent === 'object' ? payload.agent : {};
@@ -212,6 +256,7 @@ function registerIpc({ mcp, getWindow }) {
         break;
       case 'run:done': {
         const outcome = payload.outcome || {};
+        releasePetFollow(payload.runId, true);
         sendPet({
           type: 'run:done',
           ...common,
@@ -305,6 +350,7 @@ function registerIpc({ mcp, getWindow }) {
   const messengers = createMessengerService({
     handlers: () => messengerHandlers(),
     onStatus: (status) => broadcast({ type: 'messengers:status', status }),
+    onIncoming: (event) => triggerEngine?.notifyMessenger(event),
   });
   try { messengers.start(); } catch {}
   const overlay = createComputerOverlay({
@@ -497,7 +543,7 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('messengers:test', async (_event, provider) => messengers.test(provider));
 
   require('electron').ipcMain.handle('config:update', async (_event, patch = {}) => {
-    const allowed = ['defaultModel', 'fallbackModel', 'theme', 'language', 'onboarded', 'agent', 'ui', 'customInstructions', 'disabledSkills', 'media', 'permissions', 'approvals', 'search', 'computer', 'pet', 'team', 'notifications', 'dictation', 'updates'];
+    const allowed = ['defaultModel', 'fallbackModel', 'theme', 'language', 'onboarded', 'agent', 'ui', 'customInstructions', 'disabledSkills', 'media', 'permissions', 'approvals', 'search', 'computer', 'pet', 'team', 'notifications', 'dictation', 'updates', 'triggers'];
     const clean = {};
     for (const key of allowed) {
       if (patch[key] === undefined) continue;
@@ -556,7 +602,7 @@ function registerIpc({ mcp, getWindow }) {
       if (!catalog.findModel(clean.fallbackModel, configModule.loadConfig())) throw new Error('Unknown fallback model.');
     }
     if (clean.theme && !['light', 'dark', 'system'].includes(clean.theme)) delete clean.theme;
-    if (clean.language && !['ko', 'en'].includes(clean.language)) delete clean.language;
+    if (clean.language && !['ko', 'en', 'auto'].includes(clean.language)) delete clean.language;
     if (clean.ui) {
       const incoming = clean.ui && typeof clean.ui === 'object' ? clean.ui : {};
       const current = configModule.loadConfig().ui || {};
@@ -642,6 +688,17 @@ function registerIpc({ mcp, getWindow }) {
         auto: incoming.auto === undefined ? current.auto !== false : Boolean(incoming.auto),
       };
     }
+    if (clean.triggers) {
+      const incoming = clean.triggers && typeof clean.triggers === 'object' ? clean.triggers : {};
+      const current = configModule.loadConfig().triggers || {};
+      const port = Number(incoming.webhookPort ?? current.webhookPort);
+      clean.triggers = {
+        webhookPort: Number.isFinite(port) ? Math.max(1024, Math.min(65535, Math.round(port))) : 47821,
+        webhookAllowLan: incoming.webhookAllowLan === undefined
+          ? Boolean(current.webhookAllowLan)
+          : Boolean(incoming.webhookAllowLan),
+      };
+    }
     if (clean.permissions) {
       const levels = ['allow', 'ask', 'deny'];
       const safe = {};
@@ -655,6 +712,7 @@ function registerIpc({ mcp, getWindow }) {
     if (clean.pet) pet.sync();
     if (Object.prototype.hasOwnProperty.call(clean, 'defaultModel')) pet.refreshDefault();
     if (clean.updates) updater.configure({ auto: next.updates?.auto !== false });
+    if (clean.triggers) void triggerEngine?.reconcile().catch(() => {});
     broadcast({ type: 'config:updated' });
     return configWithRuntime(next);
   });
@@ -670,7 +728,7 @@ function registerIpc({ mcp, getWindow }) {
     const theme = config.theme === 'dark' ? 'dark' : 'light';
     const model = describePetModel(entry.model, config);
     return {
-      language: config.language === 'en' ? 'en' : 'ko',
+      language: configModule.resolveLanguage(config.language, app.getLocale()),
       theme,
       enabled: config.pet?.enabled !== false,
       position: pet.position(entry.key),
@@ -709,12 +767,29 @@ function registerIpc({ mcp, getWindow }) {
       return { ok: false, code: 'no-model' };
     }
     const main = getWindow();
+    const activeSession = entry.sessionId && entry.runId
+      && state.sessionRuns.get(entry.sessionId) === entry.runId
+      ? entry.sessionId
+      : '';
     try {
+      const input = { text, model };
+      if (activeSession) input.sessionId = activeSession;
       const result = startChatRun({
         win: main || event.sender,
-        input: { text, model },
+        input,
+        queueIfRunning: Boolean(activeSession),
         source: 'pet',
       });
+      if (result.queued) {
+        return {
+          ok: true,
+          queued: true,
+          sessionId: result.sessionId,
+          queueId: result.queueId,
+          queueLength: result.queueLength,
+          title: result.title,
+        };
+      }
       return { ok: true, sessionId: result.sessionId, runId: result.runId, title: result.title };
     } catch {
       return { ok: false, code: 'failed' };
@@ -1118,16 +1193,33 @@ function registerIpc({ mcp, getWindow }) {
   });
 
   let computerShotInFlight = false;
+  const screenshotUrl = (filePath) => {
+    const dir = path.resolve(computer.computerDir());
+    const file = path.resolve(String(filePath || ''));
+    if (!file.startsWith(dir + path.sep)) return '';
+    return `blank-media://computer/${encodeURIComponent(path.basename(file))}`;
+  };
   require('electron').ipcMain.handle('computer:testScreenshot', async () => {
     if (computerShotInFlight) throw new Error('A screenshot is already being captured.');
     computerShotInFlight = true;
     try {
       const shot = await computer.screenshot();
-      await shell.openPath(shot.path);
-      return { ok: true, ...shot };
+      return { ok: true, url: screenshotUrl(shot.path), ...shot };
     } finally {
       computerShotInFlight = false;
     }
+  });
+
+  require('electron').ipcMain.handle('computer:openScreenshot', async (_event, filePath = '') => {
+    const dir = path.resolve(computer.computerDir());
+    const file = path.resolve(String(filePath || ''));
+    if (!file.startsWith(dir + path.sep)) throw new Error('That file is not a blank screenshot.');
+    if (!/\.(png|jpe?g)$/i.test(file)) throw new Error('That file is not a screenshot.');
+    const stat = await fs.promises.stat(file).catch(() => null);
+    if (!stat?.isFile()) throw new Error('The screenshot no longer exists.');
+    const error = await shell.openPath(file);
+    if (error) throw new Error(error);
+    return { ok: true };
   });
 
   /* -------------------------------------------------------------------- ssh */
@@ -1382,6 +1474,7 @@ function registerIpc({ mcp, getWindow }) {
         summary: Boolean(fresh.summary),
       });
       notifySession(fresh);
+      triggerEngine?.notifySession({ sessionId: fresh.id, session: fresh, outcome });
       broadcast({ type: 'sessions:refresh' });
       notifications.finished({
         title: fresh.title ? `Finished · ${fresh.title}` : 'Run finished',
@@ -2553,15 +2646,22 @@ ${commands}
     return { maximized: Boolean(win?.isMaximized()), fullscreen: Boolean(win?.isFullScreen()) };
   });
 
-  function scheduleSummary(schedule) {
+  function publicSchedule(schedule) {
     return {
       ...schedule,
+      trigger: triggers.redactTrigger(schedule.trigger, schedule.id),
       running: state.scheduleRuns.has(schedule.id),
     };
   }
 
-  function runSchedule(schedule) {
+  function runAutomation(schedule, { event = null, chain = [] } = {}) {
     if (!schedule || state.scheduleRuns.has(schedule.id)) return { started: false, reason: 'running' };
+    if (!event) event = { type: 'manual', at: new Date().toISOString() };
+    const triggerStarted = event.type !== 'manual';
+    if (triggerStarted) {
+      const active = [...state.scheduleRuns.values()].filter((entry) => entry.triggerStarted).length;
+      if (active >= 2) return { started: false, reason: 'busy' };
+    }
     const config = configModule.loadConfig();
     const model = schedule.model && catalog.findModel(schedule.model, config) ? schedule.model : config.defaultModel;
     const workspace = schedule.workspace && fs.existsSync(schedule.workspace) ? schedule.workspace : config.workspace;
@@ -2575,7 +2675,8 @@ ${commands}
     try { computer.setActor(scheduleModel?.id || scheduleModel?.name || ''); } catch {}
     session.title = schedule.title;
     session.titleSource = 'manual';
-    const message = { id: uid('msg_'), role: 'user', content: schedule.prompt, at: new Date().toISOString(), source: 'schedule' };
+    const content = triggers.formatEventPrompt(schedule.trigger, event, schedule.prompt);
+    const message = { id: uid('msg_'), role: 'user', content, at: new Date().toISOString(), source: 'schedule' };
     session.messages.push(message);
     store.saveSession(session);
     schedulesModule.markRun(schedule.id, { status: 'running', sessionId: session.id });
@@ -2583,8 +2684,10 @@ ${commands}
     broadcast({ type: 'sessions:refresh' });
 
     const controller = new AbortController();
-    state.scheduleRuns.set(schedule.id, { controller, sessionId: session.id });
+    state.scheduleRuns.set(schedule.id, { controller, sessionId: session.id, triggerStarted });
+    triggerEngine?.noteAutomationSession(session.id, { recordId: schedule.id, chain });
 
+    const triggerSummary = { type: event.type, summary: triggers.summarizeEvent(schedule.trigger, event) };
     const emit = (payload) => {
       const enriched = { ...payload, sessionId: session.id, runId: `schedule_${schedule.id}` };
       broadcast(enriched);
@@ -2602,7 +2705,7 @@ ${commands}
         broadcast({
           type: 'notice',
           level: 'warn',
-          text: `Scheduled “${schedule.title}” was denied ${request.label || request.tool}. Enable tool use or run it from a chat.`,
+          text: `Automation “${schedule.title}” was denied ${request.label || request.tool}. Enable tool use or run it from a chat.`,
         });
         return Promise.resolve('deny');
       },
@@ -2612,23 +2715,25 @@ ${commands}
       schedulesModule.markRun(schedule.id, {
         status: outcome.ok ? 'ok' : outcome.stopped ? 'stopped' : 'error',
         sessionId: session.id,
+        trigger: triggerSummary,
       });
       emit({ type: 'run:done', outcome, usage: fresh.usage, title: fresh.title, tasks: fresh.tasks || [], files: fresh.files || [] });
-      broadcast({ type: 'notice', level: outcome.ok ? 'info' : 'warn', text: `Scheduled “${schedule.title}” ${outcome.ok ? 'finished' : outcome.stopped ? 'stopped' : 'ended with an error'}.` });
+      broadcast({ type: 'notice', level: outcome.ok ? 'info' : 'warn', text: `Automation “${schedule.title}” ${outcome.ok ? 'finished' : outcome.stopped ? 'stopped' : 'ended with an error'}.` });
       notifications.scheduleFinished({
-        title: `${outcome.ok ? 'Scheduled run finished' : 'Scheduled run stopped'} · ${schedule.title}`,
+        title: `${outcome.ok ? 'Automation finished' : 'Automation stopped'} · ${schedule.title}`,
         body: runNotificationBody(fresh, outcome),
         sessionId: fresh.id,
         failed: !outcome.ok,
       });
       notifySession(fresh);
+      triggerEngine?.notifySession({ sessionId: fresh.id, session: fresh, outcome });
       maybeReflect(getWindow(), fresh);
     }).catch((err) => {
-      schedulesModule.markRun(schedule.id, { status: 'error', error: err.message, sessionId: session.id });
+      schedulesModule.markRun(schedule.id, { status: 'error', error: err.message, sessionId: session.id, trigger: triggerSummary });
       emit({ type: 'run:done', outcome: { ok: false, error: err.message } });
-      broadcast({ type: 'notice', level: 'warn', text: `Scheduled “${schedule.title}” failed: ${err.message}` });
+      broadcast({ type: 'notice', level: 'warn', text: `Automation “${schedule.title}” failed: ${err.message}` });
       notifications.scheduleFinished({
-        title: `Scheduled run failed · ${schedule.title}`,
+        title: `Automation failed · ${schedule.title}`,
         body: err.message,
         sessionId: session.id,
         failed: true,
@@ -2644,22 +2749,46 @@ ${commands}
   function scheduleTick() {
     if (state.disposed) return;
     for (const schedule of schedulesModule.dueSchedules()) {
-      if (state.scheduleRuns.size >= 2) break;
-      try { runSchedule(schedule); } catch (err) {
+      const event = { type: 'schedule', at: new Date().toISOString() };
+      try {
+        const result = runAutomation(schedule, { event, chain: [] });
+        if (result.reason === 'busy') break;
+      } catch (err) {
         schedulesModule.markRun(schedule.id, { status: 'error', error: err.message });
       }
     }
   }
 
+  triggerEngine = createTriggerEngine({
+    getSchedules: () => schedulesModule.listSchedules(),
+    getConfig: () => configModule.loadConfig(),
+    mcp,
+    dispatch: async (record, event, meta) => runAutomation(record, { event, chain: meta.chain }),
+    notify: (payload) => broadcast(payload),
+  });
+  triggerEngine.start().catch((err) => {
+    broadcast({ type: 'notice', level: 'warn', text: `Automation triggers could not start: ${err.message}` });
+  });
+
   ipcMainHandle('schedules:list', async () => ({
-    schedules: schedulesModule.listSchedules().map(scheduleSummary),
+    schedules: schedulesModule.listSchedules().map(publicSchedule),
     running: [...state.scheduleRuns.keys()],
   }));
 
   ipcMainHandle('schedules:save', async (event, input = {}) => {
+    const candidate = schedulesModule.buildSchedule(input);
+    const config = configModule.loadConfig();
+    let statuses = [];
+    try { statuses = mcp.statuses(config); } catch {}
+    const servers = Array.isArray(statuses) ? statuses.filter((entry) => entry.connected !== false).map((entry) => entry.id) : [];
+    const tools = Array.isArray(statuses)
+      ? [...new Set(statuses.flatMap((entry) => Array.isArray(entry.tools) ? entry.tools : []))]
+      : [];
+    triggers.validateTriggerResources(candidate.trigger, { mcpServerIds: servers, mcpToolNames: tools });
     const schedule = schedulesModule.saveSchedule(input);
+    void triggerEngine?.reconcile().catch(() => {});
     broadcast({ type: 'schedules:refresh' });
-    return { schedule: scheduleSummary(schedule) };
+    return { schedule: publicSchedule(schedule) };
   });
 
   ipcMainHandle('schedules:delete', async (event, input = {}) => {
@@ -2669,14 +2798,70 @@ ${commands}
       state.scheduleRuns.delete(input.id);
     }
     const deleted = schedulesModule.deleteSchedule(input.id);
+    void triggerEngine?.reconcile().catch(() => {});
     broadcast({ type: 'schedules:refresh' });
     return { deleted };
   });
 
   ipcMainHandle('schedules:run', async (event, input = {}) => {
     const schedule = schedulesModule.getSchedule(input.id);
-    if (!schedule) throw new Error('That schedule no longer exists.');
-    return runSchedule(schedule);
+    if (!schedule) throw new Error('That automation no longer exists.');
+    return runAutomation(schedule);
+  });
+
+  ipcMainHandle('schedules:runtime', async () => (
+    triggerEngine?.status() || { webhook: {}, automations: {} }
+  ));
+
+  ipcMainHandle('schedules:webhook-copy', async (event, input = {}) => {
+    const schedule = schedulesModule.getSchedule(input.id);
+    if (!schedule || schedule.trigger?.type !== 'webhook') throw new Error('That automation is not a webhook.');
+    const webhook = triggerEngine?.status()?.webhook || {};
+    if (!webhook.running) throw new Error('The webhook server is not running.');
+    const token = String(schedule.trigger.config?.token || '');
+    if (!token) throw new Error('This webhook has no token. Rotate it first.');
+    clipboard.writeText([
+      `POST http://127.0.0.1:${webhook.port}/hooks/${schedule.id}`,
+      `Authorization: Bearer ${token}`,
+      'Content-Type: application/json',
+    ].join('\n'));
+    return { copied: true };
+  });
+
+  ipcMainHandle('schedules:webhook-rotate', async (event, input = {}) => {
+    const schedule = schedulesModule.rotateWebhookToken(input.id);
+    if (!schedule) throw new Error('That webhook no longer exists.');
+    void triggerEngine?.reconcile().catch(() => {});
+    broadcast({ type: 'schedules:refresh' });
+    return { schedule: publicSchedule(schedule) };
+  });
+
+  ipcMainHandle('schedules:trigger-test', async (event, input = {}) => {
+    const existing = input.id ? schedulesModule.getSchedule(input.id) : null;
+    const draft = input.trigger || existing?.trigger;
+    if (!draft) throw new Error('Nothing to test yet.');
+    if (draft.type === 'mcp') {
+      return triggerEngine?.testTrigger(draft) || { ok: false, error: 'Triggers are not ready.' };
+    }
+    const trigger = triggers.normalizeTrigger(draft, existing, new Date());
+    const config = configModule.loadConfig();
+    let statuses = [];
+    try { statuses = mcp.statuses(config); } catch {}
+    const servers = Array.isArray(statuses) ? statuses.filter((entry) => entry.connected !== false).map((entry) => entry.id) : [];
+    const tools = Array.isArray(statuses)
+      ? [...new Set(statuses.flatMap((entry) => Array.isArray(entry.tools) ? entry.tools : []))]
+      : [];
+    triggers.validateTriggerResources(trigger, { mcpServerIds: servers, mcpToolNames: tools });
+    return { ok: true };
+  });
+
+  ipcMainHandle('schedules:pick-path', async (event, input = {}) => {
+    const win = winFromEvent(event);
+    const directory = input.kind === 'directory';
+    const result = await dialog.showOpenDialog(win, {
+      properties: [directory ? 'openDirectory' : 'openFile'],
+    });
+    return { path: result.canceled ? '' : String(result.filePaths?.[0] || '') };
   });
 
   ipcMainHandle('notifications:status', async () => ({
@@ -2718,6 +2903,7 @@ ${commands}
     state.disposed = true;
     try { updater.dispose(); } catch {}
     try { messengers.dispose(); } catch {}
+    try { void triggerEngine?.stop().catch(() => {}); } catch {}
     stopTerminal();
     if (state.scheduleTimer) clearInterval(state.scheduleTimer);
     for (const run of state.scheduleRuns.values()) {
@@ -2730,6 +2916,7 @@ ${commands}
     state.runs.clear();
     state.sessionRuns.clear();
     state.queues.clear();
+    stopAllPetFollow();
     try { remote.stop(); } catch {}
     try { pet.dispose(); } catch {}
     try { overlay.dispose(); } catch {}

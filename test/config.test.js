@@ -13,6 +13,8 @@ const {
   setActiveProviderKey,
   resolveKey,
   maskKey,
+  resolveLanguage,
+  DEFAULTS,
 } = require('../src/core/config');
 
 function blankConfig() {
@@ -111,4 +113,15 @@ test('retired preview model migrates to no model', () => {
   config.defaultModel = 'openai/gpt-5';
   assert.equal(normalizeModelDefaults(config), false);
   assert.equal(config.defaultModel, 'openai/gpt-5');
+});
+
+test('the interface follows the system language until the user chooses one', () => {
+  assert.equal(DEFAULTS.language, 'auto');
+  assert.equal(resolveLanguage('ko', 'en-US'), 'ko');
+  assert.equal(resolveLanguage('en', 'ko-KR'), 'en');
+  assert.equal(resolveLanguage('auto', 'ko-KR'), 'ko');
+  assert.equal(resolveLanguage('auto', 'en-US'), 'en');
+  assert.equal(resolveLanguage(undefined, 'ko'), 'ko');
+  assert.equal(resolveLanguage('', 'zh-CN'), 'en');
+  assert.equal(resolveLanguage('auto', ''), 'en');
 });

@@ -6,7 +6,7 @@
   <title>blank memo</title>
   <link rel="stylesheet" href="pet.css" />
 </head>
-<body data-state="idle" data-theme="light">
+<body data-state="idle" data-mood="idle" data-theme="light">
   <div class="pet-stage" id="stage">
     <div class="pet-bubble" id="bubble" role="status" aria-live="polite">
       <span class="bubble-dot" aria-hidden="true"></span>
@@ -26,8 +26,13 @@
       <div class="pet-body" aria-hidden="true">
         <div class="pet-sheet">
           <span class="pet-fold"></span>
-          <span class="pet-eye left"></span>
-          <span class="pet-eye right"></span>
+          <span class="pet-face">
+            <span class="pet-brow left"></span>
+            <span class="pet-brow right"></span>
+            <span class="pet-eye left"></span>
+            <span class="pet-eye right"></span>
+            <span class="pet-mouth"></span>
+          </span>
         </div>
       </div>
     </div>

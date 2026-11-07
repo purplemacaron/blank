@@ -56,7 +56,7 @@ SSH is a built-in MCP server. Add hosts in **MCP → SSH** with sealed passwords
 Enable a small team of read-only specialists — Scout, Architect and Critic by default — with per-member models and roles. `team_delegate` fans a brief out in parallel and returns the reports to the main agent. Configure it in **Settings → Agent team**.
 
 **Language**
-The interface ships in Korean and English. Switch in **Settings → General → Interface language**; the choice persists and reloads the window.
+The interface ships in Korean and English and follows your system language by default. Pick **Auto (system)**, **한국어** or **English** in **Settings → General → Interface language**; an explicit choice persists, and switching reloads the window.
 
 **MCP and plugins**
 stdio and HTTP MCP servers with namespaced tools (`mcp__server__tool`). HTTP servers can sign in with OAuth; tokens are stored user-only and never shown. The Plugins page installs curated servers and skills in one click — filesystem, GitHub, Playwright, Context7, accessibility and performance audits — and MCP servers can start with the app.

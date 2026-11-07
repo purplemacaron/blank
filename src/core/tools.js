@@ -9,6 +9,7 @@ const {
 } = require('./store');
 const { assessToolCall, hasExactApproval, REASONS } = require('./approvals');
 const { runConsoleCommand } = require('./console');
+const { decodeConsole } = require('./encoding');
 /* Heavy or platform-specific modules load on first use. Chat, planning and
    file edits never pay for sharp, ffmpeg or ssh2 in memory. */
 let mediaCache = null;
@@ -25,6 +26,7 @@ const computer = () => (computerCache || (computerCache = require('./computer'))
 const ssh = () => (sshCache || (sshCache = require('./ssh')));
 const codeTools = () => (codeCache || (codeCache = require('./code')));
 const apiTools = () => (apisCache || (apisCache = require('./apis')));
+const catalog = () => require('./catalog');
 
 const MAX_RESULT = 40000;
 const BINARY_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.zip', '.gz', '.tar', '.7z', '.exe', '.dll', '.so', '.dylib', '.mp3', '.mp4', '.mov', '.woff', '.woff2', '.ttf', '.otf', '.class', '.jar', '.wasm', '.bin']);
@@ -236,7 +238,7 @@ const TOOL_SPECS = [
   {
     name: 'computer_screenshot',
     label: 'Capture screen',
-    description: 'Capture the screen to a PNG in the blank data folder and return its path. Use this to see what the user is looking at before suggesting or performing UI actions. Screen contents are sensitive; each capture asks by default.',
+    description: 'Capture the screen to a PNG in the blank data folder. When the selected model accepts images, the capture is attached to the tool result so you can read the screen; otherwise the result says so and you should use windows, focus, launch and keyboard shortcuts instead. Screen contents are sensitive; each capture asks by default.',
     parameters: {
       type: 'object',
       properties: {},
@@ -245,11 +247,11 @@ const TOOL_SPECS = [
   {
     name: 'computer_use',
     label: 'Control computer',
-    description: 'Control the desktop: move or click the mouse, drag, scroll, type text, press keys, list or focus windows. Requires explicit approval for every call by default. Coordinates are absolute screen pixels. Prefer keyboard shortcuts over blind clicks, and verify with a screenshot after meaningful actions.',
+    description: 'Control the desktop: move or click the mouse, drag, scroll, type text, press keys, launch an app, list, focus or close windows. Requires explicit approval for every call by default. Coordinates are absolute screen pixels. On Windows, key modifiers may include win (for example key "r" with modifiers ["win"]). For focus and close, title accepts a window title fragment, an app name or a process name in English or Korean (for example "KakaoTalk", "카카오톡", "notepad"); close asks the app to close gracefully. Prefer launch, focus and keyboard shortcuts over blind clicks, and verify with a screenshot after meaningful actions.',
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['move', 'click', 'drag', 'scroll', 'type', 'key', 'wait', 'focus', 'windows'], description: 'The action to perform.' },
+        action: { type: 'string', enum: ['move', 'click', 'drag', 'scroll', 'type', 'key', 'wait', 'focus', 'close', 'windows', 'launch'], description: 'The action to perform.' },
         x: { type: 'integer', description: 'Screen x coordinate for move, click, drag or scroll.' },
         y: { type: 'integer', description: 'Screen y coordinate.' },
         to_x: { type: 'integer', description: 'Drag destination x.' },
@@ -258,10 +260,11 @@ const TOOL_SPECS = [
         clicks: { type: 'integer', description: 'Click count (1-3).' },
         delta: { type: 'integer', description: 'Scroll amount. Negative scrolls down (default -480).' },
         text: { type: 'string', description: 'Text to type for action=type.' },
-        key: { type: 'string', description: 'Key for action=key, e.g. c, Enter, F5.' },
-        modifiers: { type: 'array', items: { type: 'string', enum: ['ctrl', 'alt', 'shift', 'cmd'] }, description: 'Modifiers for action=key.' },
-        title: { type: 'string', description: 'Window title fragment for action=focus.' },
-        ms: { type: 'integer', description: 'Milliseconds for action=wait (max 10000).' },
+        key: { type: 'string', description: 'Key for action=key, e.g. c, Enter, F5, win.' },
+        modifiers: { type: 'array', items: { type: 'string', enum: ['ctrl', 'alt', 'shift', 'cmd', 'win'] }, description: 'Modifiers for action=key.' },
+        title: { type: 'string', description: 'Window title fragment, app name or process name for action=focus or close, e.g. 카카오톡, KakaoTalk, notepad.' },
+        target: { type: 'string', description: 'App name, executable, document or URL for action=launch, e.g. msedge, notepad, explorer.' },
+        ms: { type: 'integer', description: 'Milliseconds to wait (max 10000).' },
       },
       required: ['action'],
     },
@@ -854,9 +857,10 @@ async function toolRunCommand(args, ctx) {
       timeout,
       maxBuffer: 4 * 1024 * 1024,
       windowsHide: true,
+      encoding: 'buffer',
       env: process.env,
     }, (error, stdout, stderr) => {
-      const out = clip([stdout, stderr].filter(Boolean).join('\n').trim() || '(no output)', 30000);
+      const out = clip([decodeConsole(stdout), decodeConsole(stderr)].filter(Boolean).join('\n').trim() || '(no output)', 30000);
       const exitCode = error?.code ?? 0;
       const killed = error?.killed ? '\n[process timed out]' : '';
       resolve({
@@ -947,12 +951,64 @@ async function toolComputerScreenshot(args, ctx) {
   try {
     const shot = await computer().screenshot();
     const kb = (shot.bytes / 1024).toFixed(0);
+    const vision = modelAcceptsImages(ctx);
+    const modelName = String(ctx.modelName || ctx.session?.model || ctx.config?.defaultModel || 'the selected model');
+    const prepared = vision ? prepareScreenshot(shot) : null;
+    const fileName = path.basename(shot.path);
+    const url = `blank-media://computer/${encodeURIComponent(fileName)}`;
+    const note = vision
+      ? 'The screenshot is attached below as an image. Read the layout and controls from it; computer_use coordinates are absolute screen pixels.'
+      : `${modelName} does not accept image input, so the picture cannot be shown to you. Use computer_use with action "windows" or "launch", focus windows and keyboard shortcuts instead. Tell the user they can switch to a vision-capable model to let you read screenshots.`;
     return {
-      content: `Screenshot saved: ${shot.path}\nDisplay: ${shot.display || 'unknown'} · ${kb} KB\n\nThe file is outside the workspace in blank's data folder. Coordinates used by computer_use refer to absolute screen pixels.`,
-      meta: { path: shot.path, width: shot.width, height: shot.height, bytes: shot.bytes },
+      content: `Screenshot saved: ${shot.path}\nDisplay: ${shot.display || 'unknown'} · ${kb} KB\n\n${note}`,
+      meta: {
+        path: shot.path,
+        width: shot.width,
+        height: shot.height,
+        bytes: shot.bytes,
+        screenshot: {
+          path: shot.path,
+          url,
+          modelPath: prepared?.path || '',
+          mime: prepared?.mime || 'image/png',
+          width: shot.width,
+          height: shot.height,
+          fileName,
+        },
+      },
     };
   } catch (err) {
     return { content: `Screen capture failed: ${err.message}`, isError: true };
+  }
+}
+
+function modelAcceptsImages(ctx) {
+  if (typeof ctx?.vision === 'boolean') return ctx.vision;
+  try {
+    const id = String(ctx?.session?.model || ctx?.config?.defaultModel || '');
+    return Boolean(catalog().findModel(id, ctx?.config)?.vision);
+  } catch {
+    return false;
+  }
+}
+
+/** A model-friendly copy: long edge capped so screenshots stay cheap in context. */
+function prepareScreenshot(shot) {
+  try {
+    const { nativeImage } = require('electron');
+    const image = nativeImage.createFromPath(shot.path);
+    if (!image || image.isEmpty()) throw new Error('empty image');
+    const size = image.getSize();
+    const longEdge = Math.max(size.width, size.height);
+    const scaled = longEdge > 1400
+      ? image.resize({ width: Math.round(size.width * 1400 / longEdge), quality: 'good' })
+      : image;
+    const buffer = scaled.toJPEG(82);
+    const modelPath = shot.path.replace(/\.png$/i, '-model.jpg');
+    fs.writeFileSync(modelPath, buffer);
+    return { path: modelPath, mime: 'image/jpeg', bytes: buffer.length };
+  } catch {
+    return { path: shot.path, mime: 'image/png', bytes: shot.bytes };
   }
 }
 
@@ -966,6 +1022,16 @@ async function toolComputerUse(args, ctx) {
         return `- ${app ? `${app}` : 'window'}${title ? `: ${title}` : ''}`;
       });
       return { content: items.length ? `Visible windows:\n${items.join('\n')}` : 'No visible windows with titles.', meta: { windows: result.windows || [] } };
+    }
+    if (args.action === 'launch') {
+      const items = (result.windows || []).slice(0, 8).map((win) => `- ${win.ProcessName || win.app || 'window'}${win.MainWindowTitle || win.title ? `: ${win.MainWindowTitle || win.title}` : ''}`);
+      return {
+        content: `Launched ${args.target}.${items.length ? `\nNew windows:\n${items.join('\n')}` : ' No new window appeared yet; use action "windows" after a short wait if you need confirmation.'}`,
+        meta: { action: args.action, target: args.target, windows: result.windows || [] },
+      };
+    }
+    if (args.action === 'focus' || args.action === 'close') {
+      return { content: result.detail || `Computer ${args.action} complete.`, meta: { action: args.action } };
     }
     return { content: `Computer ${args.action} complete${result.detail ? ` — ${result.detail}` : '.'}`, meta: { action: args.action } };
   } catch (err) {
@@ -1515,7 +1581,8 @@ function summarizeArgs(name, args = {}) {
   if (name === 'computer_use') {
     const target = args.action === 'type' ? `“${String(args.text || '').slice(0, 60)}”`
       : args.action === 'key' ? [...(args.modifiers || []), args.key].filter(Boolean).join('+')
-      : args.action === 'focus' ? args.title
+      : args.action === 'focus' || args.action === 'close' ? args.title
+      : args.action === 'launch' ? args.target
       : args.action === 'windows' ? 'list visible windows'
       : [args.x, args.y].filter((value) => value !== undefined).join(', ');
     return `${args.action || 'action'}${target ? ` · ${target}` : ''}`;

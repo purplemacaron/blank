@@ -14,7 +14,7 @@
     code: { data: null, selected: '', diff: null, running: '', result: null, loading: false },
     console: { history: [], output: null, running: false, command: '' },
     team: { loading: false },
-    automations: { schedules: [], running: [], loading: false, editing: '' },
+    automations: { schedules: [], running: [], loading: false, editing: '', runtime: null, mcp: [], messengers: null, config: null },
     browserUrl: '',
     settings: { remote: null, ssh: null, schedules: [], dictationOptions: null, updates: null, messengers: null },
     paper: {
@@ -1963,15 +1963,60 @@ Start writing, or ask the agent to draft it.
 
   /* --------------------------------------------------------------- automations */
 
+  const TRIGGER_TYPE_OPTIONS = [
+    ['schedule', 'On a schedule'],
+    ['file', 'When a file changes'],
+    ['startup', 'When blank starts'],
+    ['webhook', 'When a webhook arrives'],
+    ['mcp', 'When an MCP result changes'],
+    ['messenger', 'When a message arrives'],
+    ['session', 'When a chat completes'],
+  ];
+
+  const TRIGGER_COOLDOWNS = { schedule: 0, file: 60, startup: 0, webhook: 5, mcp: 0, messenger: 10, session: 30 };
+
+  function triggerTypeOf(trigger) {
+    return TRIGGER_TYPE_OPTIONS.some(([id]) => id === trigger?.type) ? trigger.type : 'schedule';
+  }
+
+  function triggerLabel(schedule) {
+    const trigger = schedule?.trigger || {};
+    const config = trigger.config || {};
+    if (trigger.type === 'file') {
+      const count = Array.isArray(config.paths) ? config.paths.length : 0;
+      return `File changes · ${count} path${count === 1 ? '' : 's'}`;
+    }
+    if (trigger.type === 'startup') return Number(config.delaySeconds) ? `At launch + ${Number(config.delaySeconds)}s` : 'At launch';
+    if (trigger.type === 'webhook') return 'Webhook';
+    if (trigger.type === 'mcp') return `MCP · ${config.toolName || 'tool'} changes`;
+    if (trigger.type === 'messenger') return `Message · ${config.provider || 'any provider'}`;
+    if (trigger.type === 'session') return config.on === 'error' ? 'When a chat fails' : 'When a chat completes';
+    return cadenceLabel(schedule);
+  }
+
+  function triggerStateLabel(state) {
+    return { paused: 'Paused', watching: 'Watching', polling: 'Polling', armed: 'Armed', ready: 'Ready', error: 'Error' }[state] || '';
+  }
+
   async function mountAutomations(host) {
     vstate.page = 'automations';
     vstate.host = host;
-    if (!vstate.automations.schedules.length) host.innerHTML = pageLoading('Automations', 'Recurring prompts.');
+    if (!vstate.automations.schedules.length) host.innerHTML = pageLoading('Automations', 'Prompts that run on their own.');
     try {
-      const data = await API.schedules.list();
+      const [data, runtime, mcpData, messengers, config] = await Promise.all([
+        API.schedules.list(),
+        API.schedules.runtime().catch(() => null),
+        API.mcp?.list ? API.mcp.list().catch(() => null) : Promise.resolve(null),
+        API.messengers?.status ? API.messengers.status().catch(() => null) : Promise.resolve(null),
+        API.config.get().catch(() => null),
+      ]);
       if (!alive(host, 'automations')) return;
       vstate.automations.schedules = data.schedules || [];
       vstate.automations.running = data.running || [];
+      vstate.automations.runtime = runtime || null;
+      vstate.automations.mcp = Array.isArray(mcpData?.servers) ? mcpData.servers : [];
+      vstate.automations.messengers = messengers || null;
+      vstate.automations.config = config?.triggers || null;
       paintAutomations(host);
     } catch (error) { if (alive(host, 'automations')) pageError(host, 'Automations', error); }
   }
@@ -1979,10 +2024,35 @@ Start writing, or ask the agent to draft it.
   function paintAutomations(host) {
     const schedules = vstate.automations.schedules;
     const editing = schedules.find((schedule) => schedule.id === vstate.automations.editing) || null;
+    const mcpServers = Array.isArray(vstate.automations.mcp) ? vstate.automations.mcp : [];
+    const runtime = vstate.automations.runtime || {};
+    const webhookRuntime = runtime.webhook || {};
+    const triggerCfg = vstate.automations.config || {};
+    const draft = editing?.trigger || { type: 'schedule', config: {}, cooldownSeconds: 0 };
+    const type = triggerTypeOf(draft);
+    const config = draft.config && typeof draft.config === 'object' ? draft.config : {};
+    const cadenceValue = config.cadence || editing?.cadence || 'daily';
+    const dateValue = config.date || editing?.date || localDateValue();
+    const timeValue = config.time || editing?.time || '09:00';
+    const everyValue = Number(config.everyMinutes ?? editing?.everyMinutes) || 30;
+    const filePaths = Array.isArray(config.paths) ? config.paths : [];
+    const fileEvents = Array.isArray(config.events) && config.events.length ? config.events : ['change'];
+    const cooldownValue = editing ? Number(draft.cooldownSeconds) || 0 : TRIGGER_COOLDOWNS[type] || 0;
+    const mcpServerId = String(config.serverId || '');
+    const mcpServer = mcpServers.find((server) => server.id === mcpServerId) || null;
+    const mcpToolNames = [...new Set([...(mcpServer?.tools || []), ...(config.toolName ? [config.toolName] : [])])];
+    const messengerProvider = String(config.provider || 'telegram');
+    const hookPath = config.hookPath || (editing?.id ? `/hooks/${editing.id}` : '');
+    const webhookPort = Number(webhookRuntime.port) || Number(triggerCfg.webhookPort) || 47821;
+    const hookUrl = hookPath ? `POST http://127.0.0.1:${webhookPort}${hookPath}` : 'Save once to get a URL.';
+    const serverOptions = mcpServers.length
+      ? `${mcpServers.some((server) => server.id === mcpServerId) ? '' : `<option value="${U.attr(mcpServerId)}" selected>${esc(mcpServerId || 'Pick a server')}</option>`}${mcpServers.map((server) => `<option value="${U.attr(server.id)}" ${server.id === mcpServerId ? 'selected' : ''}>${esc(server.name || server.id)}${server.connected === false ? ' (offline)' : ''}</option>`).join('')}`
+      : '<option value="">No MCP servers</option>';
+    const toolOptions = `<option value="">Pick a tool</option>${mcpToolNames.map((name) => `<option value="${U.attr(name)}" ${name === config.toolName ? 'selected' : ''}>${esc(name)}</option>`).join('')}`;
     host.innerHTML = `<div class="page-inner automations-page">
       ${UI.pageHeader({
         title: 'Automations',
-        description: 'Recurring or one-time prompts that run while blank is open.',
+        description: 'Recurring or triggered prompts that run while blank is open.',
         actions: `<button class="btn btn-secondary btn-sm" type="button" data-automation-refresh>${icon('refresh', 12)} Refresh</button>`,
         meta: `<span class="badge blue">${schedules.length} automation${schedules.length === 1 ? '' : 's'}</span>`,
       })}
@@ -1991,12 +2061,94 @@ Start writing, or ask the agent to draft it.
         <div class="settings-group automation-compose">
           <div class="setting-row schedule-compose-row">
             <input class="field-input" id="automation-title" maxlength="80" placeholder="Name, e.g. Morning brief" spellcheck="false" value="${U.attr(editing?.title || '')}" />
-            <select class="setting-inline-input" id="automation-cadence">
-              ${[['interval', 'Every N minutes'], ['hourly', 'Every hour'], ['daily', 'Every day'], ['weekdays', 'Weekdays'], ['once', 'Just once']].map(([id, label]) => `<option value="${id}" ${(editing?.cadence || 'daily') === id ? 'selected' : ''}>${label}</option>`).join('')}
+            <select class="setting-inline-input" id="automation-trigger-type">
+              ${TRIGGER_TYPE_OPTIONS.map(([id, label]) => `<option value="${id}" ${type === id ? 'selected' : ''}>${label}</option>`).join('')}
             </select>
-            <input class="setting-inline-input automation-date" id="automation-date" type="date" value="${U.attr(editing?.date || localDateValue())}" aria-label="One-time run date" />
-            <input class="setting-inline-input" id="automation-time" type="time" value="${U.attr(editing?.time || '09:00')}" />
-            <input class="setting-inline-input automation-every" id="automation-every" type="number" min="5" max="1440" step="5" value="${Number(editing?.everyMinutes) || 30}" title="Minutes between runs" />
+          </div>
+          <div class="setting-row schedule-compose-row" data-trigger-pane="schedule" ${type === 'schedule' ? '' : 'hidden'}>
+            <select class="setting-inline-input" id="automation-cadence">
+              ${[['interval', 'Every N minutes'], ['hourly', 'Every hour'], ['daily', 'Every day'], ['weekdays', 'Weekdays'], ['once', 'Just once']].map(([id, label]) => `<option value="${id}" ${cadenceValue === id ? 'selected' : ''}>${label}</option>`).join('')}
+            </select>
+            <input class="setting-inline-input automation-date" id="automation-date" type="date" value="${U.attr(dateValue)}" aria-label="One-time run date" ${cadenceValue === 'once' ? '' : 'hidden'} />
+            <input class="setting-inline-input" id="automation-time" type="time" value="${U.attr(timeValue)}" />
+            <input class="setting-inline-input automation-every" id="automation-every" type="number" min="5" max="1440" step="5" value="${everyValue}" title="Minutes between runs" ${cadenceValue === 'interval' ? '' : 'hidden'} />
+          </div>
+          <div class="settings-group automation-trigger-pane" data-trigger-pane="file" ${type === 'file' ? '' : 'hidden'}>
+            <div class="setting-row">
+              <div class="setting-copy"><div class="setting-label">Watching paths</div><div class="setting-desc">One absolute path per line. Folders include their children.</div></div>
+              <div class="setting-control">
+                <button class="btn btn-secondary btn-sm" type="button" data-automation-pick="file">${icon('file', 12)} Browse file</button>
+                <button class="btn btn-secondary btn-sm" type="button" data-automation-pick="directory">${icon('folder', 12)} Browse folder</button>
+              </div>
+            </div>
+            <textarea class="settings-textarea" id="automation-file-paths" rows="3" placeholder="One absolute path per line">${esc(filePaths.join('\n'))}</textarea>
+            <div class="setting-row">
+              <div class="setting-copy"><div class="setting-label">File events</div></div>
+              <div class="setting-control automation-event-row">
+                ${[['change', 'Change'], ['add', 'Add'], ['remove', 'Remove']].map(([id, label]) => `<label class="schedule-check"><input type="checkbox" data-file-event="${id}" ${fileEvents.includes(id) ? 'checked' : ''} /> ${label}</label>`).join('')}
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy"><div class="setting-label">Debounce (seconds)</div><div class="setting-desc">Wait this long after the last file event before running.</div></div>
+              <div class="setting-control"><input class="setting-inline-input" id="automation-file-debounce" type="number" min="1" max="60" value="${Number(config.debounceSeconds) || 3}" /></div>
+            </div>
+          </div>
+          <div class="setting-row" data-trigger-pane="startup" ${type === 'startup' ? '' : 'hidden'}>
+            <div class="setting-copy"><div class="setting-label">Delay after launch (seconds)</div><div class="setting-desc">Runs once per app start.</div></div>
+            <div class="setting-control"><input class="setting-inline-input" id="automation-startup-delay" type="number" min="0" max="600" value="${Number(config.delaySeconds) || 0}" /></div>
+          </div>
+          <div class="settings-group automation-trigger-pane" data-trigger-pane="webhook" ${type === 'webhook' ? '' : 'hidden'}>
+            <div class="setting-note">${webhookRuntime.running ? `Server ready on port ${webhookRuntime.port}` : 'Server stopped'}${webhookRuntime.error ? ` · ${esc(webhookRuntime.error)}` : ''}</div>
+            <div class="setting-row">
+              <input class="field-input automation-webhook-url" id="automation-webhook-url" readonly value="${U.attr(hookUrl)}" aria-label="Webhook URL" />
+              ${editing ? `<button class="btn btn-secondary btn-sm" type="button" data-automation-copy="${U.attr(editing.id)}">${icon('copy', 12)} Copy URL</button><button class="btn btn-ghost btn-sm" type="button" data-automation-rotate="${U.attr(editing.id)}">${icon('rotate-ccw', 12)} Rotate token</button>` : ''}
+            </div>
+            <label class="schedule-check"><input type="checkbox" id="automation-webhook-query" ${config.allowQueryToken ? 'checked' : ''} /> Allow query token</label>
+            <div class="setting-row">
+              <div class="setting-copy"><div class="setting-label">Server port</div><div class="setting-desc">Loopback only unless LAN access is on.</div></div>
+              <div class="setting-control"><input class="setting-inline-input" id="automation-webhook-port" type="number" min="1024" max="65535" value="${Number(triggerCfg.webhookPort) || 47821}" /></div>
+            </div>
+            <label class="schedule-check"><input type="checkbox" id="automation-webhook-lan" ${triggerCfg.webhookAllowLan ? 'checked' : ''} /> Allow LAN access</label>
+            <div class="setting-note">LAN access is plaintext. Use a tunnel for internet access.</div>
+            <div class="provider-actions"><button class="btn btn-secondary btn-sm" type="button" data-automation-webhook-settings>${icon('settings', 12)} Save server</button></div>
+          </div>
+          <div class="settings-group automation-trigger-pane" data-trigger-pane="mcp" ${type === 'mcp' ? '' : 'hidden'}>
+            <div class="setting-row">
+              <select class="setting-inline-input" id="automation-mcp-server" aria-label="MCP server">${serverOptions}</select>
+              <select class="setting-inline-input" id="automation-mcp-tool" aria-label="MCP tool">${toolOptions}</select>
+            </div>
+            <textarea class="settings-textarea" id="automation-mcp-args" rows="3" placeholder='{"query": "..."}' spellcheck="false">${esc(config.args ? JSON.stringify(config.args, null, 2) : '{}')}</textarea>
+            <div class="setting-row">
+              <div class="setting-copy"><div class="setting-label">Poll every (seconds)</div><div class="setting-desc">The trigger fires when the tool result changes.</div></div>
+              <div class="setting-control"><input class="setting-inline-input" id="automation-mcp-interval" type="number" min="60" max="86400" step="30" value="${Number(config.intervalSeconds) || 300}" /></div>
+            </div>
+            <div class="provider-actions">
+              <button class="btn btn-secondary btn-sm" type="button" data-automation-test>${icon('zap', 12)} Test</button>
+              <span class="setting-note" data-automation-test-result></span>
+            </div>
+          </div>
+          <div class="settings-group automation-trigger-pane" data-trigger-pane="messenger" ${type === 'messenger' ? '' : 'hidden'}>
+            <div class="setting-row">
+              <select class="setting-inline-input" id="automation-messenger-provider" aria-label="Messenger provider">
+                ${[['telegram', 'Telegram'], ['discord', 'Discord'], ['slack', 'Slack'], ['webhook', 'Webhook']].map(([id, label]) => `<option value="${id}" ${messengerProvider === id ? 'selected' : ''}>${label}</option>`).join('')}
+              </select>
+              <input class="field-input" id="automation-messenger-from" placeholder="Only messages from (optional)" spellcheck="false" value="${U.attr(config.fromIncludes || '')}" />
+            </div>
+            <input class="field-input" id="automation-messenger-text" placeholder="Only when the text contains (optional)" spellcheck="false" value="${U.attr(config.textIncludes || '')}" />
+            <div class="setting-note">The normal auto-reply still runs.</div>
+          </div>
+          <div class="settings-group automation-trigger-pane" data-trigger-pane="session" ${type === 'session' ? '' : 'hidden'}>
+            <div class="setting-row">
+              <select class="setting-inline-input" id="automation-session-on">
+                <option value="complete" ${(config.on || 'complete') === 'complete' ? 'selected' : ''}>When a chat completes</option>
+                <option value="error" ${config.on === 'error' ? 'selected' : ''}>When a chat fails</option>
+              </select>
+              <label class="schedule-check"><input type="checkbox" id="automation-session-include" ${config.includeAutomationRuns ? 'checked' : ''} /> Include automation runs</label>
+            </div>
+          </div>
+          <div class="setting-row" data-trigger-pane="common" ${type === 'schedule' ? 'hidden' : ''}>
+            <div class="setting-copy"><div class="setting-label">Cooldown (seconds)</div><div class="setting-desc">Minimum gap between trigger runs. Extra events are skipped, not queued.</div></div>
+            <div class="setting-control"><input class="setting-inline-input" id="automation-cooldown" type="number" min="0" max="86400" value="${cooldownValue}" /></div>
           </div>
           <textarea class="settings-textarea" id="automation-prompt" rows="3" placeholder="What should blank do when this runs?">${esc(editing?.prompt || '')}</textarea>
           <div class="provider-actions">
@@ -2008,30 +2160,41 @@ Start writing, or ask the agent to draft it.
       </section>
       <div class="automation-list">
         ${schedules.length ? schedules.map((schedule) => {
+          const runtimeEntry = runtime.automations?.[schedule.id] || {};
+          const scheduleTrigger = schedule.trigger || {};
           const next = schedule.nextRunAt ? new Date(schedule.nextRunAt) : null;
           const onceDone = schedule.cadence === 'once' && schedule.enabled === false && schedule.lastRunAt;
           const nextText = next && !Number.isNaN(next.getTime()) ? next.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : onceDone ? 'done' : 'Paused';
           const lastText = schedule.lastRunAt ? new Date(schedule.lastRunAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+          const stateText = triggerStateLabel(runtimeEntry.state);
+          const hasError = schedule.lastStatus === 'error' || runtimeEntry.state === 'error';
+          const badge = schedule.running ? 'Running' : hasError ? 'Error' : schedule.lastStatus === 'ok' ? 'OK' : 'Idle';
+          const badgeTone = schedule.running ? 'amber' : hasError ? 'red' : schedule.lastStatus === 'ok' ? 'green' : 'gray';
           return `<article class="automation-card ${schedule.running ? 'running' : ''}" data-automation-id="${U.attr(schedule.id)}">
             <div class="automation-head">
-              <div><div class="automation-title">${esc(schedule.title)}</div><div class="automation-meta"><span class="automation-cadence">${esc(cadenceLabel(schedule))}</span> · ${next ? `<span>next ${esc(nextText)}</span>` : `<span>${onceDone ? 'done' : 'paused'}</span>`}${lastText ? ` · <span>last ${esc(lastText)}</span>` : ''}</div></div>
-              <span class="badge ${schedule.running ? 'amber' : schedule.lastStatus === 'ok' ? 'green' : schedule.lastStatus === 'error' ? 'red' : 'gray'}">${schedule.running ? 'Running' : schedule.lastStatus === 'ok' ? 'OK' : schedule.lastStatus === 'error' ? 'Error' : 'Idle'}</span>
+              <div><div class="automation-title">${esc(schedule.title)}</div><div class="automation-meta"><span class="automation-cadence">${esc(triggerLabel(schedule))}</span>${scheduleTrigger.type === 'schedule' ? (next ? ` · <span>next ${esc(nextText)}</span>` : ` · <span>${onceDone ? 'done' : 'Paused'}</span>`) : ''}${stateText ? ` · <span>${esc(stateText)}</span>` : ''}${lastText ? ` · <span>last ${esc(lastText)}</span>` : ''}</div></div>
+              <span class="badge ${badgeTone}">${badge}</span>
             </div>
             <p class="automation-prompt">${esc(U.truncate(schedule.prompt, 220))}</p>
+            ${runtimeEntry.detail ? `<div class="automation-runtime">${esc(runtimeEntry.detail)}</div>` : ''}
+            ${runtimeEntry.lastSkip ? `<div class="setting-note">Skipped · ${esc(U.truncate(runtimeEntry.lastSkip, 160))}</div>` : ''}
             ${schedule.lastError ? `<div class="schedule-error">${esc(U.truncate(schedule.lastError, 180))}</div>` : ''}
+            ${runtimeEntry.lastError && runtimeEntry.lastError !== schedule.lastError ? `<div class="schedule-error">${esc(U.truncate(runtimeEntry.lastError, 180))}</div>` : ''}
             ${schedule.history?.length ? `<div class="automation-history">${schedule.history.slice(0, 5).map((entry) => `<button class="automation-history-row" type="button" ${entry.sessionId ? `data-automation-session="${U.attr(entry.sessionId)}"` : 'disabled'}>
               <span class="badge ${entry.status === 'ok' ? 'green' : entry.status === 'error' ? 'red' : 'gray'}">${esc(entry.status)}</span>
               <span>${esc(new Date(entry.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))}</span>
+              ${entry.summary ? `<span class="automation-history-summary">${esc(U.truncate(entry.summary, 90))}</span>` : ''}
               ${entry.sessionId ? icon('arrow-right', 11) : ''}
             </button>`).join('')}</div>` : ''}
             <div class="automation-actions">
               <button class="btn btn-secondary btn-sm" type="button" data-automation-run="${U.attr(schedule.id)}" ${schedule.running ? 'disabled' : ''}>${icon('play', 11)} Run now</button>
               <button class="btn btn-ghost btn-sm" type="button" data-automation-edit="${U.attr(schedule.id)}">${icon('edit', 11)} Edit</button>
+              ${scheduleTrigger.type === 'webhook' ? `<button class="btn btn-ghost btn-sm" type="button" data-automation-copy="${U.attr(schedule.id)}">${icon('copy', 11)} Copy URL</button><button class="btn btn-ghost btn-sm" type="button" data-automation-rotate="${U.attr(schedule.id)}">${icon('rotate-ccw', 11)} Rotate</button>` : ''}
               ${schedule.cadence === 'once' ? '' : `<label class="schedule-check"><input type="checkbox" data-automation-enabled="${U.attr(schedule.id)}" ${schedule.enabled !== false ? 'checked' : ''} /> Enabled</label>`}
               <button class="mini-icon" type="button" data-automation-delete="${U.attr(schedule.id)}" title="Delete automation">${icon('trash', 13)}</button>
             </div>
           </article>`;
-        }).join('') : `<div class="empty-state"><div class="empty-icon">${icon('clock', 22)}</div><h3>Nothing scheduled</h3><p>Create a daily brief, an hourly watch, a one-time run or your own interval.</p></div>`}
+        }).join('') : `<div class="empty-state"><div class="empty-icon">${icon('clock', 22)}</div><h3>Nothing scheduled</h3><p>Create a timer, a file watch, a webhook, an MCP poll or a chat-completion follow-up.</p></div>`}
       </div>
     </div>`;
     const cadence = host.querySelector('#automation-cadence');
@@ -2048,10 +2211,85 @@ Start writing, or ask the agent to draft it.
     };
     syncCadence();
     cadence?.addEventListener('change', syncCadence);
+    const typeSelect = host.querySelector('#automation-trigger-type');
+    const syncType = () => {
+      const value = typeSelect?.value || 'schedule';
+      host.querySelectorAll('[data-trigger-pane]').forEach((pane) => {
+        const key = pane.dataset.triggerPane;
+        pane.hidden = key === 'common' ? value === 'schedule' : key !== value;
+      });
+      const cooldownInput = host.querySelector('#automation-cooldown');
+      if (cooldownInput && !editing) cooldownInput.value = TRIGGER_COOLDOWNS[value] || 0;
+    };
+    syncType();
+    typeSelect?.addEventListener('change', syncType);
+    const mcpServerSelect = host.querySelector('#automation-mcp-server');
+    const mcpToolSelect = host.querySelector('#automation-mcp-tool');
+    mcpServerSelect?.addEventListener('change', () => {
+      if (!mcpToolSelect) return;
+      const server = mcpServers.find((entry) => entry.id === mcpServerSelect.value);
+      const tools = Array.isArray(server?.tools) ? server.tools : [];
+      const current = mcpToolSelect.value;
+      mcpToolSelect.innerHTML = `<option value="">Pick a tool</option>${tools.map((name) => `<option value="${U.attr(name)}" ${name === current ? 'selected' : ''}>${esc(name)}</option>`).join('')}`;
+    });
+    const collectTrigger = () => {
+      const selected = typeSelect?.value || 'schedule';
+      const trigger = { type: selected, config: {}, cooldownSeconds: Number(host.querySelector('#automation-cooldown')?.value) || 0 };
+      if (selected === 'schedule') {
+        trigger.config = {
+          cadence: cadence?.value || 'daily',
+          date: host.querySelector('#automation-date')?.value || '',
+          time: host.querySelector('#automation-time')?.value || '09:00',
+          everyMinutes: Number(host.querySelector('#automation-every')?.value) || 30,
+        };
+        trigger.cooldownSeconds = 0;
+      } else if (selected === 'file') {
+        trigger.config = {
+          paths: (host.querySelector('#automation-file-paths')?.value || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+          events: [...host.querySelectorAll('[data-file-event]:checked')].map((input) => input.dataset.fileEvent),
+          debounceSeconds: Number(host.querySelector('#automation-file-debounce')?.value) || 3,
+        };
+        trigger.cooldownSeconds = Number(host.querySelector('#automation-cooldown')?.value) || 60;
+      } else if (selected === 'startup') {
+        trigger.config = { delaySeconds: Number(host.querySelector('#automation-startup-delay')?.value) || 0 };
+        trigger.cooldownSeconds = Number(host.querySelector('#automation-cooldown')?.value) || 0;
+      } else if (selected === 'webhook') {
+        trigger.config = { allowQueryToken: Boolean(host.querySelector('#automation-webhook-query')?.checked) };
+        trigger.cooldownSeconds = Number(host.querySelector('#automation-cooldown')?.value) || 5;
+      } else if (selected === 'mcp') {
+        let args = {};
+        try { args = JSON.parse(host.querySelector('#automation-mcp-args')?.value || '{}'); } catch {}
+        trigger.config = {
+          serverId: host.querySelector('#automation-mcp-server')?.value || '',
+          toolName: host.querySelector('#automation-mcp-tool')?.value || '',
+          args,
+          intervalSeconds: Number(host.querySelector('#automation-mcp-interval')?.value) || 300,
+        };
+        trigger.cooldownSeconds = 0;
+      } else if (selected === 'messenger') {
+        trigger.config = {
+          provider: host.querySelector('#automation-messenger-provider')?.value || '',
+          fromIncludes: (host.querySelector('#automation-messenger-from')?.value || '').trim(),
+          textIncludes: (host.querySelector('#automation-messenger-text')?.value || '').trim(),
+        };
+        trigger.cooldownSeconds = Number(host.querySelector('#automation-cooldown')?.value) || 10;
+      } else if (selected === 'session') {
+        trigger.config = {
+          on: host.querySelector('#automation-session-on')?.value || 'complete',
+          includeAutomationRuns: Boolean(host.querySelector('#automation-session-include')?.checked),
+        };
+        trigger.cooldownSeconds = Number(host.querySelector('#automation-cooldown')?.value) || 30;
+      }
+      return trigger;
+    };
     const reload = async () => {
-      const data = await API.schedules.list();
+      const [data, runtimeData] = await Promise.all([
+        API.schedules.list(),
+        API.schedules.runtime().catch(() => null),
+      ]);
       vstate.automations.schedules = data.schedules || [];
       vstate.automations.running = data.running || [];
+      if (runtimeData) vstate.automations.runtime = runtimeData;
       paintAutomations(host);
     };
     host.onclick = async (event) => {
@@ -2059,18 +2297,15 @@ Start writing, or ask the agent to draft it.
       if (event.target.closest('[data-automation-cancel]')) { vstate.automations.editing = ''; paintAutomations(host); return; }
       if (event.target.closest('[data-automation-save]')) {
         const button = event.target.closest('[data-automation-save]');
+        const trigger = collectTrigger();
         const payload = {
           id: vstate.automations.editing || undefined,
           title: host.querySelector('#automation-title')?.value.trim() || '',
           prompt: host.querySelector('#automation-prompt')?.value.trim() || '',
-          cadence: cadence?.value || 'daily',
-          date: host.querySelector('#automation-date')?.value || '',
-          time: host.querySelector('#automation-time')?.value || '09:00',
-          everyMinutes: Number(host.querySelector('#automation-every')?.value) || 30,
+          trigger,
           allowTools: Boolean(host.querySelector('#automation-tools')?.checked),
-          enabled: true,
         };
-        if (!payload.title) { payload.title = payload.prompt.slice(0, 60) || 'Scheduled run'; }
+        if (!payload.title) { payload.title = payload.prompt.slice(0, 60) || 'Automation run'; }
         button.disabled = true;
         try {
           await API.schedules.save(payload);
@@ -2089,10 +2324,64 @@ Start writing, or ask the agent to draft it.
         catch (error) { run.disabled = false; UI.toast(error.message, 'error'); }
         return;
       }
+      const pick = event.target.closest('[data-automation-pick]');
+      if (pick) {
+        pick.disabled = true;
+        try {
+          const result = await API.schedules.pickPath(pick.dataset.automationPick);
+          const target = host.querySelector('#automation-file-paths');
+          if (result?.path && target) {
+            const current = target.value.trim();
+            target.value = current ? `${current}\n${result.path}` : result.path;
+          }
+        } catch (error) { UI.toast(error.message, 'error'); }
+        finally { pick.disabled = false; }
+        return;
+      }
+      const copy = event.target.closest('[data-automation-copy]');
+      if (copy) {
+        try { await API.schedules.copyWebhook(copy.dataset.automationCopy); UI.toast('Webhook URL copied.', 'success'); }
+        catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      const rotate = event.target.closest('[data-automation-rotate]');
+      if (rotate) {
+        const confirmed = await UI.confirm({ title: 'Rotate this webhook token?', message: 'The old URL stops working immediately. Copy the new URL afterwards.', confirmLabel: 'Rotate token', danger: true });
+        if (!confirmed) return;
+        try { await API.schedules.rotateWebhook(rotate.dataset.automationRotate); await reload(); UI.toast('New webhook token issued.', 'success'); }
+        catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      const test = event.target.closest('[data-automation-test]');
+      if (test) {
+        const resultEl = host.querySelector('[data-automation-test-result]');
+        test.disabled = true;
+        if (resultEl) resultEl.textContent = 'Testing…';
+        try {
+          const result = await API.schedules.testTrigger({ trigger: collectTrigger() });
+          if (resultEl) resultEl.textContent = result.ok ? `Changed result preview: ${String(result.preview || '').slice(0, 240)}` : `Test failed: ${result.error}`;
+        } catch (error) { if (resultEl) resultEl.textContent = `Test failed: ${error.message}`; }
+        finally { test.disabled = false; }
+        return;
+      }
+      if (event.target.closest('[data-automation-webhook-settings]')) {
+        const button = event.target.closest('[data-automation-webhook-settings]');
+        const port = Number(host.querySelector('#automation-webhook-port')?.value) || 47821;
+        const allowLan = Boolean(host.querySelector('#automation-webhook-lan')?.checked);
+        button.disabled = true;
+        try {
+          const updated = await API.config.update({ triggers: { webhookPort: port, webhookAllowLan: allowLan } });
+          applyConfig(updated);
+          vstate.automations.config = updated?.triggers || vstate.automations.config;
+          await reload();
+          UI.toast('Webhook server settings saved.', 'success');
+        } catch (error) { UI.toast(error.message, 'error'); button.disabled = false; }
+        return;
+      }
       const remove = event.target.closest('[data-automation-delete]');
       if (remove) {
         const schedule = schedules.find((entry) => entry.id === remove.dataset.automationDelete);
-        const confirmed = await UI.confirm({ title: 'Delete this automation?', message: 'Scheduled runs stop. Sessions it already created are kept.', confirmLabel: 'Delete', danger: true, detail: schedule?.title });
+        const confirmed = await UI.confirm({ title: 'Delete this automation?', message: 'Its trigger stops. Sessions it already created are kept.', confirmLabel: 'Delete', danger: true, detail: schedule?.title });
         if (!confirmed) return;
         try { await API.schedules.remove(remove.dataset.automationDelete); await reload(); UI.toast('Automation deleted.', 'success'); }
         catch (error) { UI.toast(error.message, 'error'); }
@@ -2683,7 +2972,8 @@ Start writing, or ask the agent to draft it.
       ['', 'Auto detect'], ['ko', 'Korean'], ['en', 'English'], ['ja', 'Japanese'], ['zh', 'Chinese'],
       ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['pt', 'Portuguese'], ['ru', 'Russian'],
     ];
-    const language = config.language === 'en' ? 'en' : 'ko';
+    const language = ['ko', 'en', 'auto'].includes(config.language) ? config.language : 'auto';
+    const autoLabel = document.documentElement.lang === 'en' ? 'Auto (system)' : '자동 (시스템)';
     const uiFont = ['noto', 'system', 'mono'].includes(config.ui?.font) ? config.ui.font : 'noto';
     host.innerHTML = `<div class="page-inner">
       ${UI.pageHeader({
@@ -2719,8 +3009,9 @@ Start writing, or ask the agent to draft it.
                 </div>
               </div>
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">Interface language</div><div class="setting-desc">English or Korean. Switching reloads this window.</div></div>
+                <div class="setting-copy"><div class="setting-label">Interface language</div><div class="setting-desc">Follow the system language, or choose English or Korean. Switching reloads this window.</div></div>
                 <div class="setting-control language-options" data-no-i18n>
+                  <button class="theme-option ${language === 'auto' ? 'active' : ''}" type="button" data-language="auto">${autoLabel}</button>
                   <button class="theme-option ${language === 'ko' ? 'active' : ''}" type="button" data-language="ko">한국어</button>
                   <button class="theme-option ${language === 'en' ? 'active' : ''}" type="button" data-language="en">English</button>
                 </div>
@@ -2878,37 +3169,21 @@ Start writing, or ask the agent to draft it.
 
           <section class="settings-section" id="settings-schedules">
             <h2>Schedules</h2>
-            <p>Run a prompt once or on a timer while blank is open. Each run becomes a normal session you can read and continue.</p>
-            <div class="settings-group">
-              <div class="setting-row schedule-compose-row">
-                <input class="field-input" id="schedule-title" maxlength="80" placeholder="Schedule name" spellcheck="false" />
-                <select class="setting-inline-input" id="schedule-cadence">
-                  <option value="daily">Every day</option>
-                  <option value="weekdays">Weekdays</option>
-                  <option value="hourly">Every hour</option>
-                  <option value="once">Just once</option>
-                </select>
-                <input class="setting-inline-input" id="schedule-date" type="date" value="${localDateValue()}" aria-label="One-time run date" hidden />
-                <input class="setting-inline-input" id="schedule-time" type="time" value="09:00" />
-              </div>
-              <textarea class="settings-textarea" id="schedule-prompt" rows="3" placeholder="What should blank do when this runs?"></textarea>
-              <div class="provider-actions">
-                <button class="btn btn-primary btn-sm" type="button" data-save-schedule>${icon('plus', 12)} Add schedule</button>
-                <label class="schedule-check"><input type="checkbox" id="schedule-tools" /> Allow tools without asking</label>
-                <span class="setting-note">Off means approval-gated tools are denied automatically.</span>
-              </div>
+            <p>Automations run from their own page with timers, file changes, webhooks, MCP polls and more. This list is read-only.</p>
+            <div class="provider-actions">
+              <button class="btn btn-secondary btn-sm" type="button" data-open-automations>${icon('external-link', 12)} Manage automations</button>
             </div>
             <div class="schedule-list">
               ${schedules.length ? schedules.map((schedule) => {
                 const next = schedule.nextRunAt ? new Date(schedule.nextRunAt) : null;
                 const onceDone = schedule.cadence === 'once' && schedule.enabled === false && schedule.lastRunAt;
                 const nextText = next && !Number.isNaN(next.getTime()) ? next.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : onceDone ? 'done' : 'Paused';
-                const cadence = schedule.cadence === 'once' ? cadenceLabel(schedule) : schedule.cadence === 'hourly' ? `Every hour at :${String(schedule.time || '09:00').slice(3, 5)}` : schedule.cadence === 'weekdays' ? `Weekdays at ${schedule.time}` : `Every day at ${schedule.time}`;
                 const lastText = schedule.lastRunAt ? new Date(schedule.lastRunAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+                const stateBadge = schedule.running ? '<span class="badge amber">Running</span>' : schedule.lastStatus === 'ok' ? '<span class="badge green">OK</span>' : schedule.lastStatus === 'error' ? '<span class="badge red">Error</span>' : schedule.enabled === false ? '<span class="badge gray">Paused</span>' : '';
                 return `<div class="schedule-row ${schedule.running ? 'running' : ''}" data-schedule-id="${U.attr(schedule.id)}">
                   <div class="schedule-copy">
-                    <div class="schedule-head"><span class="schedule-title">${esc(schedule.title)}</span>${schedule.running ? '<span class="badge amber">Running</span>' : schedule.lastStatus === 'ok' ? '<span class="badge green">OK</span>' : schedule.lastStatus === 'error' ? '<span class="badge red">Error</span>' : ''}</div>
-                    <div class="schedule-meta"><span>${esc(cadence)}</span> · <span>${next ? `next ${esc(nextText)}` : onceDone ? 'done' : 'Paused'}</span>${lastText ? ` · <span>last ${esc(lastText)}</span>` : ''}</div>
+                    <div class="schedule-head"><span class="schedule-title">${esc(schedule.title)}</span>${stateBadge}</div>
+                    <div class="schedule-meta"><span>${esc(triggerLabel(schedule))}</span>${schedule.trigger?.type === 'schedule' && next ? ` · <span>next ${esc(nextText)}</span>` : ''}${lastText ? ` · <span>last ${esc(lastText)}</span>` : ''}</div>
                     <div class="schedule-prompt">${esc(U.truncate(schedule.prompt, 140))}</div>
                     ${schedule.lastError ? `<div class="schedule-error">${esc(U.truncate(schedule.lastError, 160))}</div>` : ''}
                   </div>
@@ -3035,7 +3310,7 @@ Start writing, or ask the agent to draft it.
                 <div class="setting-control">${UI.switchHtml(computerCfg.showCursor !== false, 'data-computer-toggle="showCursor"')}</div>
               </div>
               <div class="setting-row">
-                <div class="setting-copy"><div class="setting-label">Screen test</div><div class="setting-desc">Capture a single screenshot and open it to confirm screen access works.</div><div class="setting-note" id="computer-test-note">Screenshots stay in your local data folder.</div></div>
+                <div class="setting-copy"><div class="setting-label">Screen test</div><div class="setting-desc">Capture a single screenshot and check it right here to confirm screen access works.</div><div class="setting-note" id="computer-test-note">Screenshots stay in your local data folder.</div><button class="settings-shot" type="button" id="computer-test-preview" data-open-screenshot hidden></button></div>
                 <div class="setting-control"><button class="btn btn-secondary btn-sm" type="button" data-test-screenshot>${icon('camera', 12)} Test screenshot</button></div>
               </div>
               <div class="setting-row">
@@ -3175,21 +3450,21 @@ Start writing, or ask the agent to draft it.
       }
       const language = event.target.closest('[data-language]');
       if (language) {
-        const value = language.dataset.language === 'en' ? 'en' : 'ko';
+        const value = ['ko', 'en', 'auto'].includes(language.dataset.language) ? language.dataset.language : 'auto';
         let previous = null;
         try { previous = localStorage.getItem('blank.lang'); } catch {}
         host.querySelectorAll('[data-language]').forEach((item) => item.classList.toggle('active', item === language));
         try {
           try { localStorage.setItem('blank.lang', value); } catch {}
           await API.config.update({ language: value });
-          UI.toast(value === 'en' ? 'Switching to English…' : '한국어로 전환합니다…', 'success');
+          UI.toast(value === 'auto' ? 'Following the system language…' : value === 'en' ? 'Switching to English…' : '한국어로 전환합니다…', 'success');
           setTimeout(() => location.reload(), 120);
         } catch (error) {
           try {
             if (previous === null) localStorage.removeItem('blank.lang');
             else localStorage.setItem('blank.lang', previous);
           } catch {}
-          const restore = previous === 'en' ? 'en' : previous === 'ko' ? 'ko' : (config.language === 'en' ? 'en' : 'ko');
+          const restore = ['ko', 'en', 'auto'].includes(previous) ? previous : (['ko', 'en', 'auto'].includes(config.language) ? config.language : 'auto');
           host.querySelectorAll('[data-language]').forEach((item) => item.classList.toggle('active', item.dataset.language === restore));
           UI.toast(error.message, 'error');
         }
@@ -3417,27 +3692,7 @@ Start writing, or ask the agent to draft it.
         } catch (error) { UI.toast(error.message, 'error'); }
         return;
       }
-      if (event.target.closest('[data-save-schedule]')) {
-        const prompt = host.querySelector('#schedule-prompt').value.trim();
-        if (!prompt) { UI.toast('Write the prompt this schedule should run.', 'error'); return; }
-        const button = event.target.closest('[data-save-schedule]');
-        button.disabled = true;
-        try {
-          await API.schedules.save({
-            title: host.querySelector('#schedule-title').value.trim() || 'Scheduled run',
-            prompt,
-            cadence: host.querySelector('#schedule-cadence').value,
-            date: host.querySelector('#schedule-date').value || '',
-            time: host.querySelector('#schedule-time').value || '09:00',
-            allowTools: host.querySelector('#schedule-tools').checked,
-          });
-          const result = await API.schedules.list();
-          vstate.settings.schedules = result.schedules || [];
-          paintSettings(host);
-          UI.toast('Schedule added.', 'success');
-        } catch (error) { UI.toast(error.message, 'error'); button.disabled = false; }
-        return;
-      }
+      if (event.target.closest('[data-open-automations]')) { App.openPage('automations'); return; }
       const runScheduleButton = event.target.closest('[data-run-schedule]');
       if (runScheduleButton) {
         runScheduleButton.disabled = true;
@@ -3535,13 +3790,25 @@ Start writing, or ask the agent to draft it.
       if (event.target.closest('[data-test-screenshot]')) {
         const button = event.target.closest('[data-test-screenshot]');
         const note = host.querySelector('#computer-test-note');
+        const preview = host.querySelector('#computer-test-preview');
         button.disabled = true;
         try {
           const shot = await API.computer.testScreenshot();
-          if (note) note.textContent = `Saved to ${shot.path}`;
+          if (note) note.textContent = `${shot.width}×${shot.height} · ${shot.path}`;
+          if (preview) {
+            preview.hidden = false;
+            preview.dataset.path = shot.path;
+            preview.innerHTML = `<img src="${esc(shot.url)}" alt="Screen capture">`;
+          }
           UI.toast('Screenshot captured.', 'success');
         } catch (error) { UI.toast(error.message, 'error'); }
         finally { button.disabled = false; }
+        return;
+      }
+      if (event.target.closest('[data-open-screenshot]')) {
+        const node = event.target.closest('[data-open-screenshot]');
+        if (!node.dataset.path) return;
+        try { await API.computer.openScreenshot(node.dataset.path); } catch (error) { UI.toast(error.message, 'error'); }
         return;
       }
       if (event.target.closest('[data-save-search-key]')) {
@@ -3702,11 +3969,6 @@ Start writing, or ask the agent to draft it.
           || dictationChoices[0]
           || null;
         applyDictationSuggestions(host, chosen?.models?.length ? chosen.models : ['whisper-1']);
-        return;
-      }
-      if (event.target && event.target.id === 'schedule-cadence') {
-        const date = host.querySelector('#schedule-date');
-        if (date) date.hidden = event.target.value !== 'once';
         return;
       }
       if (event.target && event.target.id === 'approval-mode') {

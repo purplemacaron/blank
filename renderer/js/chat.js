@@ -246,7 +246,17 @@
     const meta = result?.meta || {};
     const content = result?.content || '';
     let html = '';
-    if (Array.isArray(meta.media) && meta.media.length) {
+    if (meta.screenshot && meta.screenshot.url) {
+      const shot = meta.screenshot;
+      const lines = String(content).split('\n');
+      const details = lines.slice(1).join('\n').trim();
+      html += `<div class="tool-section-label">Screenshot${shot.width && shot.height ? ` · ${U.esc(shot.width)}×${U.esc(shot.height)}` : ''}</div>
+        <button class="tool-screenshot" type="button" data-action="open-screenshot" data-path="${U.attr(shot.path)}" title="Open the full screenshot">
+          <img src="${U.attr(shot.url)}" alt="Screen capture" loading="lazy">
+          <span class="tool-screenshot-open">${icon('arrow-up-right', 12)}</span>
+        </button>`;
+      if (details) html += `<pre class="tool-pre tool-screenshot-note">${U.esc(clip(details, 2000))}</pre>`;
+    } else if (Array.isArray(meta.media) && meta.media.length) {
       html += `<div class="tool-section-label">${meta.media.length} asset${meta.media.length === 1 ? '' : 's'} in your media library</div><div class="tool-media-grid">${meta.media.map(mediaThumb).join('')}</div>`;
       if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div><pre class="tool-pre">${U.esc(clip(content, 3000))}</pre>`;
     } else if (meta.paper && meta.paper.id) {
@@ -2032,6 +2042,7 @@
         break;
       case 'chat:queued': {
         if (!payload.queueId) break;
+        if (payload.sessionId && payload.sessionId !== Chat.session?.id) break;
         if (!Chat.queue.some((item) => item.queueId === payload.queueId)) {
           Chat.queue.push({ queueId: payload.queueId, text: payload.text || '', queuedAt: payload.at || '' });
         }
@@ -2257,6 +2268,11 @@
       if (action === 'approval') { decideApproval(actionNode); return; }
       if (action === 'undo-checkpoint') { undoCheckpoint(actionNode); return; }
       if (action === 'open-file') { App.openFilePreview(actionNode.dataset.path); return; }
+      if (action === 'open-screenshot') {
+        window.blank?.computer?.openScreenshot(actionNode.dataset.path)
+          .catch((error) => UI.toast(error.message, 'error'));
+        return;
+      }
       if (action === 'open-media') {
         if (actionNode.dataset.id) { App.openMedia(actionNode.dataset.id); return; }
         toggleMediaPanel();

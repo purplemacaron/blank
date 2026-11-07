@@ -15,6 +15,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { appPaths, ensureHome } = require('./paths');
+const { decodeConsole } = require('./encoding');
 
 const MAX_TEXT = 4000;
 const KEEP_SCREENSHOTS = 20;
@@ -57,14 +58,17 @@ function run(command, args, { timeout = 20000, cwd } = {}) {
       cwd,
       windowsHide: true,
       maxBuffer: 4 * 1024 * 1024,
+      encoding: 'buffer',
       env: { ...process.env, ...(isMac ? { LANG: 'en_US.UTF-8' } : {}) },
-    }, (error, stdout, stderr) => {
+    }, (error, stdoutBuffer, stderrBuffer) => {
+      const stdout = decodeConsole(stdoutBuffer).trim();
+      const stderr = decodeConsole(stderrBuffer).trim();
       if (error) {
-        const message = String(stderr || stdout || error.message || '').trim();
-        reject(new Error(message || error.message));
+        const message = stderr || stdout || error.message || '';
+        reject(new Error(String(message).trim() || error.message));
         return;
       }
-      resolve({ stdout: String(stdout || '').trim(), stderr: String(stderr || '').trim() });
+      resolve({ stdout, stderr });
     });
   });
 }
@@ -73,6 +77,7 @@ function run(command, args, { timeout = 20000, cwd } = {}) {
 
 const INPUT_PS = String.raw`param([Parameter(Mandatory=$true)][string]$SpecPath)
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch {}
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @"
@@ -87,6 +92,9 @@ public static class BlankNative {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
@@ -95,8 +103,38 @@ public static class BlankNative {
 }
 "@
 try { [BlankNative]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch { [BlankNative]::SetProcessDPIAware() | Out-Null }
-$spec = Get-Content -Raw -LiteralPath $SpecPath | ConvertFrom-Json
+$spec = Get-Content -Raw -LiteralPath $SpecPath -Encoding UTF8 | ConvertFrom-Json
 $action = [string]$spec.action
+function To-B64Json($value) {
+  if ($null -eq $value) { $value = @() }
+  $json = ConvertTo-Json -InputObject $value -Compress -Depth 5
+  if (-not $json) { $json = '[]' }
+  return 'jsonb64:' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$json))
+}
+function Find-Windows([string[]]$terms) {
+  $needles = @($terms | Where-Object { $_ } | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+  if (-not $needles.Count) { return @() }
+  return @(Get-Process | Where-Object {
+    if (-not $_.MainWindowTitle) { return $false }
+    foreach ($needle in $needles) {
+      if ($_.MainWindowTitle.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true }
+      if ($_.ProcessName.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true }
+    }
+    return $false
+  })
+}
+function Resolve-Target($matches) {
+  $list = @($matches)
+  if (-not $list.Count) { return $null }
+  $real = @($list | Where-Object { $_.ProcessName -ne 'ApplicationFrameHost' })
+  if ($real.Count) { return $real[0] }
+  return $list[0]
+}
+function Visible-Titles {
+  $titles = @(Get-Process | Where-Object { $_.MainWindowTitle } | Select-Object -First 12 -ExpandProperty MainWindowTitle)
+  if (-not $titles.Count) { return 'none' }
+  return ($titles -join ' | ')
+}
 function Move-To([int]$x, [int]$y) {
   [BlankNative]::SetCursorPos($x, $y) | Out-Null
   Start-Sleep -Milliseconds 45
@@ -154,18 +192,54 @@ switch ($action) {
   }
   'type' { [System.Windows.Forms.SendKeys]::SendWait((Escape-SendKeys ([string]$spec.text))); Start-Sleep -Milliseconds 60 }
   'key' { [System.Windows.Forms.SendKeys]::SendWait([string]$spec.combo); Start-Sleep -Milliseconds 60 }
+  'keyvk' {
+    $codes = @($spec.vk | ForEach-Object { [int]$_ })
+    foreach ($code in $codes) { [BlankNative]::keybd_event([byte]$code, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 30 }
+    for ($i = $codes.Count - 1; $i -ge 0; $i--) { [BlankNative]::keybd_event([byte]$codes[$i], 0, 2, [UIntPtr]::Zero); Start-Sleep -Milliseconds 30 }
+  }
   'windows' {
-    $items = Get-Process | Where-Object { $_.MainWindowTitle -and $_.MainWindowTitle.Trim().Length -gt 0 } |
-      Select-Object -First 60 Id, ProcessName, MainWindowTitle
-    $items | ConvertTo-Json -Compress
+    $items = @(Get-Process | Where-Object { $_.MainWindowTitle -and $_.MainWindowTitle.Trim().Length -gt 0 } |
+      Select-Object -First 60 Id, ProcessName, MainWindowTitle)
+    To-B64Json $items
+  }
+  'launch' {
+    $target = [string]$spec.target
+    if (-not $target.Trim()) { 'No app to launch.'; exit 1 }
+    $before = @(Get-Process | Where-Object { $_.MainWindowTitle } | ForEach-Object { $_.MainWindowHandle })
+    try { Start-Process -FilePath $target } catch { "Could not launch $($target): $($_.Exception.Message)"; exit 1 }
+    $deadline = (Get-Date).AddMilliseconds([int]$spec.ms)
+    $wins = @()
+    while ((Get-Date) -lt $deadline) {
+      Start-Sleep -Milliseconds 250
+      $wins = @(Get-Process | Where-Object { $_.MainWindowTitle -and ($before -notcontains $_.MainWindowHandle) } |
+        Select-Object -First 8 Id, ProcessName, MainWindowTitle)
+      if ($wins.Count -gt 0) { break }
+    }
+    if ($wins.Count -gt 0) { To-B64Json $wins } else { "Launched $target." }
   }
   'focus' {
     $needle = [string]$spec.title
-    $target = Get-Process | Where-Object { $_.MainWindowTitle -and $_.MainWindowTitle.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase) -ge 0 } | Select-Object -First 1
-    if (-not $target) { throw "No visible window matched: $needle" }
+    $target = Resolve-Target (Find-Windows $spec.needles)
+    if (-not $target) { "No visible window matched: $needle. Visible windows: $(Visible-Titles)"; exit 1 }
     [BlankNative]::SetForegroundWindow($target.MainWindowHandle) | Out-Null
     Start-Sleep -Milliseconds 120
     "Focused $($target.ProcessName): $($target.MainWindowTitle)"
+  }
+  'close' {
+    $needle = [string]$spec.title
+    $target = Resolve-Target (Find-Windows $spec.needles)
+    if (-not $target) { "No visible window matched: $needle. Visible windows: $(Visible-Titles)"; exit 1 }
+    $label = "$($target.ProcessName): $($target.MainWindowTitle)"
+    $handle = $target.MainWindowHandle
+    $sent = $false
+    try { $sent = $target.CloseMainWindow() } catch {}
+    if (-not $sent) { [BlankNative]::PostMessage($handle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }
+    $deadline = (Get-Date).AddMilliseconds(5000)
+    while ((Get-Date) -lt $deadline) {
+      Start-Sleep -Milliseconds 150
+      if (-not [BlankNative]::IsWindow($handle) -or -not [BlankNative]::IsWindowVisible($handle)) { "Closed $label"; exit 0 }
+    }
+    "Asked $label to close, but its window is still open. It may be kept in the tray or waiting for a confirmation."
   }
   'wait' { Start-Sleep -Milliseconds ([Math]::Min(10000, [Math]::Max(0, [int]$spec.ms))); "Waited $($spec.ms) ms" }
   default { throw "Unknown action: $action" }
@@ -173,7 +247,8 @@ switch ($action) {
 
 const SCREENSHOT_PS = String.raw`param([Parameter(Mandatory=$true)][string]$SpecPath)
 $ErrorActionPreference = 'Stop'
-$spec = Get-Content -Raw -LiteralPath $SpecPath | ConvertFrom-Json
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch {}
+$spec = Get-Content -Raw -LiteralPath $SpecPath -Encoding UTF8 | ConvertFrom-Json
 $OutPath = [string]$spec.out
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -368,6 +443,85 @@ function cleanModifiers(list) {
   return list.map((value) => String(value).toLowerCase()).filter((value) => ['ctrl', 'alt', 'shift', 'cmd', 'meta', 'win'].includes(value));
 }
 
+/* Windows resolves bare names through PATH, where developer shims (Git usr/bin)
+   shadow system apps. Launch known apps by absolute path or shell URI instead. */
+function resolveLaunchTarget(target) {
+  const value = String(target || '').trim();
+  if (!isWin || !value) return value;
+  const root = process.env.SystemRoot || 'C:\\Windows';
+  const system32 = path.join(root, 'System32');
+  const aliases = {
+    notepad: path.join(system32, 'notepad.exe'),
+    메모장: path.join(system32, 'notepad.exe'),
+    calc: path.join(system32, 'calc.exe'),
+    calculator: path.join(system32, 'calc.exe'),
+    계산기: path.join(system32, 'calc.exe'),
+    mspaint: path.join(system32, 'mspaint.exe'),
+    paint: path.join(system32, 'mspaint.exe'),
+    그림판: path.join(system32, 'mspaint.exe'),
+    cmd: path.join(system32, 'cmd.exe'),
+    explorer: path.join(root, 'explorer.exe'),
+    탐색기: path.join(root, 'explorer.exe'),
+    taskmgr: path.join(system32, 'Taskmgr.exe'),
+    '작업 관리자': path.join(system32, 'Taskmgr.exe'),
+    control: path.join(system32, 'control.exe'),
+    제어판: path.join(system32, 'control.exe'),
+    snippingtool: path.join(system32, 'SnippingTool.exe'),
+    '캡처 도구': path.join(system32, 'SnippingTool.exe'),
+    settings: 'ms-settings:',
+    설정: 'ms-settings:',
+    camera: 'microsoft.windows.camera:',
+    카메라: 'microsoft.windows.camera:',
+  };
+  const alias = aliases[value.toLowerCase()];
+  if (alias) return alias;
+  if (!/[\\/:]/.test(value)) {
+    const exe = path.join(system32, `${value}.exe`);
+    if (fs.existsSync(exe)) return exe;
+  }
+  return value;
+}
+
+/** Match windows by title or process name, including Korean/English app pairs. */
+const WINDOW_ALIASES = [
+  ['kakaotalk', '카카오톡'],
+  ['notepad', '메모장'],
+  ['calc', '계산기'],
+  ['calculator', '계산기'],
+  ['mspaint', '그림판'],
+  ['paint', '그림판'],
+  ['explorer', '탐색기', '파일 탐색기'],
+  ['taskmgr', '작업 관리자'],
+  ['task manager', '작업 관리자'],
+  ['control', '제어판'],
+  ['snippingtool', '캡처 도구'],
+  ['snipping tool', '캡처 도구'],
+  ['settings', '설정'],
+  ['camera', '카메라'],
+  ['chrome', '크롬'],
+  ['msedge', '엣지'],
+  ['discord', '디스코드'],
+  ['spotify', '스포티파이'],
+  ['code', 'visual studio code'],
+];
+
+function windowSearchTerms(query) {
+  const raw = String(query || '').trim().replace(/\.exe$/i, '');
+  if (!raw) return [];
+  const terms = [];
+  const add = (value) => {
+    const term = String(value || '').trim();
+    if (term && !terms.some((existing) => existing.toLowerCase() === term.toLowerCase())) terms.push(term);
+  };
+  add(raw);
+  const lower = raw.toLowerCase();
+  for (const group of WINDOW_ALIASES) {
+    if (!group.includes(lower) && !group.includes(raw)) continue;
+    for (const term of group) add(term);
+  }
+  return terms.slice(0, 8);
+}
+
 function sendKeysCombo(key, modifiers) {
   const map = {
     enter: '{ENTER}', return: '{ENTER}', tab: '{TAB}', escape: '{ESC}', esc: '{ESC}',
@@ -390,6 +544,49 @@ function sendKeysCombo(key, modifiers) {
     else if (mod === 'shift') prefix += '+';
   }
   return `${prefix}${base}`;
+}
+
+const VK_CODES = {
+  win: 0x5B, meta: 0x5B, cmd: 0x5B, ctrl: 0x11, alt: 0x12, shift: 0x10,
+  enter: 0x0D, return: 0x0D, tab: 0x09, escape: 0x1B, esc: 0x1B, space: 0x20,
+  backspace: 0x08, delete: 0x2E, insert: 0x2D,
+  up: 0x26, down: 0x28, left: 0x25, right: 0x27,
+  home: 0x24, end: 0x23, pageup: 0x21, pagedown: 0x22,
+};
+
+/** Windows-key combos need virtual-key events; SendKeys has no Win modifier. */
+function vkCombo(key, modifiers) {
+  const mods = modifiers.map((mod) => (mod === 'cmd' || mod === 'meta' ? 'win' : mod));
+  const lower = String(key || '').toLowerCase();
+  if (!mods.includes('win') && lower !== 'win') return null;
+  if (lower === 'win' && !mods.includes('win')) mods.push('win');
+  const codes = [];
+  for (const mod of ['ctrl', 'alt', 'shift', 'win']) {
+    if (mods.includes(mod)) codes.push(VK_CODES[mod]);
+  }
+  if (lower !== 'win') {
+    let code = VK_CODES[lower];
+    if (!code && /^[a-z]$/.test(lower)) code = lower.toUpperCase().charCodeAt(0);
+    if (!code && /^[0-9]$/.test(lower)) code = lower.charCodeAt(0);
+    if (!code && /^f([1-9]|1[0-2])$/.test(lower)) code = 0x6F + Number(lower.slice(1));
+    if (!code) throw new Error(`Unsupported key: ${key}`);
+    codes.push(code);
+  }
+  return codes.length ? codes : null;
+}
+
+function parseWindowJson(stdout) {
+  let text = String(stdout || '').trim();
+  if (!text) return [];
+  if (text.startsWith('jsonb64:')) {
+    try { text = Buffer.from(text.slice(8), 'base64').toString('utf8'); } catch { return []; }
+  }
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
 }
 
 function normalizeArgs(action, args = {}) {
@@ -425,10 +622,18 @@ function normalizeArgs(action, args = {}) {
     base.key = validateKey(args.key);
     base.modifiers = cleanModifiers(args.modifiers);
   }
-  if (action === 'focus') {
+  if (action === 'focus' || action === 'close') {
     base.title = String(args.title || '').trim();
-    if (!base.title) throw new Error('Window title is required.');
+    if (!base.title) throw new Error('Window title or app name is required.');
     if (base.title.length > 120) throw new Error('Window title is too long.');
+    base.needles = windowSearchTerms(base.title);
+  }
+  if (action === 'launch') {
+    base.target = String(args.target || '').trim();
+    if (!base.target) throw new Error('App name or path is required.');
+    if (base.target.length > 260) throw new Error('App name is too long.');
+    const wait = Number(args.ms);
+    base.ms = Number.isFinite(wait) ? Math.min(Math.max(Math.round(wait), 0), 10000) : 4000;
   }
   if (action === 'wait') base.ms = clampInt(args.ms || 500, 0, 10000);
   return base;
@@ -465,9 +670,13 @@ async function screenshot() {
   }
   if (!fs.existsSync(file)) throw new Error('The screenshot could not be saved.');
   const stat = fs.statSync(file);
-  const screenshots = fs.readdirSync(dir).filter((name) => /^screen-.*\.png$/.test(name)).sort();
-  for (const old of screenshots.slice(0, Math.max(0, screenshots.length - KEEP_SCREENSHOTS))) {
-    try { fs.unlinkSync(path.join(dir, old)); } catch {}
+  const screenshots = fs.readdirSync(dir).filter((name) => /^screen-.*\.(png|jpg)$/i.test(name));
+  const baseOf = (name) => name.replace(/-model\.jpe?g$/i, '').replace(/\.(png|jpe?g)$/i, '');
+  const keep = new Set([...new Set(screenshots.map(baseOf))].sort().slice(-KEEP_SCREENSHOTS));
+  for (const old of screenshots) {
+    if (!keep.has(baseOf(old))) {
+      try { fs.unlinkSync(path.join(dir, old)); } catch {}
+    }
   }
   const [width, height] = dimensions.split('x').map((value) => Number(value) || 0);
   signalActivity({ kind: 'screenshot' });
@@ -476,33 +685,49 @@ async function screenshot() {
 
 async function perform(rawAction, rawArgs = {}) {
   const action = String(rawAction || '').toLowerCase();
-  if (!['move', 'click', 'drag', 'scroll', 'type', 'key', 'wait', 'focus', 'windows'].includes(action)) {
+  if (!['move', 'click', 'drag', 'scroll', 'type', 'key', 'wait', 'focus', 'close', 'windows', 'launch'].includes(action)) {
     throw new Error(`Unknown computer action: ${action}`);
   }
   const args = normalizeArgs(action, rawArgs);
+  const plain = ['windows', 'type', 'key', 'wait', 'launch', 'close'].includes(action);
   signalActivity({
     kind: action,
-    x: action === 'windows' || action === 'type' || action === 'key' || action === 'wait' ? undefined : args.x,
-    y: action === 'windows' || action === 'type' || action === 'key' || action === 'wait' ? undefined : args.y,
+    x: plain ? undefined : args.x,
+    y: plain ? undefined : args.y,
     toX: action === 'drag' ? args.to_x : undefined,
     toY: action === 'drag' ? args.to_y : undefined,
-    detail: action === 'focus' ? args.title : action === 'key' ? [ ...(args.modifiers || []), args.key ].join('+') : undefined,
+    detail: action === 'focus' || action === 'close' ? args.title : action === 'launch' ? args.target : action === 'key' ? [ ...(args.modifiers || []), args.key ].join('+') : undefined,
   });
+  if (action === 'launch') args.target = resolveLaunchTarget(args.target);
+  if (!isWin && action === 'close') throw new Error('Closing windows is currently supported on Windows only.');
   if (isWin) {
-    if (action === 'key') args.combo = sendKeysCombo(args.key, args.modifiers);
-    const result = await windowsPowerShell({ name: 'input', content: INPUT_PS }, args);
-    const stdout = result.stdout.trim();
-    if (action === 'windows') {
-      if (!stdout) return { action, windows: [] };
-      const parsed = JSON.parse(stdout);
-      return { action, windows: Array.isArray(parsed) ? parsed : [parsed] };
+    if (action === 'key') {
+      const vk = vkCombo(args.key, args.modifiers);
+      if (vk) {
+        args.vk = vk;
+        args.action = 'keyvk';
+      } else {
+        args.combo = sendKeysCombo(args.key, args.modifiers);
+      }
     }
-    return { action, detail: stdout || `${action} complete.` };
+    const result = await windowsPowerShell({ name: 'input', content: INPUT_PS }, args);
+    const windows = parseWindowJson(result.stdout);
+    if (action === 'windows') return { action, windows };
+    if (action === 'launch' && windows.length) return { action, windows, detail: result.stdout.trim().startsWith('jsonb64:') ? '' : result.stdout.trim() };
+    return { action, detail: result.stdout.trim() || `${action} complete.` };
   }
   if (isMac) {
+    if (action === 'launch') {
+      await run('open', [args.target], { timeout: 15000 });
+      return { action, detail: `Launched ${args.target}.` };
+    }
     const result = await macInput(action, args);
     if (action === 'windows') return { action, windows: result };
     return { action, detail: String(result || `${action} complete.`) };
+  }
+  if (action === 'launch') {
+    await run('xdg-open', [args.target], { timeout: 15000 });
+    return { action, detail: `Launched ${args.target}.` };
   }
   const result = await linuxInput(action, args);
   if (action === 'windows') return { action, windows: result };
@@ -514,4 +739,4 @@ async function listWindows() {
   return result.windows || [];
 }
 
-module.exports = { screenshot, perform, listWindows, normalizeArgs, computerDir, onActivity, setActor };
+module.exports = { screenshot, perform, listWindows, normalizeArgs, sendKeysCombo, vkCombo, resolveLaunchTarget, windowSearchTerms, computerDir, onActivity, setActor };

@@ -74,6 +74,7 @@ function createMessengerService(options = {}) {
   const fetchImpl = options.fetch || ((...args) => fetch(...args));
   const WebSocketImpl = options.WebSocket || WebSocket;
   const readHandlers = typeof options.handlers === 'function' ? options.handlers : () => options.handlers;
+  const onIncoming = typeof options.onIncoming === 'function' ? options.onIncoming : null;
   let onStatus = typeof options.onStatus === 'function' ? options.onStatus : () => {};
   const endpoint = String(options.telegramBaseUrl || '').replace(/\/+$/, '');
 
@@ -430,6 +431,17 @@ function createMessengerService(options = {}) {
     const link = linksOf(provider)[chatId] || {};
     let sessionId = String(link.sessionId || '');
     if (sessionId && handlers.getSession && !handlers.getSession(sessionId)) sessionId = '';
+    if (onIncoming && command.name === 'text') {
+      try {
+        await onIncoming({
+          provider,
+          chatId,
+          text,
+          label,
+          at: new Date().toISOString(),
+        });
+      } catch {}
+    }
     try {
       const result = await handlers.send({ text, sessionId: sessionId || undefined, mode: meta.mode });
       const nextSession = String(result?.sessionId || sessionId || '');

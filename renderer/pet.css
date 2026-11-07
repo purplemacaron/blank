@@ -292,8 +292,9 @@ body.composing .pet-bubble {
   background: var(--paper-ink);
   transform-origin: center 60%;
   animation: blink 5.4s ease-in-out infinite;
+  transition: height 0.25s ease, width 0.25s ease, margin-top 0.25s ease,
+    border-radius 0.25s ease, border-color 0.25s ease, background-color 0.25s ease;
 }
-
 .pet-eye::after {
   content: '';
   position: absolute;
@@ -308,6 +309,195 @@ body.composing .pet-bubble {
 
 .pet-eye.left { left: 38px; }
 .pet-eye.right { right: 38px; }
+
+/* -------------------------------------------------------------- expressions */
+
+.pet-face {
+  position: absolute;
+  inset: 0;
+}
+
+.pet-brow {
+  position: absolute;
+  top: 40%;
+  width: 12px;
+  height: 2.5px;
+  border-radius: 2px;
+  background: var(--paper-ink);
+  opacity: 0.72;
+  transition: transform 0.3s ease, top 0.3s ease, opacity 0.3s ease;
+}
+.pet-brow.left { left: 35px; transform: rotate(-4deg); }
+.pet-brow.right { right: 35px; transform: rotate(4deg); }
+
+.pet-mouth {
+  position: absolute;
+  left: 50%;
+  top: 64%;
+  width: 12px;
+  height: 6px;
+  margin-left: -6px;
+  border-bottom: 2px solid var(--paper-ink);
+  border-radius: 0 0 9px 9px;
+  opacity: 0.8;
+  transition: width 0.3s ease, height 0.3s ease, margin-left 0.3s ease,
+    border-radius 0.3s ease, border-color 0.3s ease, background-color 0.3s ease,
+    transform 0.3s ease, opacity 0.3s ease;
+}
+
+/* reading: a slow glance across the page */
+body[data-mood="reading"] .pet-face { animation: faceScan 2.8s ease-in-out infinite; }
+body[data-mood="reading"] .pet-brow { opacity: 0.55; }
+body[data-mood="reading"] .pet-mouth { width: 10px; margin-left: -5px; }
+
+/* searching: wide-eyed and curious */
+body[data-mood="search"] .pet-face { animation: faceScan 2.2s ease-in-out infinite; }
+body[data-mood="search"] .pet-brow { top: 37%; opacity: 0.8; }
+body[data-mood="search"] .pet-brow.left { transform: rotate(-8deg); }
+body[data-mood="search"] .pet-brow.right { transform: rotate(8deg); }
+body[data-mood="search"] .pet-eye { height: 13px; margin-top: -6.5px; }
+body[data-mood="search"] .pet-mouth {
+  width: 7px;
+  height: 6px;
+  margin-left: -3.5px;
+  border: 1.8px solid var(--paper-ink);
+  border-radius: 50%;
+  background: transparent;
+}
+
+/* editing: focused squint, brows pulled in */
+body[data-mood="editing"] .pet-eye { height: 8px; margin-top: -4px; }
+body[data-mood="editing"] .pet-brow { top: 42%; }
+body[data-mood="editing"] .pet-brow.left { transform: rotate(6deg); }
+body[data-mood="editing"] .pet-brow.right { transform: rotate(-6deg); }
+body[data-mood="editing"] .pet-mouth { width: 8px; margin-left: -4px; }
+
+/* running a command: alert eyes and a small open mouth */
+body[data-mood="command"] .pet-eye { height: 14px; margin-top: -7px; }
+body[data-mood="command"] .pet-brow.left { transform: rotate(8deg); }
+body[data-mood="command"] .pet-brow.right { transform: rotate(-8deg); }
+body[data-mood="command"] .pet-mouth {
+  width: 6px;
+  height: 7px;
+  margin-left: -3px;
+  border: 2px solid var(--paper-ink);
+  border-radius: 50%;
+  background: transparent;
+}
+
+/* running checks: a steady squint and a flat mouth */
+body[data-mood="checking"] .pet-eye { height: 9px; margin-top: -4.5px; }
+body[data-mood="checking"] .pet-brow { top: 39%; opacity: 0.8; }
+body[data-mood="checking"] .pet-mouth {
+  width: 9px;
+  height: 0;
+  margin-left: -4.5px;
+  border-bottom-width: 2px;
+  border-radius: 0;
+}
+
+/* computer use: narrowed eyes scanning the screen */
+body[data-mood="computer"] .pet-face { animation: faceScan 3.6s ease-in-out infinite; }
+body[data-mood="computer"] .pet-brow { opacity: 0.6; }
+body[data-mood="computer"] .pet-eye { height: 9px; margin-top: -4.5px; }
+body[data-mood="computer"] .pet-mouth { width: 8px; margin-left: -4px; }
+
+/* creating media: bright brows and a pulsing gaze */
+body[data-mood="media"] .pet-brow { top: 37%; opacity: 0.85; }
+body[data-mood="media"] .pet-brow.left { transform: rotate(-9deg); }
+body[data-mood="media"] .pet-brow.right { transform: rotate(9deg); }
+body[data-mood="media"] .pet-eye { animation: idea 1.9s ease-in-out infinite; }
+body[data-mood="media"] .pet-mouth {
+  width: 6px;
+  height: 5px;
+  margin-left: -3px;
+  border: 1.8px solid var(--paper-ink);
+  border-radius: 50%;
+  background: transparent;
+}
+
+/* working with the team: one brow up, a wink and a wry smile */
+body[data-mood="team"] .pet-brow.right { top: 36%; transform: rotate(12deg); opacity: 0.85; }
+body[data-mood="team"] .pet-eye.left { animation: wink 3.4s ease-in-out infinite; }
+body[data-mood="team"] .pet-mouth { width: 13px; margin-left: -6px; transform: rotate(-8deg); }
+
+/* idle: a slow glance, quiet enough to ignore */
+body[data-state="idle"] .pet-face { animation: faceIdle 14s ease-in-out infinite; }
+
+/* hover: a small pleased look */
+body[data-state="idle"]:has(.pet:hover) .pet-brow { top: 38%; opacity: 0.8; }
+body[data-state="idle"]:has(.pet:hover) .pet-eye { height: 13px; margin-top: -6.5px; }
+body[data-state="idle"]:has(.pet:hover) .pet-mouth { width: 15px; margin-left: -7.5px; }
+
+/* typing an instruction: attentive */
+body.composing .pet-face { animation: none; }
+body.composing .pet-brow { top: 37%; opacity: 0.85; }
+body.composing .pet-brow.left { transform: rotate(-8deg); }
+body.composing .pet-brow.right { transform: rotate(8deg); }
+body.composing .pet-eye { height: 13px; margin-top: -6.5px; }
+body.composing .pet-mouth {
+  width: 7px;
+  height: 6px;
+  margin-left: -3.5px;
+  border: 1.8px solid var(--paper-ink);
+  border-radius: 50%;
+  background: transparent;
+}
+
+/* waiting for review: wide eyes, raised brows, small O */
+body[data-state="waiting"] .pet-face { animation: none; }
+body[data-state="waiting"] .pet-brow { top: 37%; opacity: 0.85; }
+body[data-state="waiting"] .pet-brow.left { transform: rotate(-10deg); }
+body[data-state="waiting"] .pet-brow.right { transform: rotate(10deg); }
+body[data-state="waiting"] .pet-eye {
+  height: 15px;
+  margin-top: -7.5px;
+  transform: none;
+  animation: none;
+}
+body[data-state="waiting"] .pet-mouth {
+  width: 7px;
+  height: 8px;
+  margin-left: -3.5px;
+  border: 2px solid var(--paper-ink);
+  border-radius: 50%;
+  background: transparent;
+}
+
+/* finished well: happy arcs and a wider smile */
+body[data-state="done"] .pet-face { animation: none; }
+body[data-state="done"] .pet-brow { top: 41%; opacity: 0.85; }
+body[data-state="done"] .pet-eye {
+  height: 6px;
+  margin-top: -1px;
+  border-radius: 0 0 9px 9px;
+  background: transparent;
+  border-bottom: 3px solid var(--paper-ink);
+  animation: none;
+  transform: none;
+}
+body[data-state="done"] .pet-eye::after { display: none; }
+body[data-state="done"] .pet-mouth {
+  width: 16px;
+  height: 7px;
+  margin-left: -8px;
+  border-bottom-width: 2.5px;
+}
+
+/* something went wrong: worried brows and a frown */
+body[data-state="error"] .pet-face { animation: none; }
+body[data-state="error"] .pet-brow { top: 43%; opacity: 0.9; }
+body[data-state="error"] .pet-brow.left { transform: rotate(14deg); }
+body[data-state="error"] .pet-brow.right { transform: rotate(-14deg); }
+body[data-state="error"] .pet-eye { transform: scaleY(0.85); animation: none; }
+body[data-state="error"] .pet-mouth {
+  width: 10px;
+  height: 5px;
+  margin-left: -5px;
+  border-bottom: 0;
+  border-top: 2px solid var(--paper-ink);
+  border-radius: 9px 9px 0 0;
+}
 
 /* -------------------------------------------------------------- identity */
 
@@ -480,6 +670,24 @@ body[data-theme="dark"] .pet-menu button[data-menu="hide"] { color: #8b98ab; }
 @keyframes dotPulse {
   0%, 100% { transform: scale(0.85); opacity: 0.7; }
   50% { transform: scale(1.15); opacity: 1; }
+}
+@keyframes faceScan {
+  0%, 100% { transform: translateX(0); }
+  30% { transform: translateX(-3px); }
+  65% { transform: translateX(3px); }
+}
+@keyframes faceIdle {
+  0%, 34%, 74%, 100% { transform: translateX(0); }
+  42%, 50% { transform: translateX(-2px); }
+  58%, 66% { transform: translateX(2px); }
+}
+@keyframes idea {
+  0%, 100% { transform: scaleY(1); }
+  45%, 55% { transform: scaleY(1.22); }
+}
+@keyframes wink {
+  0%, 82%, 100% { transform: scaleY(1); }
+  87%, 93% { transform: scaleY(0.12); }
 }
 @keyframes wait {
   0%, 100% { transform: rotate(-2.5deg) translateY(0); }

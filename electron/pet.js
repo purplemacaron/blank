@@ -14,6 +14,7 @@ const WIDTH = 216;
 const HEIGHT = 264;
 const MARGIN = 24;
 const TEAM_PREFIX = '__team__:';
+const RUN_PREFIX = '__run__:';
 const DEFAULT_KEY = '__default__';
 
 function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
@@ -48,7 +49,6 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       x: savedX,
       y: savedY,
       positions,
-      language: config.language === 'en' ? 'en' : 'ko',
       theme: config.theme === 'dark' ? 'dark' : 'light',
       defaultModel: String(config.defaultModel || '').trim(),
     };
@@ -154,6 +154,8 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       interactive: false,
       retiring: null,
       runId: '',
+      sessionId: '',
+      followFrom: null,
     };
     entries.set(key, entry);
     return entry;
@@ -254,7 +256,7 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       if (item.kind === 'model' && key !== entry.key) destroyEntry(key);
     }
     for (const item of entries.values()) {
-      if (item.kind === 'team') showEntry(item);
+      if (item.kind === 'team' || item.kind === 'run') showEntry(item);
     }
   }
 
@@ -276,13 +278,81 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
   }
 
   /** Put the base memo back on the configured default when no run is active. */
-  function refreshDefault() {
-    if (disposed || runKeys.size) return false;
+  function refreshDefault(force = false) {
+    if (disposed) return false;
+    if (!force && runKeys.size) return false;
     const entry = entries.get(DEFAULT_KEY);
-    if (!entry || entry.kind !== 'model') return false;
+    if (!entry || entry.kind !== 'model' || entry.runId) return false;
     entry.order = 0;
     entry.model = baseModel();
     return true;
+  }
+
+  function runKey(runId) {
+    return `${RUN_PREFIX}${String(runId || '').slice(0, 64)}`;
+  }
+
+  function runOrder() {
+    const used = new Set([...entries.values()].filter((item) => item.kind === 'run').map((item) => item.order));
+    for (let slot = 1; slot <= 7; slot += 1) {
+      if (!used.has(slot)) return slot;
+    }
+    return 7;
+  }
+
+  /** The first active run takes the base memo; concurrent runs get their own paper. */
+  function ensureRun(payload = {}) {
+    if (disposed) return null;
+    const runId = String(payload.runId || '').trim();
+    if (!runId) return ensureModel(payload.model);
+    const bound = runKeys.get(runId);
+    if (bound && entries.has(bound)) {
+      const entry = entries.get(bound);
+      if (payload.model) entry.model = String(payload.model);
+      return bound;
+    }
+    const base = ensureBase();
+    if (!base.runId) {
+      base.runId = runId;
+      if (payload.model) base.model = String(payload.model);
+      return base.key;
+    }
+    const key = runKey(runId);
+    let entry = entries.get(key);
+    if (!entry) {
+      entry = createEntry({
+        key,
+        kind: 'run',
+        model: String(payload.model || baseModel()),
+        order: runOrder(),
+        runId,
+      });
+    }
+    entry.runId = runId;
+    if (payload.model) entry.model = String(payload.model);
+    clearTimeout(entry.retiring);
+    entry.retiring = null;
+    if (petConfig().enabled) showEntry(entry);
+    return key;
+  }
+
+  function retireRun(runId, delay = 6000) {
+    const entry = entries.get(runKey(runId));
+    runKeys.delete(runId);
+    if (entry && entry.kind === 'run') {
+      if (entry.runId === String(runId)) entry.sessionId = '';
+      clearTimeout(entry.retiring);
+      entry.retiring = setTimeout(() => {
+        entry.retiring = null;
+        destroyEntry(entry.key);
+      }, Math.max(500, Number(delay) || 6000));
+    }
+    const base = entries.get(DEFAULT_KEY);
+    if (base && base.runId === String(runId)) {
+      base.runId = '';
+      base.sessionId = '';
+      refreshDefault(true);
+    }
   }
 
   function teamKey(member) {
@@ -355,10 +425,17 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
   function send(payload = {}) {
     if (disposed) return false;
     let key = null;
-    if (payload.model !== undefined && payload.model !== null) {
+    if (payload.type === 'run:start') {
+      key = ensureRun(payload);
+      if (key && payload.runId) runKeys.set(payload.runId, key);
+      if (key && payload.sessionId) {
+        sessionKeys.set(payload.sessionId, key);
+        const entry = entries.get(key);
+        if (entry) entry.sessionId = String(payload.sessionId);
+      }
+    } else if (payload.model !== undefined && payload.model !== null) {
       const candidate = modelKey(payload.model);
-      if (payload.type === 'run:start') key = ensureModel(payload.model);
-      else if (entries.has(candidate)) key = candidate;
+      if (entries.has(candidate)) key = candidate;
       if (key) {
         if (payload.runId) runKeys.set(payload.runId, key);
         if (payload.sessionId) sessionKeys.set(payload.sessionId, key);
@@ -374,9 +451,8 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       else return false;
     }
     if (payload.type === 'run:done' && payload.runId) {
-      runKeys.delete(payload.runId);
       retireTeamsForRun(payload.runId);
-      refreshDefault();
+      retireRun(payload.runId);
     }
     return sendTo(key, payload);
   }
@@ -409,6 +485,8 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       model: entry.model,
       name: entry.name,
       teamName: entry.teamName,
+      runId: entry.runId,
+      sessionId: entry.sessionId,
     };
   }
 
@@ -457,6 +535,55 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
       try { savePosition(entry.key, placed, entry.key === primaryKey()); } catch {}
     }
     return placed || point;
+  }
+
+  function resolveKey(target) {
+    const value = String(target || '');
+    if (!value) return entries.has(DEFAULT_KEY) ? DEFAULT_KEY : null;
+    if (entries.has(value)) return value;
+    const viaRun = runKeys.get(value);
+    if (viaRun && entries.has(viaRun)) return viaRun;
+    return null;
+  }
+
+  /** Park a memo beside the pointer while the agent drives the desktop. */
+  function followCursor(target) {
+    if (disposed) return null;
+    const key = resolveKey(target);
+    const entry = key ? entries.get(key) : null;
+    if (!entry) return null;
+    let cursor;
+    let area;
+    try {
+      cursor = screen.getCursorScreenPoint();
+      area = screen.getDisplayNearestPoint(cursor).workArea;
+    } catch {
+      return null;
+    }
+    if (!entry.followFrom) entry.followFrom = currentPosition(key);
+    const gapX = 26;
+    const gapY = 22;
+    let x = cursor.x + gapX;
+    let y = cursor.y + gapY;
+    if (x + WIDTH > area.x + area.width) x = cursor.x - WIDTH - gapY;
+    if (y + HEIGHT > area.y + area.height) y = cursor.y - HEIGHT - gapY;
+    x = Math.min(Math.max(x, area.x), area.x + area.width - WIDTH);
+    y = Math.min(Math.max(y, area.y), area.y + area.height - HEIGHT);
+    entry.lastPosition = { x, y };
+    if (entry.win && !entry.win.isDestroyed()) {
+      try { entry.win.setPosition(x, y); } catch {}
+    }
+    return { x, y };
+  }
+
+  function stopFollow(target) {
+    const key = resolveKey(target);
+    const entry = key ? entries.get(key) : null;
+    if (!entry || !entry.followFrom) return false;
+    const point = entry.followFrom;
+    entry.followFrom = null;
+    move(key, point);
+    return true;
   }
 
   function setInteractive(key, value) {
@@ -524,6 +651,8 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
     move,
     save,
     reset,
+    followCursor,
+    stopFollow,
     setInteractive,
     focus,
     identify,

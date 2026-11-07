@@ -508,3 +508,44 @@ test('webhook bridge authenticates, answers and reports approvals', async () => 
   });
   assert.equal(badBody.status, 400);
 });
+
+test('paired plain text notifies onIncoming before the auto-reply', async () => {
+  const seen = [];
+  const { handlers, calls } = makeHandlers();
+  const config = memoryConfig(baseConfig({ telegram: { enabled: true, token: 'bot-token', links: {} } }));
+  const service = createMessengerService({
+    configModule: config,
+    network: false,
+    handlers,
+    onIncoming: async (event) => { seen.push(event); },
+  });
+  test.after(() => service.dispose());
+  const code = service.status().pairCode;
+  await service.receive('telegram', 'chat-hook', `/pair ${code}`);
+  await service.receive('telegram', 'chat-hook', 'deploy now');
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].provider, 'telegram');
+  assert.equal(seen[0].chatId, 'chat-hook');
+  assert.equal(seen[0].text, 'deploy now');
+  assert.equal(calls.send.length, 1);
+});
+
+test('onIncoming failures never block the auto-reply or fire for commands', async () => {
+  const { handlers, calls } = makeHandlers();
+  const config = memoryConfig(baseConfig({ telegram: { enabled: true, token: 'bot-token', links: {} } }));
+  const service = createMessengerService({
+    configModule: config,
+    network: false,
+    handlers,
+    onIncoming: () => { throw new Error('hook failed'); },
+  });
+  test.after(() => service.dispose());
+  const code = service.status().pairCode;
+  await service.receive('telegram', 'chat-hook-2', `/pair ${code}`);
+  const reply = await service.receive('telegram', 'chat-hook-2', 'hello');
+  assert.equal(reply.reply, 'Working on it · First session');
+  assert.equal(calls.send.length, 1);
+  const command = await service.receive('telegram', 'chat-hook-2', '/sessions');
+  assert.match(command.reply, /First session/);
+  assert.equal(calls.send.length, 1);
+});

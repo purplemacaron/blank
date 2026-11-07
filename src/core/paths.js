@@ -18,6 +18,7 @@ function appPaths() {
     memory: path.join(root, 'memory.json'),
     insights: path.join(root, 'insights.json'),
     schedules: path.join(root, 'schedules.json'),
+    triggerState: path.join(root, 'trigger-state.json'),
     oauth: path.join(root, 'oauth.json'),
     checkpoints: path.join(root, 'checkpoints'),
     skills: path.join(root, 'skills'),

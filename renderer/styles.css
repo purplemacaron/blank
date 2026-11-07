@@ -4765,6 +4765,11 @@ html[data-theme="dark"] .tok-kw { color: #8db3ff; }
 .automation-compose { padding: 12px; }
 .automation-compose .settings-textarea { width: 100%; margin-top: 8px; font-family: var(--font-mono); font-size: 11px; }
 .automation-every { width: 110px; }
+.automation-trigger-pane { margin-top: 8px; }
+.automation-event-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.automation-webhook-url { font-family: var(--font-mono); font-size: 10.5px; }
+.automation-runtime { font-size: 10px; color: var(--text-faint); }
+.automation-history-summary { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .automation-list { display: flex; flex-direction: column; gap: 8px; margin-top: 15px; }
 .automation-card {
   display: flex;

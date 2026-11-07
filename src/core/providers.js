@@ -21,6 +21,45 @@ function contentForModel(message) {
   return content;
 }
 
+function imagesFor(message) {
+  if (!Array.isArray(message.images)) return [];
+  return message.images.filter((image) => image && image.mime && image.data);
+}
+
+function openaiUserContent(message) {
+  const text = contentForModel(message);
+  const images = imagesFor(message);
+  if (!images.length) return text;
+  const parts = [];
+  if (text) parts.push({ type: 'text', text });
+  for (const image of images) {
+    parts.push({ type: 'image_url', image_url: { url: `data:${image.mime};base64,${image.data}` } });
+  }
+  return parts;
+}
+
+function anthropicUserContent(message) {
+  const text = contentForModel(message);
+  const images = imagesFor(message);
+  if (!images.length) return text;
+  const blocks = [];
+  if (text) blocks.push({ type: 'text', text });
+  for (const image of images) {
+    blocks.push({ type: 'image', source: { type: 'base64', media_type: image.mime, data: image.data } });
+  }
+  return blocks;
+}
+
+function geminiUserParts(message) {
+  const text = contentForModel(message);
+  const parts = [];
+  if (text) parts.push({ text });
+  for (const image of imagesFor(message)) {
+    parts.push({ inlineData: { mimeType: image.mime, data: image.data } });
+  }
+  return parts.length ? parts : [{ text: '' }];
+}
+
 function providerError(res, body) {
   let detail = body || '';
   try {
@@ -99,7 +138,7 @@ async function* openaiStream({ resolved, apiKey, system, messages, tools, option
       if (message.role === 'tool') {
         return { role: 'tool', tool_call_id: message.toolCallId, content: String(message.content || '') };
       }
-      return { role: 'user', content: contentForModel(message) };
+      return { role: 'user', content: openaiUserContent(message) };
     })],
     stream: true,
   };
@@ -190,7 +229,7 @@ function anthropicMessages(messages) {
   const out = [];
   for (const message of messages) {
     if (message.role === 'user') {
-      out.push({ role: 'user', content: contentForModel(message) });
+      out.push({ role: 'user', content: anthropicUserContent(message) });
     } else if (message.role === 'assistant') {
       const blocks = [];
       if (message.content) blocks.push({ type: 'text', text: message.content });
@@ -346,7 +385,7 @@ function geminiContents(messages) {
   const out = [];
   for (const message of messages) {
     if (message.role === 'user') {
-      out.push({ role: 'user', parts: [{ text: contentForModel(message) }] });
+      out.push({ role: 'user', parts: geminiUserParts(message) });
     } else if (message.role === 'assistant') {
       const parts = [];
       if (message.content) parts.push({ text: message.content });
@@ -770,6 +809,7 @@ async function listModels({ providerId, config, apiKey: overrideKey, keyId }) {
 
 module.exports = {
   streamChat, completeText, listModels, listModelsAt, resolveRequest, contentForModel,
+  openaiUserContent, anthropicUserContent, geminiUserParts,
   anthropicMessages, geminiContents, cleanGeminiSchema, isKeyRotationError,
   reasoningHintFrom, visionHintFrom, probeReasoningAt, probeModelReasoning,
 };

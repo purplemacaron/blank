@@ -8,6 +8,39 @@ const { findModel } = require('./catalog');
 const { generateSessionTitle } = require('./title');
 const { grantSessionApproval } = require('./approvals');
 const { uid } = require('./paths');
+const fs = require('fs');
+
+const MAX_SCREENSHOT_BYTES = 6 * 1024 * 1024;
+
+function withScreenshotImage(messages, vision) {
+  if (!vision || !Array.isArray(messages) || !messages.length) return messages;
+  let blockStart = messages.length;
+  while (blockStart > 0 && messages[blockStart - 1]?.role === 'tool') blockStart -= 1;
+  if (blockStart === messages.length) return messages;
+  let shot = null;
+  for (let i = messages.length - 1; i >= blockStart; i -= 1) {
+    const candidate = messages[i]?.meta?.screenshot;
+    if (candidate?.modelPath) {
+      shot = candidate;
+      break;
+    }
+  }
+  if (!shot) return messages;
+  let data = '';
+  try {
+    const stat = fs.statSync(shot.modelPath);
+    if (!stat.isFile() || stat.size > MAX_SCREENSHOT_BYTES) return messages;
+    data = fs.readFileSync(shot.modelPath).toString('base64');
+  } catch {
+    return messages;
+  }
+  if (!data) return messages;
+  return [...messages, {
+    role: 'user',
+    content: 'The screenshot you captured is attached as an image. Read the visible layout and controls from it; computer_use coordinates are absolute screen pixels.',
+    images: [{ mime: shot.mime || 'image/jpeg', data }],
+  }];
+}
 
 function lastUserText(session) {
   const messages = session.messages || [];
@@ -366,7 +399,8 @@ async function runAgent({
       }
 
       const tools = getToolDefinitions({ mode: session.mode, mcpTools, config });
-      const providerMsgs = providerMessages(session);
+      const modelVision = Boolean(findModel(activeModel, config)?.vision);
+      const providerMsgs = withScreenshotImage(providerMessages(session), modelVision);
       const messageId = uid('msg_');
       let text = '';
       let reasoning = '';
@@ -496,7 +530,7 @@ async function runAgent({
         });
         let result;
         try {
-          result = await executeTool(call, toolCtx);
+          result = await executeTool(call, { ...toolCtx, vision: modelVision, modelName: activeModel });
         } catch (err) {
           result = { content: `Tool crashed: ${err.message}`, isError: true };
         }
@@ -564,4 +598,4 @@ function providerHint(err) {
   return '';
 }
 
-module.exports = { runAgent, compactSession, runSubagent, providerHint };
+module.exports = { runAgent, compactSession, runSubagent, providerHint, withScreenshotImage };

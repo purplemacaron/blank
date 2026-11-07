@@ -7,6 +7,7 @@ const {
   app, BrowserWindow, Menu, shell, nativeTheme, dialog, protocol, net,
 } = require('electron');
 const { loadConfig, saveConfig } = require('../src/core/config');
+const { appPaths } = require('../src/core/paths');
 const { MCPManager } = require('../src/core/mcp');
 const { mediaPaths, ensureMedia } = require('../src/core/media/util');
 const paperStore = require('../src/core/paper');
@@ -44,12 +45,16 @@ app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess
 
 function registerMediaProtocol() {
   ensureMedia();
-  const root = path.resolve(mediaPaths().assets);
+  const roots = {
+    asset: path.resolve(mediaPaths().assets),
+    computer: path.resolve(appPaths().root, 'computer'),
+  };
   protocol.handle('blank-media', async (request) => {
     const notFound = new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain' } });
     try {
       const url = new URL(request.url);
-      if (url.hostname !== 'asset') return notFound;
+      const root = roots[url.hostname];
+      if (!root) return notFound;
       let name;
       try {
         name = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
@@ -57,6 +62,7 @@ function registerMediaProtocol() {
         return notFound;
       }
       if (!name || name.startsWith('.') || name.includes('/') || name.includes('\\') || name.includes('\0')) return notFound;
+      if (url.hostname === 'computer' && !/\.(png|jpe?g)$/i.test(name)) return notFound;
       const file = path.resolve(root, name);
       if (!file.startsWith(root + path.sep)) return notFound;
       if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return notFound;

@@ -99,6 +99,7 @@ const api = {
 
   computer: {
     testScreenshot: () => invoke('computer:testScreenshot'),
+    openScreenshot: (filePath) => invoke('computer:openScreenshot', filePath),
   },
 
   ssh: {
@@ -142,6 +143,11 @@ const api = {
     save: (input) => invoke('schedules:save', input),
     remove: (id) => invoke('schedules:delete', { id }),
     run: (id) => invoke('schedules:run', { id }),
+    runtime: () => invoke('schedules:runtime'),
+    copyWebhook: (id) => invoke('schedules:webhook-copy', { id }),
+    rotateWebhook: (id) => invoke('schedules:webhook-rotate', { id }),
+    testTrigger: (input) => invoke('schedules:trigger-test', input),
+    pickPath: (kind) => invoke('schedules:pick-path', { kind }),
   },
 
   console: {

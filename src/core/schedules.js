@@ -2,8 +2,7 @@
 
 const { appPaths, readJSON, writeJSON, uid } = require('./paths');
 const { isEffort } = require('./reasoning');
-
-const CADENCES = ['interval', 'hourly', 'daily', 'weekdays', 'once'];
+const { CADENCES, normalizeTrigger, migrateRecord, createWebhookToken } = require('./triggers');
 const MODES = ['agent', 'coding', 'design', 'plan', 'ask'];
 const HISTORY_LIMIT = 12;
 
@@ -17,11 +16,6 @@ function parseTime(value) {
   return { hours: Number(match[1]), minutes: Number(match[2]) };
 }
 
-function localDate(now = new Date()) {
-  const pad = (value) => String(value).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
-
 function onceTarget(schedule) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(schedule.date || ''));
   if (!match) return null;
@@ -30,26 +24,27 @@ function onceTarget(schedule) {
 }
 
 function computeNext(schedule, from = new Date()) {
-  const { hours, minutes } = parseTime(schedule.time);
+  const source = schedule?.trigger?.type === 'schedule' ? schedule.trigger.config : schedule;
+  const { hours, minutes } = parseTime(source.time);
   const base = from instanceof Date ? from : new Date(from);
   const next = new Date(base.getTime());
   next.setSeconds(0, 0);
-  if (schedule.cadence === 'once') {
-    const target = onceTarget(schedule);
+  if (source.cadence === 'once') {
+    const target = onceTarget(source);
     if (!target || Number.isNaN(target.getTime()) || target.getTime() <= base.getTime()) return '';
     return target.toISOString();
   }
-  if (schedule.cadence === 'interval') {
-    const every = Math.max(5, Math.min(1440, Number(schedule.everyMinutes) || 30));
+  if (source.cadence === 'interval') {
+    const every = Math.max(5, Math.min(1440, Number(source.everyMinutes) || 30));
     return new Date(base.getTime() + every * 60_000).toISOString();
   }
-  if (schedule.cadence === 'hourly') {
+  if (source.cadence === 'hourly') {
     next.setMinutes(minutes, 0, 0);
     if (next.getTime() <= base.getTime()) next.setHours(next.getHours() + 1);
     return next.toISOString();
   }
   next.setHours(hours, minutes, 0, 0);
-  if (schedule.cadence === 'daily') {
+  if (source.cadence === 'daily') {
     if (next.getTime() <= base.getTime()) next.setDate(next.getDate() + 1);
     return next.toISOString();
   }
@@ -62,18 +57,54 @@ function computeNext(schedule, from = new Date()) {
   return next.toISOString();
 }
 
+function resolveTrigger(input, existing) {
+  const hasTrigger = Boolean(input.trigger) && typeof input.trigger === 'object';
+  const hasLegacy = ['cadence', 'time', 'date', 'everyMinutes'].some((key) => input[key] !== undefined);
+  if (hasTrigger) {
+    return normalizeTrigger({
+      type: input.trigger.type,
+      config: input.trigger.config,
+      cooldownSeconds: input.trigger.cooldownSeconds,
+    }, existing, new Date());
+  }
+  if (!hasLegacy) {
+    if (existing?.trigger) {
+      return normalizeTrigger({
+        type: existing.trigger.type,
+        config: existing.trigger.config,
+        cooldownSeconds: existing.trigger.cooldownSeconds,
+      }, existing, new Date());
+    }
+    return normalizeTrigger({ type: 'schedule' }, existing, new Date());
+  }
+  if (existing?.trigger && existing.trigger.type !== 'schedule') {
+    return normalizeTrigger({
+      type: existing.trigger.type,
+      config: existing.trigger.config,
+      cooldownSeconds: existing.trigger.cooldownSeconds,
+    }, existing, new Date());
+  }
+  return normalizeTrigger({
+    type: 'schedule',
+    cadence: input.cadence,
+    date: input.date,
+    time: input.time,
+    everyMinutes: input.everyMinutes,
+  }, existing, new Date());
+}
+
 function sanitize(input, existing = {}, now = new Date()) {
-  const cadence = CADENCES.includes(input.cadence) ? input.cadence : existing.cadence || 'daily';
+  const trigger = resolveTrigger(input, existing);
+  const isSchedule = trigger.type === 'schedule';
   const schedule = {
     id: existing.id || uid('sch_'),
     title: String(input.title ?? existing.title ?? '').trim().slice(0, 80) || 'Scheduled run',
     prompt: String(input.prompt ?? existing.prompt ?? '').trim().slice(0, 4000),
-    cadence,
-    date: /^\d{4}-\d{2}-\d{2}$/.test(String(input.date ?? existing.date ?? ''))
-      ? String(input.date ?? existing.date)
-      : cadence === 'once' ? localDate(now) : '',
-    time: /^([01]?\d|2[0-3]):([0-5]\d)$/.test(String(input.time ?? existing.time ?? '')) ? String(input.time ?? existing.time) : existing.time || '09:00',
-    everyMinutes: Math.max(5, Math.min(1440, Number(input.everyMinutes ?? existing.everyMinutes) || 30)),
+    trigger,
+    cadence: isSchedule ? trigger.config.cadence : 'manual',
+    date: isSchedule ? trigger.config.date : '',
+    time: isSchedule ? trigger.config.time : '',
+    everyMinutes: isSchedule ? trigger.config.everyMinutes : 30,
     enabled: input.enabled === undefined ? existing.enabled !== false : Boolean(input.enabled),
     model: String(input.model ?? existing.model ?? '').trim().slice(0, 160),
     mode: MODES.includes(input.mode) ? input.mode : MODES.includes(existing.mode) ? existing.mode : 'agent',
@@ -90,11 +121,14 @@ function sanitize(input, existing = {}, now = new Date()) {
     lastSessionId: existing.lastSessionId || '',
     runCount: Number(existing.runCount) || 0,
     history: Array.isArray(existing.history) ? existing.history.slice(0, HISTORY_LIMIT) : [],
+    nextRunAt: '',
   };
   if (!schedule.prompt) throw new Error('A prompt is required for a scheduled run.');
-  schedule.nextRunAt = schedule.enabled ? computeNext(schedule, now) : '';
-  if (cadence === 'once' && schedule.enabled && !schedule.nextRunAt) {
-    throw new Error('Pick a future date and time for a one-time run.');
+  if (isSchedule && schedule.enabled) {
+    schedule.nextRunAt = computeNext(schedule, now);
+    if (trigger.config.cadence === 'once' && !schedule.nextRunAt) {
+      throw new Error('Pick a future date and time for a one-time run.');
+    }
   }
   return schedule;
 }
@@ -102,7 +136,14 @@ function sanitize(input, existing = {}, now = new Date()) {
 function loadSchedules() {
   const raw = readJSON(schedulesFile(), { schedules: [] });
   const list = Array.isArray(raw) ? raw : Array.isArray(raw?.schedules) ? raw.schedules : [];
-  return list.filter((entry) => entry && entry.id).map((entry) => ({ ...entry }));
+  let migrated = false;
+  const records = list.filter((entry) => entry && entry.id).map((entry) => {
+    const next = migrateRecord(entry);
+    if (next !== entry) migrated = true;
+    return { ...next };
+  });
+  if (migrated) saveSchedules(records);
+  return records;
 }
 
 function saveSchedules(list) {
@@ -120,6 +161,12 @@ function getSchedule(id) {
   return loadSchedules().find((entry) => entry.id === id) || null;
 }
 
+function buildSchedule(input = {}, now = new Date()) {
+  const list = loadSchedules();
+  const existing = input.id ? list.find((entry) => entry.id === input.id) : null;
+  return sanitize(input, existing || {}, now);
+}
+
 function saveSchedule(input = {}) {
   const list = loadSchedules();
   const existing = input.id ? list.find((entry) => entry.id === input.id) : null;
@@ -127,6 +174,19 @@ function saveSchedule(input = {}) {
   const index = list.findIndex((entry) => entry.id === schedule.id);
   if (index >= 0) list[index] = schedule;
   else list.push(schedule);
+  saveSchedules(list);
+  return schedule;
+}
+
+function rotateWebhookToken(id) {
+  const list = loadSchedules();
+  const schedule = list.find((entry) => entry.id === id);
+  if (!schedule || schedule.trigger?.type !== 'webhook') return null;
+  schedule.trigger = {
+    ...schedule.trigger,
+    config: { ...(schedule.trigger.config || {}), token: createWebhookToken() },
+  };
+  schedule.updatedAt = new Date().toISOString();
   saveSchedules(list);
   return schedule;
 }
@@ -148,18 +208,24 @@ function markRun(id, patch = {}) {
   schedule.lastError = patch.error ? String(patch.error).slice(0, 800) : '';
   if (patch.sessionId) schedule.lastSessionId = patch.sessionId;
   if (patch.status && patch.status !== 'running') {
-    schedule.history = [
-      {
-        at: schedule.lastRunAt,
-        status: patch.status,
-        sessionId: patch.sessionId || '',
-        error: patch.error ? String(patch.error).slice(0, 300) : '',
-      },
-      ...(Array.isArray(schedule.history) ? schedule.history : []),
-    ].slice(0, HISTORY_LIMIT);
+    const entry = {
+      at: schedule.lastRunAt,
+      status: patch.status,
+      sessionId: patch.sessionId || '',
+      error: patch.error ? String(patch.error).slice(0, 300) : '',
+    };
+    if (patch.trigger && typeof patch.trigger === 'object') {
+      entry.trigger = {
+        type: String(patch.trigger.type || '').slice(0, 40),
+        summary: String(patch.trigger.summary || '').slice(0, 300),
+      };
+    }
+    schedule.history = [entry, ...(Array.isArray(schedule.history) ? schedule.history : [])].slice(0, HISTORY_LIMIT);
   }
   schedule.runCount = (Number(schedule.runCount) || 0) + (patch.status && patch.status !== 'running' ? 1 : 0);
-  if (schedule.cadence === 'once' && patch.status) {
+  if (schedule.trigger?.type !== 'schedule') {
+    schedule.nextRunAt = '';
+  } else if (schedule.trigger.config.cadence === 'once' && patch.status) {
     schedule.enabled = false;
     schedule.nextRunAt = '';
   } else {
@@ -172,6 +238,7 @@ function markRun(id, patch = {}) {
 function dueSchedules(now = new Date()) {
   const stamp = now.getTime();
   return loadSchedules().filter((schedule) => {
+    if (schedule.trigger?.type !== 'schedule') return false;
     if (schedule.enabled === false || !schedule.nextRunAt) return false;
     const due = new Date(schedule.nextRunAt).getTime();
     return Number.isFinite(due) && due <= stamp;
@@ -180,11 +247,13 @@ function dueSchedules(now = new Date()) {
 
 module.exports = {
   CADENCES,
+  buildSchedule,
   computeNext,
   dueSchedules,
   deleteSchedule,
   getSchedule,
   listSchedules,
   markRun,
+  rotateWebhookToken,
   saveSchedule,
 };

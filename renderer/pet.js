@@ -35,6 +35,7 @@
       composeLabel: 'blank memo에게 보낼 지시',
       send: '보내기',
       sent: '맡겨 두세요',
+      queued: '답변이 끝나면 보낼게요',
       failed: '보내지 못했어요',
       noModel: '모델을 먼저 연결해 주세요',
       teamMember: '팀원',
@@ -62,6 +63,7 @@
       composeLabel: 'Instruction for blank memo',
       send: 'Send',
       sent: 'On it',
+      queued: 'Queued for after this answer',
       failed: 'Could not send that',
       noModel: 'Connect a model first',
       teamMember: 'Team member',
@@ -102,6 +104,7 @@
   let lang = 'ko';
   let theme = 'light';
   let state = 'idle';
+  let mood = 'idle';
   let idleTimer = 0;
   let activeRuns = new Set();
   let approvalPending = false;
@@ -147,18 +150,28 @@
     if (next === 'done') {
       idleTimer = setTimeout(() => {
         setState('idle');
+        setMood('idle');
         resetToDefaultModel();
       }, 3200);
     } else if (next === 'error') {
       idleTimer = setTimeout(() => {
         setState('idle');
+        setMood('idle');
         resetToDefaultModel();
       }, 4400);
     }
   }
 
+  function setMood(next) {
+    const value = String(next || 'idle');
+    if (value === mood) return;
+    mood = value;
+    body.dataset.mood = value;
+  }
+
   function toolCopy(name) {
     const key = TOOL_COPY[name] || 'working';
+    setMood(key);
     return copy()[key] || copy().working;
   }
 
@@ -232,6 +245,7 @@
       case 'run:start':
         activeRuns.add(event.runId || event.sessionId || 'run');
         approvalPending = false;
+        setMood('working');
         if (event.model) {
           currentModel = event.model;
           colorFor(currentModel);
@@ -249,6 +263,7 @@
         break;
       case 'agent:start':
         if (approvalPending) break;
+        setMood('team');
         if (event.model) {
           currentModel = event.model;
           colorFor(currentModel);
@@ -257,18 +272,23 @@
         break;
       case 'approval':
         approvalPending = true;
+        setMood('waiting');
         setState('waiting', copy().waiting);
         break;
       case 'approval:resolved':
       case 'approval:expired':
         approvalPending = false;
-        if (activeRuns.size) setState('working', copy().working);
-        else {
+        if (activeRuns.size) {
+          setMood('working');
+          setState('working', copy().working);
+        } else {
+          setMood('idle');
           setState('idle');
           resetToDefaultModel();
         }
         break;
       case 'error':
+        setMood('error');
         setState('error', copy().error);
         break;
       case 'run:done': {
@@ -279,11 +299,17 @@
           setState('working', copy().working);
           break;
         }
-        if (outcome.ok && !outcome.stopped) setState('done', copy().done);
-        else if (outcome.stopped || (!outcome.ok && !outcome.error)) {
+        if (outcome.ok && !outcome.stopped) {
+          setMood('done');
+          setState('done', copy().done);
+        } else if (outcome.stopped || (!outcome.ok && !outcome.error)) {
+          setMood('idle');
           setState('idle');
           resetToDefaultModel();
-        } else setState('error', copy().error);
+        } else {
+          setMood('error');
+          setState('error', copy().error);
+        }
         refreshConfig();
         break;
       }
@@ -410,7 +436,7 @@
       }
       composeInput.value = '';
       closeCompose();
-      setState('working', copy().sent);
+      setState('working', result.queued ? copy().queued : copy().sent);
     } catch {
       closeCompose();
       setState('error', copy().failed);
