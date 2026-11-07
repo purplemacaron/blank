@@ -1612,5 +1612,5 @@ function summarizeArgs(name, args = {}) {
 
 module.exports = {
   TOOL_SPECS, getToolDefinitions, getToolDefinition, executeTool, resolvePermission, permissionFor,
-  summarizeArgs, compileGlob, htmlToText,
+  summarizeArgs, compileGlob, htmlToText, prepareScreenshot,
 };

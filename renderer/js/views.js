@@ -255,7 +255,7 @@ Start writing, or ask the agent to draft it.
         </div>
         <button class="default-model-button ${defaultId ? '' : 'needs-model'}" type="button" data-pick-default title="${defaultId ? 'Change the default model' : 'Choose the default model'}">
           ${defaultId ? UI.providerMono(U.providerOf({ providers }, defaultId)) : `<span class="default-model-icon">${icon('cpu', 15)}</span>`}
-          <span class="copy"><span class="name">${esc(defaultId ? U.modelLabel({ providers }, defaultId) : 'Choose a model')}</span><span class="label">${defaultId ? `${esc((U.providerOf({ providers }, defaultId) || {}).name || 'Model')} · ${U.kbd('Ctrl M')}` : `<span>No model connected</span> · ${U.kbd('Ctrl M')}`}</span></span>
+          <span class="copy"><span class="name">${esc(defaultId ? U.modelLabel({ providers }, defaultId) : 'Choose a model')}</span><span class="label">${defaultId ? `${esc((U.providerOf({ providers }, defaultId) || {}).name || 'Model')} · ${U.kbd('Ctrl M')}` : `<span>No default selected</span> · ${U.kbd('Ctrl M')}`}</span></span>
           ${icon('chevron-updown', 13)}
         </button>
       </div>
@@ -706,6 +706,7 @@ Start writing, or ask the agent to draft it.
           paintModels();
           UI.toast('Default model updated.', 'success');
           if (window.App?.refreshSidebarModel) App.refreshSidebarModel();
+          onChanged?.();
         } catch (error) { UI.toast(error.message, 'error'); useModel.disabled = false; }
       }
     });
@@ -1771,7 +1772,7 @@ Start writing, or ask the agent to draft it.
           ${data.languages?.length ? `<div class="code-langs">${data.languages.map((item) => `<span class="code-lang">${esc(item.name)} <b>${item.count}</b></span>`).join('')}</div>` : ''}
         </section>
         <section class="code-panel">
-          <div class="code-panel-head"><h2>Diff</h2>${selected ? `<span class="setting-note mono">${esc(selected)}</span>` : ''}</div>
+          <div class="code-panel-head"><h2>Diff</h2>${selected ? `<span class="setting-note mono">${esc(selected)}</span>` : ''}${diff ? `<button class="mini-icon panel-copy" type="button" data-code-diff-copy title="Copy diff" aria-label="Copy diff">${icon('copy', 12)}</button>` : ''}</div>
           ${selected
             ? diff ? `<pre class="diff-view">${diffMarkup(diff.diff)}</pre>` : '<div class="code-empty"><span class="spinner"></span><p>Reading the diff…</p></div>'
             : `<div class="code-empty">${icon('git-branch', 18)}<p>Select a changed file to read its diff.</p></div>`}
@@ -1815,6 +1816,11 @@ Start writing, or ask the agent to draft it.
         } catch (error) { UI.toast(error.message, 'error'); }
         vstate.code.running = '';
         paintCode(host);
+        return;
+      }
+      if (event.target.closest('[data-code-diff-copy]')) {
+        const ok = await U.copyText(vstate.code.diff?.diff || '');
+        UI.toast(ok ? 'Diff copied.' : 'Clipboard unavailable.', ok ? 'success' : 'error');
         return;
       }
       if (event.target.closest('[data-code-copy]')) {
@@ -3027,6 +3033,10 @@ Start writing, or ask the agent to draft it.
                 <div class="setting-control">${UI.switchHtml(config.pet?.enabled !== false, 'data-pet-toggle')}</div>
               </div>
               <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Share screen with memo instructions</div><div class="setting-desc">When you send an instruction from blank memo, capture the current screen and show it to models that can read images. Models without vision receive the text only.</div></div>
+                <div class="setting-control">${UI.switchHtml(config.pet?.shareScreen !== false, 'data-pet-screen-toggle')}</div>
+              </div>
+              <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Default model</div><div class="setting-desc">Used by new sessions and as the fallback for delegations.</div></div>
                 <div class="setting-control"><button class="btn btn-secondary btn-sm" type="button" data-pick-model="default">${esc(U.modelLabel({ providers }, defaultModel))} ${icon('chevron-updown', 11)}</button></div>
               </div>
@@ -3538,6 +3548,22 @@ Start writing, or ask the agent to draft it.
         } catch (error) {
           petToggle.classList.toggle('on', !next);
           petToggle.setAttribute('aria-checked', String(!next));
+          UI.toast(error.message, 'error');
+        }
+        return;
+      }
+      const petScreenToggle = event.target.closest('[data-pet-screen-toggle]');
+      if (petScreenToggle) {
+        const next = !petScreenToggle.classList.contains('on');
+        petScreenToggle.classList.toggle('on', next);
+        petScreenToggle.setAttribute('aria-checked', String(next));
+        try {
+          const updated = await API.config.update({ pet: { shareScreen: next } });
+          applyConfig(updated);
+          UI.toast(next ? 'Memo instructions will share the current screen.' : 'Memo instructions will not share the screen.', 'success');
+        } catch (error) {
+          petScreenToggle.classList.toggle('on', !next);
+          petScreenToggle.setAttribute('aria-checked', String(!next));
           UI.toast(error.message, 'error');
         }
         return;

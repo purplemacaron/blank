@@ -137,12 +137,13 @@
   }
 
   function markup({ compact = false } = {}) {
-    return `<div class="terminal-panel${compact ? ' compact' : ''}" data-terminal>
+    return `<div class="terminal-panel${compact ? ' compact' : ''}" data-terminal data-copy-block>
       <div class="terminal-bar">
         <span class="terminal-dot" data-terminal-dot></span>
         <span class="terminal-cwd mono" data-terminal-cwd>Terminal</span>
         <span class="terminal-status" data-terminal-status></span>
         <span class="terminal-spacer"></span>
+        <button class="mini-icon js-copy-block" type="button" data-terminal-copy title="Copy output" aria-label="Copy output" data-icon-size="12">${icon('copy', 12)}</button>
         <button class="mini-icon" type="button" data-terminal-restart title="Restart">${icon('refresh', 12)}</button>
         <button class="mini-icon" type="button" data-terminal-clear title="Clear">${icon('trash', 12)}</button>
       </div>

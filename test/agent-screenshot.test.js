@@ -23,6 +23,12 @@ const toolMessage = (modelPath) => ({
   meta: { screenshot: { path: modelPath, modelPath, mime: 'image/jpeg' } },
 });
 
+const memoMessage = (modelPath) => ({
+  role: 'user',
+  content: 'What should I click here?',
+  meta: { screenshot: { path: modelPath, modelPath, mime: 'image/jpeg', source: 'memo' } },
+});
+
 test('a fresh screenshot is attached after the trailing tool block', (t) => {
   const shot = tempShot();
   t.after(() => fs.rmSync(shot.dir, { recursive: true, force: true }));
@@ -58,5 +64,27 @@ test('a screenshot from an earlier step is not re-attached', (t) => {
 
 test('a missing screenshot file is skipped safely', () => {
   const messages = [toolMessage(path.join(os.tmpdir(), 'blank-does-not-exist.jpg'))];
+  assert.equal(withScreenshotImage(messages, true), messages);
+});
+
+test('a memo instruction carries its screenshot on the user message', (t) => {
+  const shot = tempShot();
+  t.after(() => fs.rmSync(shot.dir, { recursive: true, force: true }));
+  const messages = [memoMessage(shot.file)];
+  const withImage = withScreenshotImage(messages, true);
+  assert.equal(withImage.length, 1);
+  assert.equal(withImage[0].role, 'user');
+  assert.equal(withImage[0].content, 'What should I click here?');
+  assert.deepEqual(withImage[0].images, [{ mime: 'image/jpeg', data: Buffer.from('fake-jpeg').toString('base64') }]);
+  assert.equal(messages[0].images, undefined, 'input stays untouched');
+});
+
+test('a memo screenshot is not attached to later turns', (t) => {
+  const shot = tempShot();
+  t.after(() => fs.rmSync(shot.dir, { recursive: true, force: true }));
+  const messages = [
+    memoMessage(shot.file),
+    { role: 'assistant', content: 'Click the blue button.', toolCalls: [] },
+  ];
   assert.equal(withScreenshotImage(messages, true), messages);
 });

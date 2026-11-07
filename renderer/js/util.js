@@ -218,6 +218,19 @@
     return (provider.models || []).find((m) => m.id === modelId) || null;
   }
 
+  function selectableModels(catalog, config) {
+    const providers = catalog?.providers || [];
+    const providerConfig = config?.providers || {};
+    return (catalog?.models || []).filter((model) => {
+      const provider = providers.find((entry) => entry.id === model.providerId);
+      if (!provider) return false;
+      if (provider.kind === 'local') return true;
+      const entry = providerConfig[provider.id] || {};
+      if (entry.hasKey) return true;
+      return provider.kind === 'custom' && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(entry.baseUrl || '');
+    });
+  }
+
   const REASONING_LEVELS = {
     none: { label: 'Non-reasoning', hint: 'Answers without a thinking pass' },
     minimal: { label: 'Minimal', hint: 'Shortest thinking pass' },
@@ -308,7 +321,7 @@
   window.U = {
     $, $$, esc, attr, el, isMac, kbd, fmtTime, relativeTime, dayLabel, fmtNumber, fmtBytes,
     baseName, dirName, truncate, debounce, throttle, copyText, uid, autoGrow, scrollToBottom,
-    isNearBottom, download, providerName, modelLabel, providerOf, modelOf, parseTags, linkifyPath,
+    isNearBottom, download, providerName, modelLabel, providerOf, modelOf, selectableModels, parseTags, linkifyPath,
     typeBadge, prefersReducedMotion, REASONING_LEVELS, REASONING_ORDER, reasoningProfile,
     normalizeReasoning, reasoningLabel,
   };

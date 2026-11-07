@@ -175,7 +175,12 @@
       else mono.innerHTML = icon('cpu', 13);
     }
     if (name) name.textContent = fullId ? (model?.name || U.modelLabel(state.catalog, fullId)) : 'Choose a model';
-    if (label) label.textContent = fullId ? (provider ? `Default · ${provider.name}` : 'Default model') : 'Connect a provider';
+    if (label) {
+      const canChoose = !fullId && U.selectableModels(state.catalog, state.config).length > 0;
+      label.textContent = fullId
+        ? (provider ? `Default · ${provider.name}` : 'Default model')
+        : canChoose ? 'Choose a model' : 'Connect a provider';
+    }
     if (button) button.title = fullId ? `Default model · ${fullId}` : 'Choose a model';
   }
 
@@ -889,7 +894,7 @@
     const model = U.modelOf(state.catalog, fullId);
     const limit = Number(model?.context) || 128000;
     const usage = session?.usage || { input: 0, output: 0 };
-    const used = Number(usage.input || 0) + Number(usage.output || 0);
+    const used = Number(session?.contextTokens) || (Number(usage.input || 0) + Number(usage.output || 0));
     const pct = Math.min(100, Math.round((used / limit) * 100));
     const messages = session?.messages || [];
     const toolCalls = messages.filter((message) => message.role === 'tool').length;
@@ -946,7 +951,7 @@
           <span class="agent-state">${agent.status === 'running' ? 'running' : agent.status === 'error' ? 'failed' : `${Math.max(1, Math.round((Number(agent.durationMs) || 0) / 1000))}s`}</span>
         </div>
         <div class="agent-task">${U.esc(U.truncate(agent.task || '', 120))}</div>
-        ${agent.report ? `<details class="agent-report"><summary>Report</summary><pre>${U.esc(agent.report)}</pre></details>` : ''}
+        ${agent.report ? `<details class="agent-report"><summary>Report</summary><div class="copy-block" data-copy-block><pre data-copy-body>${U.esc(agent.report)}</pre><button class="copy-chip js-copy-block" type="button" title="Copy report" aria-label="Copy report">${icon('copy', 11)}</button></div></details>` : ''}
       </div>`).join('')}</div>
     </div>`;
   }

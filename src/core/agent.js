@@ -12,11 +12,32 @@ const fs = require('fs');
 
 const MAX_SCREENSHOT_BYTES = 6 * 1024 * 1024;
 
+function screenshotImage(shot) {
+  if (!shot?.modelPath) return null;
+  try {
+    const stat = fs.statSync(shot.modelPath);
+    if (!stat.isFile() || stat.size > MAX_SCREENSHOT_BYTES) return null;
+    const data = fs.readFileSync(shot.modelPath).toString('base64');
+    return data ? { mime: shot.mime || 'image/jpeg', data } : null;
+  } catch {
+    return null;
+  }
+}
+
 function withScreenshotImage(messages, vision) {
   if (!vision || !Array.isArray(messages) || !messages.length) return messages;
   let blockStart = messages.length;
   while (blockStart > 0 && messages[blockStart - 1]?.role === 'tool') blockStart -= 1;
-  if (blockStart === messages.length) return messages;
+  if (blockStart === messages.length) {
+    /* A memo instruction is the last message until the assistant replies, so
+       its screenshot belongs to that same turn and not to later turns. */
+    const last = messages[messages.length - 1];
+    if (last?.role !== 'user') return messages;
+    const image = screenshotImage(last.meta?.screenshot);
+    if (!image) return messages;
+    const images = Array.isArray(last.images) ? [...last.images, image] : [image];
+    return [...messages.slice(0, -1), { ...last, images }];
+  }
   let shot = null;
   for (let i = messages.length - 1; i >= blockStart; i -= 1) {
     const candidate = messages[i]?.meta?.screenshot;
@@ -26,19 +47,12 @@ function withScreenshotImage(messages, vision) {
     }
   }
   if (!shot) return messages;
-  let data = '';
-  try {
-    const stat = fs.statSync(shot.modelPath);
-    if (!stat.isFile() || stat.size > MAX_SCREENSHOT_BYTES) return messages;
-    data = fs.readFileSync(shot.modelPath).toString('base64');
-  } catch {
-    return messages;
-  }
-  if (!data) return messages;
+  const image = screenshotImage(shot);
+  if (!image) return messages;
   return [...messages, {
     role: 'user',
     content: 'The screenshot you captured is attached as an image. Read the visible layout and controls from it; computer_use coordinates are absolute screen pixels.',
-    images: [{ mime: shot.mime || 'image/jpeg', data }],
+    images: [image],
   }];
 }
 
@@ -66,6 +80,18 @@ function cleanAssistantMessage(message) {
     usage: message.usage || null,
     at: message.at,
   };
+}
+
+function shouldCompactContext({ config, session, limit, system }) {
+  if (!config?.agent?.autoCompact) return false;
+  if (session?.mode === 'ask') return false;
+  if ((session?.messages?.length || 0) <= 12) return false;
+  const threshold = (Number(limit) || 128000) * (Number(config?.agent?.compactAt) || 0.82);
+  const estimate = Math.max(
+    estimateConversationTokens(system, providerMessages(session)),
+    Number(session?.contextTokens) || 0,
+  );
+  return estimate > threshold;
 }
 
 async function compactSession({ session, config, signal, modelId }) {
@@ -99,6 +125,7 @@ async function compactSession({ session, config, signal, modelId }) {
     session.summary = summary;
     session.compactedCount = cutoff;
     session.compactedAt = new Date().toISOString();
+    session.contextTokens = estimateConversationTokens(summary, providerMessages(session));
     saveSession(session);
     return { ok: true, summary, compacted: cutoff };
   } catch (err) {
@@ -381,11 +408,10 @@ async function runAgent({
         session,
       });
 
-      if (!didAutoCompact && config.agent?.autoCompact && session.messages.length > 12 && session.mode !== 'ask') {
+      if (!didAutoCompact) {
         const resolved = findModel(activeModel, config);
         const limit = Number(resolved?.context) || 128000;
-        const estimate = estimateConversationTokens(system, providerMessages(session));
-        if (estimate > limit * (Number(config.agent?.compactAt) || 0.82)) {
+        if (shouldCompactContext({ config, session, limit, system })) {
           emit({ type: 'notice', level: 'info', text: 'Context is getting full — compacting earlier turns.' });
           const result = await compactSession({ session, config, signal, modelId: activeModel });
           didAutoCompact = true;
@@ -464,7 +490,11 @@ async function runAgent({
 
       session.usage.input += stepUsage.input;
       session.usage.output += stepUsage.output;
-      if (stepUsage.input || stepUsage.output) emit({ type: 'usage', usage: { ...session.usage } });
+      const stepTokens = stepUsage.input + stepUsage.output;
+      if (stepTokens) {
+        session.contextTokens = stepTokens;
+        emit({ type: 'usage', usage: { ...session.usage }, contextTokens: stepTokens });
+      }
       if (providerFailed) break;
 
       const normalizedCalls = (calls || [])
@@ -493,6 +523,7 @@ async function runAgent({
       };
       if (providerItems.length) assistantMessage.providerItems = providerItems;
       session.messages.push(assistantMessage);
+      if (!stepTokens) session.contextTokens = estimateConversationTokens(system, providerMessages(session));
       saveSession(session);
       emit({ type: 'assistant:end', messageId, message: cleanAssistantMessage(assistantMessage) });
 
@@ -598,4 +629,4 @@ function providerHint(err) {
   return '';
 }
 
-module.exports = { runAgent, compactSession, runSubagent, providerHint, withScreenshotImage };
+module.exports = { runAgent, compactSession, runSubagent, providerHint, withScreenshotImage, shouldCompactContext };

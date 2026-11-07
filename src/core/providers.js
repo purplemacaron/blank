@@ -141,6 +141,7 @@ async function* openaiStream({ resolved, apiKey, system, messages, tools, option
       return { role: 'user', content: openaiUserContent(message) };
     })],
     stream: true,
+    stream_options: { include_usage: true },
   };
   if (typeof options.temperature === 'number') body.temperature = options.temperature;
   if (options.reasoningEffort) {
@@ -798,13 +799,40 @@ async function probeModelReasoning({ providerId, modelId, config }) {
   return probeReasoningAt({ baseUrl, apiKey, protocol: provider.protocol, modelId });
 }
 
+async function ollamaContextAt(root, modelId) {
+  try {
+    const response = await fetch(`${root}/api/show`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ model: modelId }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) return 0;
+    const json = await response.json();
+    const match = String(json.parameters || '').match(/(?:^|\n)\s*num_ctx\s+(\d+)/);
+    return match ? Number(match[1]) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function addOllamaContexts(baseUrl, models) {
+  const root = String(baseUrl || '').replace(/\/v1\/?$/i, '').replace(/\/+$/, '');
+  await Promise.all(models.map(async (model) => {
+    const context = await ollamaContextAt(root, model.id);
+    if (context > 0) model.context = context;
+  }));
+}
+
 async function listModels({ providerId, config, apiKey: overrideKey, keyId }) {
   const provider = getProvider(providerId, config);
   if (!provider) throw new Error('Unknown provider.');
   const baseUrl = config.providers?.[providerId]?.baseUrl || provider.baseUrl;
   const apiKey = overrideKey || resolveKey(config, providerId, provider, keyId);
   if (provider.keyEnv && !apiKey) throw new Error('Add an API key first.');
-  return listModelsAt({ baseUrl, apiKey, protocol: provider.protocol });
+  const models = await listModelsAt({ baseUrl, apiKey, protocol: provider.protocol });
+  if (providerId === 'ollama') await addOllamaContexts(baseUrl, models);
+  return models;
 }
 
 module.exports = {

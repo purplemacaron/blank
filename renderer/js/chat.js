@@ -169,13 +169,18 @@
     try { return JSON.stringify(args, null, 2); } catch { return String(args); }
   }
 
+  function preBlock(text, className = 'tool-pre') {
+    return `<div class="copy-block" data-copy-block><pre class="${className}" data-copy-body>${U.esc(text)}</pre><button class="copy-chip js-copy-block" type="button" title="Copy" aria-label="Copy">${icon('copy', 11)}</button></div>`;
+  }
+
   function terminalMarkup(result, args) {
     const meta = result?.meta || {};
     const code = result?.isError ? (meta.exitCode ?? 'error') : (meta.exitCode ?? 0);
     const cwd = meta.cwd || 'workspace';
-    return `<div class="tool-terminal">
-      <div class="tool-terminal-bar"><span class="tool-terminal-dots"><i></i><i></i><i></i></span><span>${U.esc(cwd)} · exit ${U.esc(code)}</span></div>
-      <pre>${U.esc(clip(result?.content || '', 16000))}</pre>
+    const command = String(args?.command || '');
+    return `<div class="tool-terminal" data-copy-block${command ? ` data-copy-command="${U.attr(command)}"` : ''}>
+      <div class="tool-terminal-bar"><span class="tool-terminal-dots"><i></i><i></i><i></i></span><span>${U.esc(cwd)} · exit ${U.esc(code)}</span><button class="tool-terminal-copy js-copy-block" type="button" title="Copy command and output" aria-label="Copy command and output">${icon('copy', 11)}</button></div>
+      <pre data-copy-body>${U.esc(clip(result?.content || '', 16000))}</pre>
     </div>`;
   }
 
@@ -255,19 +260,19 @@
           <img src="${U.attr(shot.url)}" alt="Screen capture" loading="lazy">
           <span class="tool-screenshot-open">${icon('arrow-up-right', 12)}</span>
         </button>`;
-      if (details) html += `<pre class="tool-pre tool-screenshot-note">${U.esc(clip(details, 2000))}</pre>`;
+      if (details) html += preBlock(clip(details, 2000), 'tool-pre tool-screenshot-note');
     } else if (Array.isArray(meta.media) && meta.media.length) {
       html += `<div class="tool-section-label">${meta.media.length} asset${meta.media.length === 1 ? '' : 's'} in your media library</div><div class="tool-media-grid">${meta.media.map(mediaThumb).join('')}</div>`;
-      if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div><pre class="tool-pre">${U.esc(clip(content, 3000))}</pre>`;
+      if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div>${preBlock(clip(content, 3000))}`;
     } else if (meta.paper && meta.paper.id) {
       html += `<div class="tool-section-label">Paper</div>${paperToolCard(meta.paper)}`;
-      if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div><pre class="tool-pre">${U.esc(clip(content, 2400))}</pre>`;
+      if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div>${preBlock(clip(content, 2400))}`;
     } else if (Array.isArray(meta.papers) && meta.papers.length) {
       html += `<div class="tool-section-label">${meta.papers.length} paper${meta.papers.length === 1 ? '' : 's'} in the library</div><div class="tool-paper-list">${meta.papers.slice(0, 6).map(paperToolCard).join('')}</div>`;
-      if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div><pre class="tool-pre">${U.esc(clip(content, 2400))}</pre>`;
+      if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div>${preBlock(clip(content, 2400))}`;
     } else if (meta.deliverable && meta.path) {
       html += `<div class="tool-section-label">File</div>${deliverableMarkup(meta)}`;
-      if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div><pre class="tool-pre">${U.esc(clip(content, 2400))}</pre>`;
+      if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div>${preBlock(clip(content, 2400))}`;
     } else if (name === 'todo_write') {
       const tasks = meta.tasks || args?.todos || [];
       html += `<div class="tool-section-label">Plan</div>${tasksMarkup(tasks)}`;
@@ -276,14 +281,14 @@
     } else if (name === 'web_fetch') {
       const url = meta.url || args?.url || '';
       html += `${url ? `<div class="tool-section-label">URL</div><a class="md-link" href="${U.attr(url)}" target="_blank" rel="noreferrer">${U.esc(url)}</a>` : ''}
-        <div class="tool-section-label" style="margin-top:8px">Readable text</div><pre class="tool-pre">${U.esc(clip(content, 14000))}</pre>`;
+        <div class="tool-section-label" style="margin-top:8px">Readable text</div>${preBlock(clip(content, 14000))}`;
     } else {
       if (content) {
-        html += `<div class="tool-section-label">${result?.isError ? 'Error' : 'Result'}</div><pre class="tool-pre">${U.esc(clip(content, 14000))}</pre>`;
+        html += `<div class="tool-section-label">${result?.isError ? 'Error' : 'Result'}</div>${preBlock(clip(content, 14000))}`;
       }
       if (name === 'edit_file' || name === 'write_file') {
         const diff = formatArgs(name, args);
-        if (diff) html += `<div class="tool-section-label" style="margin-top:8px">Change</div><pre class="tool-pre tool-args">${U.esc(clip(diff, 4000))}</pre>`;
+        if (diff) html += `<div class="tool-section-label" style="margin-top:8px">Change</div>${preBlock(clip(diff, 4000), 'tool-pre tool-args')}`;
       }
     }
     const badges = [];
@@ -306,7 +311,7 @@
       badges.push(`<span class="tool-badge">MCP · ${U.esc(server)}</span>`);
     }
     if (badges.length) html += `<div class="tool-badges">${badges.join('')}</div>`;
-    if (!html) html = `<pre class="tool-pre">${U.esc(formatArgs(name, args) || 'No details.')}</pre>`;
+    if (!html) html = preBlock(formatArgs(name, args) || 'No details.');
     return html;
   }
 
@@ -394,7 +399,7 @@
         </div>
       </div>
       <div class="approval-body">
-        ${details ? `<div class="approval-args">${U.esc(clip(details, 4000))}</div>` : ''}
+        ${details ? `<div class="copy-block" data-copy-block><div class="approval-args" data-copy-body>${U.esc(clip(details, 4000))}</div><button class="copy-chip js-copy-block" type="button" title="Copy" aria-label="Copy">${icon('copy', 11)}</button></div>` : ''}
       </div>
       <div class="approval-foot">
         <span class="approval-policy">${U.esc(policy)}</span>
@@ -538,11 +543,13 @@
     const usage = Chat.session?.usage || { input: 0, output: 0 };
     const input = Number(usage.input || 0);
     const output = Number(usage.output || 0);
-    const total = input + output;
+    const sessionTotal = input + output;
+    const contextTokens = Number(Chat.session?.contextTokens) || 0;
+    const total = contextTokens > 0 ? contextTokens : sessionTotal;
     const remaining = limit ? Math.max(0, limit - total) : 0;
     const usedPct = limit ? Math.min(100, Math.round((total / limit) * 100)) : 0;
     const leftPct = limit ? Math.max(0, 100 - usedPct) : 0;
-    return { modelId, model, limit, input, output, total, remaining, usedPct, leftPct };
+    return { modelId, model, limit, input, output, total, sessionTotal, remaining, usedPct, leftPct };
   }
 
   function contextChip() {
@@ -576,9 +583,8 @@
         <div class="usage-hero"><span class="usage-value">${U.fmtNumber(snapshot.remaining)}</span><span class="usage-unit">tokens left</span></div>
         <div class="usage-meter ${snapshot.leftPct <= 15 ? 'low' : ''}"><span style="width:${Math.max(snapshot.usedPct ? 2 : 0, snapshot.usedPct)}%"></span></div>
         <div class="usage-rows">
-          <div class="usage-row"><span>Used in session</span><b>${U.fmtNumber(snapshot.total)}</b></div>
-          <div class="usage-row"><span>Input</span><b>${U.fmtNumber(snapshot.input)}</b></div>
-          <div class="usage-row"><span>Output</span><b>${U.fmtNumber(snapshot.output)}</b></div>
+          <div class="usage-row"><span>In context</span><b>${U.fmtNumber(snapshot.total)}</b></div>
+          <div class="usage-row"><span>Session total</span><b>${U.fmtNumber(snapshot.sessionTotal)}</b></div>
           <div class="usage-row"><span>Context limit</span><b>${U.fmtNumber(snapshot.limit)}</b></div>
         </div>
         <div class="usage-foot">${icon('info', 10)}<span>blank summarizes earlier turns near the limit.</span></div>`;
@@ -683,7 +689,9 @@
     const enterHint = document.getElementById('composer-enter-hint');
     if (enterHint) {
       const sendKey = U.isMac ? '⌘ Enter' : 'Ctrl Enter';
-      enterHint.innerHTML = `<kbd>Enter</kbd> / <kbd>${sendKey}</kbd> ${Chat.running ? 'queue' : 'send'}`;
+      enterHint.innerHTML = Chat.running
+        ? `<kbd>Enter</kbd> <span>queue</span> · <kbd>${sendKey}</kbd> <span>stop &amp; send</span>`
+        : `<kbd>Enter</kbd> / <kbd>${sendKey}</kbd> send`;
       window.__blankI18n?.translate?.(enterHint);
     }
     renderQueue();
@@ -702,8 +710,10 @@
     const items = Chat.queue || [];
     tray.hidden = !items.length;
     if (!items.length) { tray.innerHTML = ''; return; }
-    tray.innerHTML = `<div class="queue-head">${icon('clock', 11)}<span>${items.length} queued message${items.length === 1 ? '' : 's'}</span><span class="queue-note">Sends when this run finishes</span></div>
-      <div class="queue-list">${items.map((item) => `<div class="queue-item">
+    const urgent = items.some((item) => item.interrupt);
+    tray.innerHTML = `<div class="queue-head">${icon('clock', 11)}<span>${items.length} queued message${items.length === 1 ? '' : 's'}</span><span class="queue-note">${urgent ? 'Sends as soon as this run stops' : 'Sends when this run finishes'}</span></div>
+      <div class="queue-list">${items.map((item) => `<div class="queue-item${item.interrupt ? ' is-next' : ''}">
+        ${item.interrupt ? '<span class="queue-next">Next</span>' : ''}
         <span class="queue-text">${U.esc(item.text || 'Attachment')}</span>
         <button class="queue-remove" type="button" data-action="queue-remove" data-queue-id="${U.attr(item.queueId)}" title="Remove from queue" aria-label="Remove from queue">${icon('x', 10)}</button>
       </div>`).join('')}</div>`;
@@ -958,11 +968,12 @@
     if (!scroll) return;
     const modelId = currentModel();
     const provider = providerOf(modelId);
+    const canChooseModel = !modelId && U.selectableModels(catalog(), App.state.config).length > 0;
     scroll.innerHTML = `<div class="chat-empty">
       ${modelId ? '' : `<div class="empty-model-banner">
         <span class="empty-model-icon">${icon('cpu', 14)}</span>
-        <span class="empty-model-text">No model connected. Add a provider key in Models to start.</span>
-        <button class="btn btn-secondary btn-xs" type="button" data-action="open-models">Open Models</button>
+        <span class="empty-model-text">${canChooseModel ? 'Choose a model to start.' : 'No model connected. Add a provider key in Models to start.'}</span>
+        <button class="btn btn-secondary btn-xs" type="button" data-action="${canChooseModel ? 'pick-model' : 'open-models'}">${canChooseModel ? 'Choose model' : 'Open Models'}</button>
       </div>`}
       <div class="hero">
         <div class="hero-brand" aria-hidden="true">
@@ -996,12 +1007,20 @@
           </button>
         </div>
         <div class="hero-foot">
-          <span>${modelId ? `${U.esc(provider ? provider.name : 'blank')} · ${U.esc(modelName(modelId))}` : 'No model connected'}</span>
+          <span>${modelId ? `${U.esc(provider ? provider.name : 'blank')} · ${U.esc(modelName(modelId))}` : canChooseModel ? 'Choose a model' : 'No model connected'}</span>
           <span>·</span>
           <span><kbd>${U.kbd('Ctrl K')}</kbd> commands</span>
         </div>
       </div>
     </div>`;
+  }
+
+  function refreshEmptyState() {
+    const scroll = document.getElementById('chat-scroll');
+    if (!scroll || Chat.running || Chat.sending) return;
+    if (Chat.session?.messages?.length) return;
+    if (!scroll.querySelector('.hero')) return;
+    showEmpty();
   }
 
   /* ----------------------------------------------------------------- thread */
@@ -1426,7 +1445,7 @@
       event.preventDefault();
       Chat.slashOpen = false;
       document.querySelector('.slash-menu')?.remove();
-      sendOrStop();
+      sendNow();
       return;
     }
     if (Chat.slashOpen) {
@@ -1494,6 +1513,12 @@
     send();
   }
 
+  function sendNow() {
+    if (Chat.sending) return;
+    if (Chat.running) { send(null, { queue: true, interrupt: true }); return; }
+    send();
+  }
+
   async function stopRun() {
     if (!Chat.session?.id && !Chat.activeSessionId) return;
     const id = Chat.session?.id || Chat.activeSessionId;
@@ -1547,6 +1572,7 @@
         mode: currentMode(),
         reasoningEffort: currentReasoning(),
         queue: Boolean(options.queue),
+        interrupt: Boolean(options.interrupt),
       });
       Chat.sending = false;
       Chat.session.id = result.sessionId || Chat.session.id;
@@ -1556,12 +1582,16 @@
       Chat.activeSessionId = result.sessionId || Chat.activeSessionId;
       if (result.queued) {
         if (!Chat.queue.some((item) => item.queueId === result.queueId)) {
-          Chat.queue.push({ queueId: result.queueId, text, queuedAt: new Date().toISOString() });
+          Chat.queue.push({ queueId: result.queueId, text, queuedAt: new Date().toISOString(), interrupt: Boolean(result.interrupt) });
         }
         renderQueue();
         updateComposer();
         renderHead();
-        UI.toast(`Queued. It sends when the current run finishes.`, 'info', { timeout: 2600 });
+        UI.toast(
+          result.interrupt ? 'Stopping the current run — this message goes next.' : 'Queued. It sends when the current run finishes.',
+          'info',
+          { timeout: 2600 },
+        );
         App.onChatStarted(Chat.session.id, Chat.session);
         const queuedBuffer = Chat.buffer.splice(0);
         for (const payload of queuedBuffer) {
@@ -1937,8 +1967,9 @@
       Chat.buffer.push(payload);
       return;
     }
+    const activeSessionId = Chat.session?.id || '';
     if (payload.type === 'approval') {
-      if (Chat.session?.id && payload.sessionId !== Chat.session.id) {
+      if (payload.sessionId && payload.sessionId !== activeSessionId) {
         UI.toast('Approval requested in another session.', 'warn', {
           title: 'blank needs you', timeout: 8000, actionLabel: 'Open session',
           onAction: () => App.loadSession(payload.sessionId),
@@ -1950,14 +1981,14 @@
       showApproval(payload);
       return;
     }
-    if (payload.sessionId && Chat.session?.id && payload.sessionId !== Chat.session.id) {
+    /* A draft has no session id. Events from a run that is still finishing in
+       another session (or one that started before "New session") must not
+       render into it. While the draft's own send is in flight, events are
+       buffered above and filtered by the new session id when it arrives. */
+    if (payload.sessionId && payload.sessionId !== activeSessionId) {
       if (payload.type === 'run:done') {
         App.refreshSessions();
       }
-      return;
-    }
-    if (payload.sessionId && !Chat.session?.id && Chat.sending) {
-      Chat.buffer.push(payload);
       return;
     }
     switch (payload.type) {
@@ -2003,7 +2034,10 @@
         App.refreshRail();
         break;
       case 'usage':
-        if (Chat.session) Chat.session.usage = payload.usage || Chat.session.usage;
+        if (Chat.session) {
+          Chat.session.usage = payload.usage || Chat.session.usage;
+          if (payload.contextTokens) Chat.session.contextTokens = payload.contextTokens;
+        }
         updateComposer();
         App.refreshRail();
         break;
@@ -2044,14 +2078,14 @@
         if (!payload.queueId) break;
         if (payload.sessionId && payload.sessionId !== Chat.session?.id) break;
         if (!Chat.queue.some((item) => item.queueId === payload.queueId)) {
-          Chat.queue.push({ queueId: payload.queueId, text: payload.text || '', queuedAt: payload.at || '' });
+          Chat.queue.push({ queueId: payload.queueId, text: payload.text || '', queuedAt: payload.at || '', interrupt: Boolean(payload.interrupt) });
         }
         renderQueue();
         updateComposer();
         break;
       }
       case 'chat:queue:update':
-        Chat.queue = (payload.queue || []).map((item) => ({ queueId: item.queueId, text: item.text || '', queuedAt: item.queuedAt || '' }));
+        Chat.queue = (payload.queue || []).map((item) => ({ queueId: item.queueId, text: item.text || '', queuedAt: item.queuedAt || '', interrupt: Boolean(item.interrupt) }));
         renderQueue();
         updateComposer();
         break;
@@ -2121,6 +2155,7 @@
       if (payload.tasks) Chat.session.tasks = payload.tasks;
       if (payload.files) Chat.session.files = payload.files;
       if (payload.usage) Chat.session.usage = payload.usage;
+      if (payload.contextTokens) Chat.session.contextTokens = payload.contextTokens;
     }
     renderHead();
     updateComposer();
@@ -2409,12 +2444,14 @@
     renderHead();
     updateComposer();
     if (!Chat.session) Chat.draftModel = App.state.config?.defaultModel || Chat.draftModel;
+    refreshEmptyState();
   };
 
   Chat.onConfigChanged = function onConfigChanged() {
     if (!Chat.session) Chat.draftModel = App.state.config?.defaultModel || Chat.draftModel;
     renderHead();
     updateComposer();
+    refreshEmptyState();
   };
 
   Chat.handleEvent = handleEvent;

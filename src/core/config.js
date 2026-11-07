@@ -99,6 +99,7 @@ const DEFAULTS = {
   },
   pet: {
     enabled: true,
+    shareScreen: true,
     x: null,
     y: null,
     positions: {},
@@ -521,6 +522,7 @@ function publicConfig(config, catalog) {
     },
     pet: {
       enabled: config.pet?.enabled !== false,
+      shareScreen: config.pet?.shareScreen !== false,
     },
     remote: {
       port: Number(config.remote?.port) || 8787,

@@ -36,6 +36,10 @@
       send: '보내기',
       sent: '맡겨 두세요',
       queued: '답변이 끝나면 보낼게요',
+      sentScreen: '화면을 같이 보냈어요',
+      queuedScreen: '답변이 끝나면 화면과 함께 보낼게요',
+      textOnly: '이 모델은 이미지를 못 읽어서 글로만 보냈어요',
+      screenFailed: '화면을 캡처하지 못해 글로만 보냈어요',
       failed: '보내지 못했어요',
       noModel: '모델을 먼저 연결해 주세요',
       teamMember: '팀원',
@@ -64,6 +68,10 @@
       send: 'Send',
       sent: 'On it',
       queued: 'Queued for after this answer',
+      sentScreen: 'Sent with a screenshot of your screen',
+      queuedScreen: 'Queued with a screenshot for after this answer',
+      textOnly: 'This model cannot read images, so the screen was not sent',
+      screenFailed: 'The screen could not be captured, so only the text was sent',
       failed: 'Could not send that',
       noModel: 'Connect a model first',
       teamMember: 'Team member',
@@ -142,9 +150,10 @@
     colorFor(currentModel);
   }
 
-  function setState(next, text) {
+  function setState(next, text, stream = '') {
     state = next;
     body.dataset.state = next;
+    body.dataset.stream = stream;
     bubbleText.textContent = text || '';
     clearTimeout(idleTimer);
     if (next === 'done') {
@@ -211,8 +220,10 @@
       if (!node) continue;
       node.textContent = key === 'hide' && identity.kind === 'team' ? copy().hideAll : copy()[key];
     }
-    if (state === 'working') bubbleText.textContent = copy().working;
-    else if (state === 'waiting') bubbleText.textContent = copy().waiting;
+    if (state === 'working') {
+      body.dataset.stream = '';
+      bubbleText.textContent = copy().working;
+    } else if (state === 'waiting') bubbleText.textContent = copy().waiting;
     else if (state === 'done') bubbleText.textContent = copy().done;
     else if (state === 'error') bubbleText.textContent = copy().error;
   }
@@ -253,6 +264,14 @@
         }
         setState('working', copy().working);
         break;
+      case 'stream': {
+        if (approvalPending) break;
+        const text = String(event.text || '').trim();
+        if (!text) break;
+        setMood('working');
+        setState('working', text, event.mode === 'reasoning' ? 'reasoning' : 'reply');
+        break;
+      }
       case 'tool:start':
         if (approvalPending) break;
         setState('working', toolCopy(event.name));
@@ -436,7 +455,15 @@
       }
       composeInput.value = '';
       closeCompose();
-      setState('working', result.queued ? copy().queued : copy().sent);
+      if (result.screen === 'shared') {
+        setState('working', result.queued ? copy().queuedScreen : copy().sentScreen);
+      } else if (result.screen === 'unsupported') {
+        setState('working', copy().textOnly);
+      } else if (result.screen === 'failed') {
+        setState('working', copy().screenFailed);
+      } else {
+        setState('working', result.queued ? copy().queued : copy().sent);
+      }
     } catch {
       closeCompose();
       setState('error', copy().failed);

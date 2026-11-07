@@ -77,7 +77,7 @@ Agent-created pages, documents, graphics and code live in a local Paper library.
 Run a prompt on an hourly, daily or weekday timer from **Settings → Schedules**; each run becomes a normal session. Native desktop notifications report finished runs, pending approvals and scheduled results while the window is in the background, with per-category switches and a test action in **Settings → Notifications**.
 
 **Send while responding**
-Press send during a run and the message is queued in the composer tray. The queue drains automatically when the current run finishes; individual queued messages can be removed first.
+Press send during a run and the message is queued in the composer tray. The queue drains automatically when the current run finishes; individual queued messages can be removed first. Press **Ctrl+Enter** (⌘+Enter on macOS) to stop the current run instead and send that message next, ahead of anything already queued.
 
 ## Commands
 

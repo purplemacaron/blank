@@ -1379,6 +1379,50 @@ body.platform-linux .window-btn.close:hover { background: var(--red); }
   max-height: 280px;
   overflow: auto;
 }
+.tool-terminal-copy {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: #8792a4;
+  transition: background 0.12s, color 0.12s;
+}
+.tool-terminal-copy:hover { background: rgba(255, 255, 255, 0.07); color: #dbe3ef; }
+.tool-terminal-copy.copied { color: #6ee7a8; }
+.tool-terminal-copy.failed { color: #ff8a80; }
+
+/* copy controls on commands and code */
+.copy-block { position: relative; }
+.copy-chip {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+  color: var(--text-faint);
+  opacity: 0.65;
+  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.copy-block:hover .copy-chip, .copy-chip:focus-visible { opacity: 1; color: var(--text-secondary); }
+.copy-chip.copied { opacity: 1; color: var(--green); border-color: var(--green-border); }
+.copy-chip.failed { opacity: 1; color: var(--red); border-color: var(--red-border); }
+.copy-block > pre, .copy-block > .approval-args { padding-right: 30px; }
+.tool-section-label + .copy-block { margin-bottom: 8px; }
+.agent-report .copy-block { margin-top: 4px; }
+.agent-report .copy-block > pre { margin-top: 0; }
+.mini-icon.copied { color: var(--green); }
+.mini-icon.failed { color: var(--red); }
+.panel-copy { margin-left: auto; }
 
 /* approval */
 .approval-card {
@@ -3916,6 +3960,17 @@ html[data-theme="dark"] .tok-kw { color: #8db3ff; }
 .queue-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border-soft); }
 .queue-item:last-child { border-bottom: 0; }
 .queue-text { flex: 1; min-width: 0; font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-next {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.queue-item.is-next .queue-text { color: var(--text-primary); }
 .queue-remove {
   width: 18px;
   height: 18px;

@@ -44,6 +44,7 @@ function createSession({ workspace = '', model = '', mode = 'agent', title = 'Ne
     messages: [],
     tasks: [],
     usage: { input: 0, output: 0 },
+    contextTokens: 0,
     allowTools: [],
     allowCommands: [],
     allowFiles: [],

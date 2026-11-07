@@ -12,7 +12,7 @@ const reasoning = require('../src/core/reasoning');
 const providers = require('../src/core/providers');
 const { runAgent, compactSession } = require('../src/core/agent');
 const learn = require('../src/core/learn');
-const { summarizeArgs } = require('../src/core/tools');
+const { summarizeArgs, prepareScreenshot } = require('../src/core/tools');
 const search = require('../src/core/search');
 const computer = require('../src/core/computer');
 const { createRemoteService } = require('../src/core/remote');
@@ -32,6 +32,8 @@ const dictation = require('../src/core/dictation');
 const codeModule = require('../src/core/code');
 const apisModule = require('../src/core/apis');
 const { runConsoleCommand, createTerminal } = require('../src/core/console');
+const { sendMode, enqueueInterrupt } = require('../src/core/turn-queue');
+const { appendStream, previewStream } = require('../src/core/stream-preview');
 
 const APP_ROOT = path.join(__dirname, '..');
 const isWin = process.platform === 'win32';
@@ -188,12 +190,49 @@ function registerIpc({ mcp, getWindow }) {
     petFollow.clear();
   };
 
+  const petStreams = new Map();
+
+  /** A short live excerpt of what the model is thinking or saying. */
+  const sendPetStream = (payload = {}) => {
+    const runId = String(payload.runId || '');
+    if (!runId) return;
+    let stream = petStreams.get(runId);
+    if (!stream) {
+      stream = { messageId: '', reasoning: '', text: '' };
+      petStreams.set(runId, stream);
+    }
+    const messageId = String(payload.messageId || '');
+    if (messageId && messageId !== stream.messageId) {
+      stream.messageId = messageId;
+      stream.reasoning = '';
+      stream.text = '';
+    }
+    const thinking = payload.type === 'reasoning';
+    if (thinking) stream.reasoning = appendStream(stream.reasoning, payload.delta);
+    else stream.text = appendStream(stream.text, payload.delta);
+    const text = previewStream(thinking ? stream.reasoning : stream.text);
+    if (!text) return;
+    sendPet({
+      type: 'stream',
+      runId,
+      sessionId: payload.sessionId,
+      mode: thinking ? 'reasoning' : 'reply',
+      messageId: stream.messageId,
+      text,
+    });
+  };
+
   /** The pets only need the shape of a run, never transcript or tool payloads. */
   const sendPetEvent = (payload = {}) => {
     const common = { runId: payload.runId, sessionId: payload.sessionId };
     switch (payload.type) {
       case 'run:start':
+        petStreams.delete(String(payload.runId || ''));
         sendPet({ type: 'run:start', ...common, model: payload.model });
+        break;
+      case 'text':
+      case 'reasoning':
+        sendPetStream(payload);
         break;
       case 'tool:start':
         sendPet({ type: 'tool:start', ...common, name: payload.name });
@@ -256,6 +295,7 @@ function registerIpc({ mcp, getWindow }) {
         break;
       case 'run:done': {
         const outcome = payload.outcome || {};
+        petStreams.delete(String(payload.runId || ''));
         releasePetFollow(payload.runId, true);
         sendPet({
           type: 'run:done',
@@ -586,6 +626,7 @@ function registerIpc({ mcp, getWindow }) {
       }
       clean.pet = {
         enabled: incoming.enabled === undefined ? current.enabled !== false : Boolean(incoming.enabled),
+        shareScreen: incoming.shareScreen === undefined ? current.shareScreen !== false : Boolean(incoming.shareScreen),
         x: coord(incoming.x, current.x),
         y: coord(incoming.y, current.y),
         positions,
@@ -756,6 +797,32 @@ function registerIpc({ mcp, getWindow }) {
     return pet.focus(entry.key, Boolean(value));
   });
 
+  const captureMemoScreen = async (model, config) => {
+    if (config.pet?.shareScreen === false) return { status: 'off' };
+    if (!catalog.findModel(model, config)?.vision) return { status: 'unsupported' };
+    try {
+      const shot = await computer.screenshot();
+      const prepared = prepareScreenshot(shot);
+      return {
+        status: 'shared',
+        meta: {
+          screenshot: {
+            path: shot.path,
+            url: screenshotUrl(shot.path),
+            modelPath: prepared.path,
+            mime: prepared.mime,
+            width: shot.width,
+            height: shot.height,
+            fileName: path.basename(shot.path),
+            source: 'memo',
+          },
+        },
+      };
+    } catch {
+      return { status: 'failed' };
+    }
+  };
+
   ipcMainHandle('pet:prompt', async (event, raw) => {
     const entry = fromPet(event);
     if (!entry) throw new Error('Only a blank memo can call this.');
@@ -766,6 +833,7 @@ function registerIpc({ mcp, getWindow }) {
     if (!model || !catalog.findModel(model, config)) {
       return { ok: false, code: 'no-model' };
     }
+    const screen = await captureMemoScreen(model, config);
     const main = getWindow();
     const activeSession = entry.sessionId && entry.runId
       && state.sessionRuns.get(entry.sessionId) === entry.runId
@@ -779,18 +847,20 @@ function registerIpc({ mcp, getWindow }) {
         input,
         queueIfRunning: Boolean(activeSession),
         source: 'pet',
+        meta: screen.meta,
       });
       if (result.queued) {
         return {
           ok: true,
           queued: true,
+          screen: screen.status,
           sessionId: result.sessionId,
           queueId: result.queueId,
           queueLength: result.queueLength,
           title: result.title,
         };
       }
-      return { ok: true, sessionId: result.sessionId, runId: result.runId, title: result.title };
+      return { ok: true, screen: screen.status, sessionId: result.sessionId, runId: result.runId, title: result.title };
     } catch {
       return { ok: false, code: 'failed' };
     }
@@ -1294,7 +1364,7 @@ function registerIpc({ mcp, getWindow }) {
     const session = store.getSession(id);
     if (!session) return { session: null };
     for (const message of session.messages || []) delete message.providerItems;
-    const queue = (state.queues.get(id) || []).map((item) => ({ queueId: item.id, text: item.text }));
+    const queue = (state.queues.get(id) || []).map((item) => ({ queueId: item.id, text: item.text, interrupt: Boolean(item.interrupt) }));
     return { session, running: state.sessionRuns.has(id), queue };
   });
 
@@ -1374,7 +1444,7 @@ function registerIpc({ mcp, getWindow }) {
   }
 
   function queueUpdateEvent(sessionId, win) {
-    const queue = (state.queues.get(sessionId) || []).map((item) => ({ queueId: item.id, text: item.text, queuedAt: item.queuedAt }));
+    const queue = (state.queues.get(sessionId) || []).map((item) => ({ queueId: item.id, text: item.text, queuedAt: item.queuedAt, interrupt: Boolean(item.interrupt) }));
     const payload = { type: 'chat:queue:update', sessionId, queue };
     sendEvent(win, payload);
     const main = getWindow();
@@ -1519,6 +1589,7 @@ function registerIpc({ mcp, getWindow }) {
       role: 'user',
       content: next.text,
       attachments: next.attachments || [],
+      ...(next.meta ? { meta: next.meta } : {}),
       at: new Date().toISOString(),
       source: next.source || 'desktop',
     };
@@ -1533,6 +1604,7 @@ function registerIpc({ mcp, getWindow }) {
       type: 'chat:queued:sent',
       sessionId,
       queueId: next.id,
+      interrupt: Boolean(next.interrupt),
       message,
       title: session.title,
       queueLength: queue.length,
@@ -1546,19 +1618,24 @@ function registerIpc({ mcp, getWindow }) {
     return { ...run, message, title: session.title };
   }
 
-  function stopSessionRun(sessionId) {
+  function abortSessionRun(sessionId) {
     const runId = state.sessionRuns.get(sessionId);
     const run = runId ? state.runs.get(runId) : null;
-    const hadQueue = state.queues.delete(sessionId);
     if (run) {
       run.controller.abort();
       denyApprovalsFor((approval) => approval.sessionId === sessionId);
-      queueUpdateEvent(sessionId, run.win);
     }
+    return run;
+  }
+
+  function stopSessionRun(sessionId) {
+    const hadQueue = state.queues.delete(sessionId);
+    const run = abortSessionRun(sessionId);
+    if (run) queueUpdateEvent(sessionId, run.win);
     return { ok: Boolean(run), clearedQueue: Boolean(hadQueue) };
   }
 
-  function startChatRun({ win, input = {}, queueIfRunning = false, source = 'desktop' }) {
+  function startChatRun({ win, input = {}, queueIfRunning = false, interrupt = false, source = 'desktop', meta = null }) {
     ensureHome();
     const config = configModule.loadConfig();
     const text = String(input.text || '').slice(0, 200000);
@@ -1567,25 +1644,31 @@ function registerIpc({ mcp, getWindow }) {
     let session = input.sessionId ? store.getSession(input.sessionId) : null;
 
     if (session && state.sessionRuns.has(session.id)) {
-      if (!queueIfRunning) throw new Error('This session is already running. Stop it or queue this message.');
+      const action = sendMode({ running: true, queueIfRunning, interrupt });
+      if (action === 'reject') throw new Error('This session is already running. Stop it or queue this message.');
+      const urgent = action === 'interrupt';
       const item = {
         id: uid('q_'),
         text,
         attachments,
+        ...(meta ? { meta } : {}),
         model: input.model,
         mode: input.mode,
         reasoningEffort: input.reasoningEffort,
         win,
         source,
         queuedAt: new Date().toISOString(),
+        ...(urgent ? { interrupt: true } : {}),
       };
       const queue = queueFor(session.id);
-      queue.push(item);
+      if (urgent) enqueueInterrupt(queue, item);
+      else queue.push(item);
       const payload = {
         type: 'chat:queued',
         sessionId: session.id,
         queueId: item.id,
         text,
+        interrupt: urgent,
         queueLength: queue.length,
         at: item.queuedAt,
         title: session.title,
@@ -1593,7 +1676,8 @@ function registerIpc({ mcp, getWindow }) {
       sendEvent(win, payload);
       const main = getWindow();
       if (main && main !== win) sendEvent(main, payload);
-      return { sessionId: session.id, queued: true, queueId: item.id, queueLength: queue.length, title: session.title, model: session.model, mode: session.mode };
+      if (urgent) abortSessionRun(session.id);
+      return { sessionId: session.id, queued: true, interrupt: urgent, queueId: item.id, queueLength: queue.length, title: session.title, model: session.model, mode: session.mode };
     }
 
     if (!session) {
@@ -1614,6 +1698,7 @@ function registerIpc({ mcp, getWindow }) {
       role: 'user',
       content: text,
       attachments,
+      ...(meta ? { meta } : {}),
       at: new Date().toISOString(),
       source,
     };
@@ -1642,6 +1727,7 @@ function registerIpc({ mcp, getWindow }) {
       win,
       input,
       queueIfRunning: Boolean(input.queue),
+      interrupt: Boolean(input.interrupt),
       source: 'desktop',
     });
   });
@@ -1651,7 +1737,7 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('chat:stop', async (_event, sessionId) => stopSessionRun(sessionId));
 
   require('electron').ipcMain.handle('chat:queue', async (_event, sessionId) => {
-    return { queue: (state.queues.get(sessionId) || []).map((item) => ({ queueId: item.id, text: item.text, queuedAt: item.queuedAt })) };
+    return { queue: (state.queues.get(sessionId) || []).map((item) => ({ queueId: item.id, text: item.text, queuedAt: item.queuedAt, interrupt: Boolean(item.interrupt) })) };
   });
 
   require('electron').ipcMain.handle('chat:queue:remove', async (_event, input = {}) => {
@@ -2717,7 +2803,7 @@ ${commands}
         sessionId: session.id,
         trigger: triggerSummary,
       });
-      emit({ type: 'run:done', outcome, usage: fresh.usage, title: fresh.title, tasks: fresh.tasks || [], files: fresh.files || [] });
+      emit({ type: 'run:done', outcome, usage: fresh.usage, contextTokens: fresh.contextTokens, title: fresh.title, tasks: fresh.tasks || [], files: fresh.files || [] });
       broadcast({ type: 'notice', level: outcome.ok ? 'info' : 'warn', text: `Automation “${schedule.title}” ${outcome.ok ? 'finished' : outcome.stopped ? 'stopped' : 'ended with an error'}.` });
       notifications.scheduleFinished({
         title: `${outcome.ok ? 'Automation finished' : 'Automation stopped'} · ${schedule.title}`,

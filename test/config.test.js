@@ -14,6 +14,8 @@ const {
   resolveKey,
   maskKey,
   resolveLanguage,
+  publicConfig,
+  deepMerge,
   DEFAULTS,
 } = require('../src/core/config');
 
@@ -113,6 +115,14 @@ test('retired preview model migrates to no model', () => {
   config.defaultModel = 'openai/gpt-5';
   assert.equal(normalizeModelDefaults(config), false);
   assert.equal(config.defaultModel, 'openai/gpt-5');
+});
+
+test('memo instructions share the screen by default and can be turned off', () => {
+  assert.equal(DEFAULTS.pet.shareScreen, true);
+  const config = deepMerge(structuredClone(DEFAULTS), { providers: {} });
+  assert.equal(publicConfig(config, { allProviders: () => [] }).pet.shareScreen, true);
+  config.pet.shareScreen = false;
+  assert.equal(publicConfig(config, { allProviders: () => [] }).pet.shareScreen, false);
 });
 
 test('the interface follows the system language until the user chooses one', () => {

@@ -133,6 +133,30 @@ body[data-state="waiting"] .bubble-dot { display: block; animation: dotPulse 1.6
 body[data-state="done"] .bubble-dot { display: block; background: #2f9e6b; }
 body[data-state="error"] .bubble-dot { display: block; background: #d05a49; }
 
+.bubble-text {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Live reasoning and reply excerpts can run to a few lines. */
+body[data-stream] .pet-bubble {
+  width: 198px;
+  white-space: normal;
+  align-items: flex-start;
+}
+body[data-stream] .bubble-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+body[data-stream] .bubble-typing { margin-top: 3px; }
+body[data-stream="reasoning"] .bubble-text { color: #6a7689; font-style: italic; }
+body[data-theme="dark"][data-stream="reasoning"] .bubble-text { color: #a9b5c7; }
+
 .bubble-typing {
   display: none;
   align-items: center;

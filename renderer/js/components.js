@@ -309,8 +309,37 @@
     return `<span class="time-ago" title="${U.attr(iso ? new Date(iso).toLocaleString() : '')}">${U.relativeTime(iso)}</span>`;
   }
 
+  function flashCopy(button, ok) {
+    if (button.dataset.copyFlash) return;
+    const html = button.innerHTML;
+    const title = button.getAttribute('title') || '';
+    button.dataset.copyFlash = '1';
+    button.classList.toggle('copied', ok);
+    button.classList.toggle('failed', !ok);
+    button.innerHTML = icon(ok ? 'check' : 'alert-circle', Number(button.dataset.iconSize) || 11);
+    button.setAttribute('title', ok ? 'Copied' : 'Failed');
+    setTimeout(() => {
+      button.innerHTML = html;
+      button.setAttribute('title', title);
+      button.classList.remove('copied', 'failed');
+      delete button.dataset.copyFlash;
+    }, 1600);
+  }
+
   function bindCopyCode(root) {
     root.addEventListener('click', async (event) => {
+      const blockButton = event.target.closest('.js-copy-block');
+      if (blockButton) {
+        const holder = blockButton.closest('[data-copy-block]');
+        const source = holder?.querySelector(blockButton.dataset.copyTarget || '[data-copy-body], pre');
+        if (!source) return;
+        const command = holder.dataset.copyCommand || '';
+        const prefix = command ? `$ ${command}\n\n` : holder.dataset.copyPrefix || '';
+        const text = `${prefix}${source.textContent || ''}`.trimEnd();
+        if (!text) return;
+        flashCopy(blockButton, await U.copyText(text));
+        return;
+      }
       const button = event.target.closest('.js-copy-code');
       if (!button) return;
       const block = button.closest('.code-block');
