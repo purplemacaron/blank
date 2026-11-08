@@ -100,14 +100,31 @@ Press send during a run and the message is queued in the composer tray. The queu
 
 ### Terminal
 
-The terminal client shares providers, configuration and sessions with the desktop app.
+The terminal client shares providers, configuration and sessions with the desktop app. Interactively it opens a full-screen TUI with a header, scrollable transcript, multi-line composer, slash-command palette and inline approvals.
 
 ```sh
-node bin/blank.js                 # interactive session
-node bin/blank.js -c              # continue the latest session in this folder
-node bin/blank.js run "..."       # one-shot task
+node bin/blank.js                   # full-screen TUI
+node bin/blank.js --plain           # plain REPL without the alternate screen
+node bin/blank.js -c                # continue the latest session in this folder
+node bin/blank.js run "..."         # one-shot task
 git diff | node bin/blank.js run -  # prompt from stdin
 ```
+
+The TUI is skipped automatically when stdin or stdout is not a TTY, when `NO_TUI=1` or `TERM=dumb` is set, and for `--plain`.
+
+| Key | Action |
+| --- | --- |
+| Enter | send, or accept the palette selection |
+| Alt+Enter, Ctrl+J | newline |
+| Esc | stop the run, close the palette, or deny an approval |
+| ↑ / ↓ | history, palette navigation, or move inside a multi-line draft |
+| Tab | accept the completion |
+| PgUp / PgDn | scroll the transcript; End returns to live output |
+| Ctrl+P / Ctrl+R / Ctrl+E | command, session and model pickers |
+| Ctrl+O / Ctrl+L | expand the last tool output / clear the transcript |
+| Ctrl+C / Ctrl+D | stop the run, then clear the draft or exit / exit |
+
+Approvals accept `y` (allow once), `a` (always) or `n` (deny); anything else leaves the tool waiting. The VS Code integrated terminal is a real PTY, so the TUI works there — VS Code keeps Ctrl+J for its panel toggle, so use Alt+Enter for newlines.
 
 Inside a session, `/sessions` lists recent conversations, `/resume <n|id>` switches to one, and `/rename <title>` names the current session. Tab completes commands, `/model` and `/mode`. Sessions started in the app resume in the terminal and the other way around.
 
@@ -164,7 +181,7 @@ renderer/        Chromium UI (classic scripts, no build step)
   js/            app shell, chat, views, components, API bridge
 src/core/        agent loop, providers, tools, config, MCP, paper,
                  schedules, OAuth, search, plugins, remote, media engines
-src/cli/         terminal argument, session and completion helpers
+src/cli/         terminal runtime, plain REPL and TUI modules
 bin/             terminal client
 examples/        MCP echo server used in the MCP examples
 assets/          app icon assets

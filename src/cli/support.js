@@ -38,6 +38,7 @@ function parseArgs(argv) {
     else if (value === '--continue' || value === '-c') args.flags.continue = true;
     else if (value === '--yes' || value === '-y') args.flags.yes = true;
     else if (value === '--verbose' || value === '-v') args.flags.verbose = true;
+    else if (value === '--plain') args.flags.plain = true;
     else if (value === '--help' || value === '-h') args.flags.help = true;
     else if (value === '--version' || value === '-V') args.flags.version = true;
     else if (value === '--no-color') args.flags.noColor = true;
