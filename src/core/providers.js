@@ -144,6 +144,13 @@ async function* openaiStream({ resolved, apiKey, system, messages, tools, option
     stream_options: { include_usage: true },
   };
   if (typeof options.temperature === 'number') body.temperature = options.temperature;
+  // Utility calls (titles, compaction) must answer, not think: Ollama models
+  // with an always-on thinking pass otherwise spend the whole budget reasoning
+  // and take a minute per summary. Only cap the output where thinking is off.
+  const utilityCall = Boolean(options.disableReasoning) && resolved.providerId === 'ollama';
+  if (utilityCall && options.capMaxTokens && Number.isFinite(options.maxTokens)) {
+    body.max_tokens = Math.floor(options.maxTokens);
+  }
   if (options.reasoningEffort) {
     const effort = options.reasoningEffort;
     if (options.reasoningTransport === 'openrouter') {
@@ -151,6 +158,12 @@ async function* openaiStream({ resolved, apiKey, system, messages, tools, option
     } else if (options.reasoningTransport === 'openai-effort' || options.reasoningTransport === 'xai-effort') {
       body.reasoning_effort = effort;
     }
+  }
+  if (utilityCall) {
+    // Only send efforts the model's ladder accepts: gpt-oss rejects 'none'.
+    const profile = reasoning.profileFor(resolved.providerId, resolved.id);
+    if (profile?.fixedLabel) body.reasoning_effort = 'none';
+    else if (profile && !profile.levels.includes('none') && profile.levels.includes('low')) body.reasoning_effort = 'low';
   }
   if (tools && tools.length) {
     body.tools = tools.map((tool) => ({
@@ -533,6 +546,8 @@ async function* streamChat({ modelId, config, system, messages, tools, signal, o
   const agentOptions = {
     temperature: options.temperature ?? config.agent?.temperature ?? null,
     maxTokens: options.maxTokens || 8192,
+    capMaxTokens: Boolean(options.maxTokens),
+    disableReasoning: Boolean(options.disableReasoning),
     reasoningEffort: effort,
     reasoningTransport: effort ? profile?.transport || '' : '',
   };
@@ -575,7 +590,7 @@ async function completeText({ modelId, config, system, messages, signal, maxToke
     messages,
     tools: [],
     signal,
-    options: { maxTokens, temperature: 0.2 },
+    options: { maxTokens, temperature: 0.2, disableReasoning: true },
   })) {
     if (event.type === 'text') text += event.text;
     if (event.type === 'error') throw new Error(event.error);

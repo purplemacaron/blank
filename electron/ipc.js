@@ -43,6 +43,7 @@ function createState() {
   return {
     runs: new Map(),
     sessionRuns: new Map(),
+    compacting: new Set(),
     approvals: new Map(),
     queues: new Map(),
     scheduleRuns: new Map(),
@@ -1371,7 +1372,7 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('sessions:create', async (_event, input = {}) => {
     const config = configModule.loadConfig();
     const model = input.model && catalog.findModel(input.model, config) ? input.model : config.defaultModel;
-    const mode = ['agent', 'coding', 'design', 'plan', 'ask'].includes(input.mode) ? input.mode : 'agent';
+    const mode = ['agent', 'coding', 'design', 'research', 'plan', 'ask'].includes(input.mode) ? input.mode : 'agent';
     const customTitle = String(input.title || '').trim();
     const session = store.createSession({
       workspace: config.workspace,
@@ -1402,7 +1403,7 @@ function registerIpc({ mcp, getWindow }) {
       if (!catalog.findModel(input.model, config)) throw new Error('Unknown model.');
       session.model = input.model;
     }
-    if (input.mode !== undefined && ['agent', 'coding', 'design', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
+    if (input.mode !== undefined && ['agent', 'coding', 'design', 'research', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
     if (input.reasoningEffort !== undefined && reasoning.isEffort(input.reasoningEffort)) {
       session.reasoningEffort = input.reasoningEffort;
     }
@@ -1412,6 +1413,7 @@ function registerIpc({ mcp, getWindow }) {
   });
 
   require('electron').ipcMain.handle('sessions:delete', async (_event, id) => {
+    if (state.compacting.has(id)) throw new Error('Wait for context compaction to finish before deleting.');
     const runId = state.sessionRuns.get(id);
     if (runId) {
       const run = state.runs.get(runId);
@@ -1427,13 +1429,23 @@ function registerIpc({ mcp, getWindow }) {
     const session = store.getSession(id);
     if (!session) throw new Error('Session not found.');
     if (state.sessionRuns.has(id)) throw new Error('Stop the run before compacting.');
+    if (state.compacting.has(id)) throw new Error('Compaction is already running.');
     const config = configModule.loadConfig();
-    const result = await compactSession({ session, config });
-    if (result.ok) {
-      broadcast({ type: 'session:updated', session: summaryOf(store.getSession(id)) });
-      return { ...result, session: store.getSession(id) };
+    const before = Number(session.compactedCount) || 0;
+    state.compacting.add(id);
+    try {
+      const result = await compactSession({ session, config });
+      if (result.ok) {
+        broadcast({ type: 'session:updated', session: summaryOf(store.getSession(id)) });
+        return { ...result, archived: Math.max(0, result.compacted - before), session: store.getSession(id) };
+      }
+      throw new Error(result.error);
+    } finally {
+      state.compacting.delete(id);
+      setTimeout(() => {
+        try { drainQueue(id); } catch {}
+      }, 60);
     }
-    throw new Error(result.error);
   });
 
   /* --------------------------------------------------------------------- chat */
@@ -1570,6 +1582,7 @@ function registerIpc({ mcp, getWindow }) {
 
   function drainQueue(sessionId) {
     if (state.sessionRuns.has(sessionId)) return null;
+    if (state.compacting.has(sessionId)) return null;
     const queue = state.queues.get(sessionId);
     if (!queue || !queue.length) return null;
     const next = queue.shift();
@@ -1580,7 +1593,7 @@ function registerIpc({ mcp, getWindow }) {
     }
     const config = configModule.loadConfig();
     if (next.model && catalog.findModel(next.model, config)) session.model = next.model;
-    if (next.mode && ['agent', 'coding', 'design', 'plan', 'ask'].includes(next.mode)) session.mode = next.mode;
+    if (next.mode && ['agent', 'coding', 'design', 'research', 'plan', 'ask'].includes(next.mode)) session.mode = next.mode;
     if (next.reasoningEffort && reasoning.isEffort(next.reasoningEffort)) {
       session.reasoningEffort = next.reasoningEffort;
     }
@@ -1641,6 +1654,7 @@ function registerIpc({ mcp, getWindow }) {
     const text = String(input.text || '').slice(0, 200000);
     const attachments = sanitizeAttachments(input.attachments);
     if (!text.trim() && !attachments.length) throw new Error('Message is empty.');
+    if (state.compacting.has(input.sessionId)) throw new Error('Wait for context compaction to finish before sending.');
     let session = input.sessionId ? store.getSession(input.sessionId) : null;
 
     if (session && state.sessionRuns.has(session.id)) {
@@ -1682,11 +1696,11 @@ function registerIpc({ mcp, getWindow }) {
 
     if (!session) {
       const model = input.model && catalog.findModel(input.model, config) ? input.model : config.defaultModel;
-      const mode = ['agent', 'coding', 'design', 'plan', 'ask'].includes(input.mode) ? input.mode : 'agent';
+      const mode = ['agent', 'coding', 'design', 'research', 'plan', 'ask'].includes(input.mode) ? input.mode : 'agent';
       session = store.createSession({ workspace: config.workspace, model, mode, reasoningEffort: input.reasoningEffort });
     } else {
       if (input.model && catalog.findModel(input.model, config)) session.model = input.model;
-      if (input.mode && ['agent', 'coding', 'design', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
+      if (input.mode && ['agent', 'coding', 'design', 'research', 'plan', 'ask'].includes(input.mode)) session.mode = input.mode;
       if (input.reasoningEffort && reasoning.isEffort(input.reasoningEffort)) {
         session.reasoningEffort = input.reasoningEffort;
       }

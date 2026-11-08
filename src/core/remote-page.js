@@ -124,7 +124,7 @@ button{cursor:pointer}
       <button class="send" id="send" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M5 12l14-7-6 14-2-6-6-1z"/><path d="M13 13l6-8"/></svg></button>
     </div>
     <div class="composer-foot">
-      <div class="mode" id="mode"><button data-mode="agent" class="active">Agent</button><button data-mode="coding">Coding</button><button data-mode="design">Design</button><button data-mode="plan">Plan</button><button data-mode="ask">Ask</button></div>
+      <div class="mode" id="mode"><button data-mode="agent" class="active">Agent</button><button data-mode="coding">Coding</button><button data-mode="design">Design</button><button data-mode="research">Research</button><button data-mode="plan">Plan</button><button data-mode="ask">Ask</button></div>
       <span id="model">—</span>
       <span class="foot-spacer"></span>
       <span id="hint">Paired over your network</span>

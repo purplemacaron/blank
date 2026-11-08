@@ -520,14 +520,15 @@
     });
     if (!confirmed) return;
     try {
+      UI.toast('Summarizing earlier context…', 'info', { timeout: 20000 });
       const result = await API.sessions.compact(summary.id);
       if (state.currentSessionId === summary.id) {
         await ChatView.loadSession(summary.id, { keepScroll: true });
       }
       await refreshSessions();
       refreshRail();
-      const saved = result?.compacted;
-      UI.toast(saved ? `Compacted ${saved} earlier messages.` : 'Context compacted.', 'success');
+      const saved = result?.archived;
+      UI.toast(saved ? `Compacted ${saved} messages.` : 'Context compacted.', 'success');
     } catch (error) { UI.toast(error.message, 'error'); }
   }
 

@@ -57,6 +57,122 @@ test('openai streaming asks for usage so the context meter has data', async (t) 
   assert.deepEqual(usage.usage, { input: 53, output: 4 });
 });
 
+test('utility completions cap generation and skip ollama thinking', async (t) => {
+  let seen = null;
+  const { server, origin } = await listening((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try { seen = JSON.parse(body); } catch { seen = null; }
+      res.setHeader('content-type', 'text/event-stream');
+      res.end([
+        'data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}',
+        'data: [DONE]',
+        '',
+      ].join('\n\n'));
+    });
+  });
+  t.after(() => server.close());
+  const config = {
+    providers: { ollama: { baseUrl: `${origin}/v1` } },
+    discoveredModels: {},
+    agent: {},
+  };
+  const text = await providers.completeText({
+    modelId: 'ollama/qwen3.8:27b',
+    config,
+    system: 'Summarize.',
+    messages: [{ role: 'user', content: 'hi' }],
+    maxTokens: 1600,
+  });
+  assert.equal(text, 'ok');
+  assert.equal(seen.max_tokens, 1600, 'the requested cap reaches the provider');
+  assert.equal(seen.reasoning_effort, 'none', 'ollama skips the thinking pass for utility work');
+});
+
+test('utility completions use the lowest effort gpt-oss accepts', async (t) => {
+  let seen = null;
+  const { server, origin } = await listening((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try { seen = JSON.parse(body); } catch { seen = null; }
+      res.setHeader('content-type', 'text/event-stream');
+      res.end(['data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}', 'data: [DONE]', ''].join('\n\n'));
+    });
+  });
+  t.after(() => server.close());
+  const config = {
+    providers: { ollama: { baseUrl: `${origin}/v1` } },
+    discoveredModels: {},
+    agent: {},
+  };
+  await providers.completeText({
+    modelId: 'ollama/gpt-oss:20b',
+    config,
+    system: 'Summarize.',
+    messages: [{ role: 'user', content: 'hi' }],
+    maxTokens: 1600,
+  });
+  assert.equal(seen.max_tokens, 1600);
+  assert.equal(seen.reasoning_effort, 'low', 'gpt-oss rejects none, so utility work uses its lowest stage');
+});
+
+test('utility completions send no effort parameter to non-thinking ollama models', async (t) => {
+  let seen = null;
+  const { server, origin } = await listening((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try { seen = JSON.parse(body); } catch { seen = null; }
+      res.setHeader('content-type', 'text/event-stream');
+      res.end(['data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}', 'data: [DONE]', ''].join('\n\n'));
+    });
+  });
+  t.after(() => server.close());
+  const config = {
+    providers: { ollama: { baseUrl: `${origin}/v1` } },
+    discoveredModels: {},
+    agent: {},
+  };
+  await providers.completeText({
+    modelId: 'ollama/plain:latest',
+    config,
+    system: 'Summarize.',
+    messages: [{ role: 'user', content: 'hi' }],
+    maxTokens: 1600,
+  });
+  assert.equal(seen.max_tokens, 1600);
+  assert.equal(seen.reasoning_effort, undefined, 'models without a thinking pass get no effort parameter');
+});
+
+test('chat requests without an explicit cap leave max_tokens to the provider', async (t) => {
+  let seen = null;
+  const { server, origin } = await listening((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try { seen = JSON.parse(body); } catch { seen = null; }
+      res.setHeader('content-type', 'text/event-stream');
+      res.end(['data: {"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}', 'data: [DONE]', ''].join('\n\n'));
+    });
+  });
+  t.after(() => server.close());
+  const config = {
+    providers: { ollama: { baseUrl: `${origin}/v1` } },
+    discoveredModels: {},
+    agent: {},
+  };
+  for await (const _event of providers.streamChat({
+    modelId: 'ollama/qwen3.8:27b',
+    config,
+    system: 'You are blank.',
+    messages: [{ role: 'user', content: 'hi' }],
+  })) { /* drain */ }
+  assert.equal(seen.max_tokens, undefined, 'normal runs keep the provider default');
+  assert.equal(seen.reasoning_effort, undefined, 'normal runs keep the model thinking profile');
+});
+
 test('ollama models report the num_ctx the server actually uses', async (t) => {
   const { server, origin } = await listening((req, res) => {
     if (req.method === 'GET' && req.url === '/v1/models') {

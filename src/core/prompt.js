@@ -55,6 +55,12 @@ const MODE_TEXT = {
 - Avoid AI-slop: no purple-to-pink gradient hero, no emoji as icons, no glassmorphism everywhere, no centered marketing copy for a utility screen.
 - Verify visually before reporting: open the page in a browser or preview, check the primary viewport and a narrow one, and fix what looks off. Describe the result in one or two concrete sentences.
 - When the deliverable is a standalone page, mockup or visual study rather than a change to the project, build it with create_paper so the user can preview it in Paper. For project UI work, edit the real files and verify them.`,
+  research: `You are in Research mode. The deliverable is a cited, decision-ready brief — not a pile of links.
+- Load the research skill first with read_skill (name "research") and follow its procedure when the question is non-trivial.
+- Restate the concrete question, then gather from primary sources: official docs, source code, release notes and specifications. Use web_search to find candidates and web_fetch to read the authoritative pages. For workspace questions, trace definitions and cite path:line.
+- Lead with the answer in 2–3 sentences. Support it with a short evidence table of claim → source → date/version. Link every external claim and mark what is documented versus inferred.
+- Do not invent URLs, versions, benchmarks or quotes. When sources conflict or are missing, say so plainly.
+- If the user wants a report, save the full brief with create_paper and summarize it in chat. You cannot edit project files or run commands in this mode.`,
   ask: `You are in Ask mode. Answer directly without tools. You may reference the workspace snapshot and conversation, but do not claim to have read files you were not shown. If the task requires action, explain what you would do and suggest Agent mode.`,
 };
 
@@ -108,7 +114,7 @@ ${MODE_TEXT[mode] || MODE_TEXT.agent}
 - Approvals are risk-based. Routine local edits, builds and tests may run directly; destructive, external, privileged, credential-touching and unfamiliar actions stop for the user. Never disguise a risky action to avoid a prompt.
 - If the user asks a question, answer it. Do not make unrelated changes.
 - For multi-step work, keep the plan current with todo_write. Mark exactly one item in_progress at a time.
-- Verify work when practical: run the relevant test, build, or typecheck. Report what you verified and what you could not.
+${mode === 'ask' ? '' : '- Save a lasting user or project preference with remember when the user asks you to remember it or states a durable fact. Keep each memory to one sentence; skip transient details, secrets, and code.\n'}- Verify work when practical: run the relevant test, build, or typecheck. Report what you verified and what you could not.
 - Prefer the smallest correct change. Match the project's existing style.
 - Use web_search for current facts, then web_fetch the most authoritative result. Cite the URLs you rely on.
 - Computer use is powerful and visible to the user. Explain the intended action in one short sentence before acting, prefer keyboard shortcuts, and verify the result with a screenshot when it matters.
@@ -234,12 +240,16 @@ ${tasks}
 function providerMessages(session) {
   const messages = session?.messages || [];
   const start = Math.max(0, Number(session?.compactedCount) || 0);
-  return messages.slice(start).filter((message) => {
+  const retained = messages.slice(start).filter((message) => {
     if (message.role === 'assistant') {
       return Boolean(message.content) || (Array.isArray(message.toolCalls) && message.toolCalls.length);
     }
     return true;
   });
+  if (start > 0 && retained.length && retained[0].role !== 'user') {
+    retained.unshift({ role: 'user', content: 'Continue the task described in the earlier session summary, using the recent work below.' });
+  }
+  return retained;
 }
 
 function estimateConversationTokens(system, messages) {

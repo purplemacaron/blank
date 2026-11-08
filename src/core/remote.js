@@ -246,7 +246,7 @@ function createRemoteService() {
       const text = String(body.text || '').trim();
       if (!text) { sendJson(res, 400, { error: 'Message is empty.' }); return; }
       if (text.length > 20000) { sendJson(res, 400, { error: 'Message is too long (max 20,000 characters).' }); return; }
-      const mode = ['agent', 'coding', 'design', 'plan', 'ask'].includes(body.mode) ? body.mode : undefined;
+      const mode = ['agent', 'coding', 'design', 'research', 'plan', 'ask'].includes(body.mode) ? body.mode : undefined;
       try {
         const result = await handlers.send({ text, sessionId: body.sessionId || '', mode, source: 'remote' });
         sendJson(res, 200, { ok: true, ...result });

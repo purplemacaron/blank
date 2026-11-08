@@ -1,6 +1,6 @@
 'use strict';
 
-const MODES = ['agent', 'coding', 'design', 'plan', 'ask'];
+const MODES = ['agent', 'coding', 'design', 'research', 'plan', 'ask'];
 
 const SLASH_COMMANDS = [
   '/help',

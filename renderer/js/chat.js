@@ -16,6 +16,7 @@
     agent: { label: 'Agent', icon: 'bot' },
     coding: { label: 'Coding', icon: 'code' },
     design: { label: 'Design', icon: 'palette' },
+    research: { label: 'Research', icon: 'search' },
     plan: { label: 'Plan', icon: 'checklist' },
     ask: { label: 'Ask', icon: 'message' },
   };
@@ -31,6 +32,8 @@
     draftReasoning: '',
     attachments: [],
     queue: [],
+    compactingSessions: new Set(),
+    get compacting() { return Boolean(this.session && this.compactingSessions.has(this.session.id)); },
     pendingApprovals: new Map(),
     slashOpen: false,
     slashIndex: 0,
@@ -635,13 +638,15 @@
     }
     input.placeholder = mode === 'plan'
       ? 'Describe what you want planned. Reads only.'
-      : mode === 'ask'
-        ? 'Ask a question about your codebase…'
-        : mode === 'design'
-          ? 'Describe the interface you want to design…'
-          : mode === 'coding'
-            ? 'Describe the code change. blank will read, edit, and run checks…'
-            : 'Ask blank to build, debug, or explain…';
+      : mode === 'research'
+        ? 'Ask a research question. blank cites sources and makes no changes…'
+        : mode === 'ask'
+          ? 'Ask a question about your codebase…'
+          : mode === 'design'
+            ? 'Describe the interface you want to design…'
+            : mode === 'coding'
+              ? 'Describe the code change. blank will read, edit, and run checks…'
+              : 'Ask blank to build, debug, or explain…';
     if (context) context.innerHTML = contextChip();
     if (hint) {
       const perms = App.state.config?.permissions || {};
@@ -1083,6 +1088,7 @@
     const wasNear = U.isNearBottom(scroll, 160);
     scroll.innerHTML = '';
     scroll.appendChild(thread);
+    if (Chat.compacting) showCompacting();
     updateScrollHelpers();
     if (options.keepScroll && !wasNear) return;
     U.scrollToBottom(scroll, options.smooth);
@@ -1128,6 +1134,21 @@
     notice.innerHTML = `${icon(level === 'warn' ? 'alert-triangle' : 'sparkles', 13)}<span>${U.esc(text)}</span>`;
     thread.appendChild(notice);
     U.scrollToBottom(document.getElementById('chat-scroll'), true);
+  }
+
+  function showCompacting() {
+    const thread = ensureThread();
+    if (!thread || thread.querySelector('[data-compacting]')) return;
+    const row = document.createElement('div');
+    row.className = 'notice-inline';
+    row.dataset.compacting = '1';
+    row.innerHTML = `${icon('sparkles', 13)}<span>Compacting earlier context…</span>`;
+    thread.appendChild(row);
+    U.scrollToBottom(document.getElementById('chat-scroll'), true);
+  }
+
+  function clearCompacting() {
+    document.querySelectorAll('[data-compacting]').forEach((node) => node.remove());
   }
 
   /* ------------------------------------------------------------------- live */
@@ -1859,7 +1880,7 @@
       { heading: 'Session' },
       { label: 'Rename', icon: 'edit', onClick: () => renameSession() },
       { label: session.pinned ? 'Unpin session' : 'Pin session', icon: 'pin', onClick: () => togglePin() },
-      { label: 'Compact context', icon: 'panel-bottom', disabled: Chat.running || !(session.messages || []).length, onClick: () => compactSession() },
+      { label: 'Compact context', icon: 'panel-bottom', disabled: !(session.messages || []).length, onClick: () => compactSession() },
       { separator: true },
       { label: 'Export as Markdown', icon: 'download', onClick: () => exportSession() },
       { label: 'Copy transcript', icon: 'copy', onClick: () => copyTranscript() },
@@ -1894,7 +1915,10 @@
   }
 
   async function compactSession() {
-    if (!Chat.session?.id || Chat.running) return;
+    if (!Chat.session?.id) return;
+    if (Chat.running) { UI.toast('Stop the run before compacting.', 'warn'); return; }
+    if (Chat.compacting) return;
+    const sessionId = Chat.session.id;
     const ok = await UI.confirm({
       title: 'Compact this session?',
       message: 'Earlier turns will be replaced by a summary in the model context. The full transcript stays visible and is never deleted.',
@@ -1902,15 +1926,25 @@
       detail: `${Chat.session.messages?.length || 0} messages · ${U.fmtNumber((Chat.session.usage?.input || 0) + (Chat.session.usage?.output || 0))} tokens used`,
     });
     if (!ok) return;
+    Chat.compactingSessions.add(sessionId);
+    showCompacting();
     try {
-      UI.toast('Summarizing earlier context…', 'info', { timeout: 2500 });
-      const result = await API.sessions.compact(Chat.session.id);
-      Chat.session = result.session || Chat.session;
-      renderThread({ smooth: false });
-      renderHead();
-      App.refreshRail();
-      UI.toast(`Compacted ${result.compacted || 0} messages.`, 'success');
-    } catch (error) { UI.toast(error.message, 'error'); }
+      const result = await API.sessions.compact(sessionId);
+      if (Chat.session?.id === sessionId) {
+        Chat.session = result.session || Chat.session;
+        renderThread({ smooth: false });
+        renderHead();
+        updateComposer();
+        App.refreshRail();
+      }
+      App.refreshSessions();
+      UI.toast(result.archived ? `Compacted ${result.archived} messages.` : 'Context compacted.', 'success');
+    } catch (error) {
+      UI.toast(error.message, 'error');
+    } finally {
+      Chat.compactingSessions.delete(sessionId);
+      if (Chat.session?.id === sessionId) clearCompacting();
+    }
   }
 
   function exportSession() {
@@ -2042,18 +2076,25 @@
         App.refreshRail();
         break;
       case 'notice':
-        if (payload.text) UI.toast(payload.text, payload.level === 'warn' ? 'warn' : 'info', { timeout: 5000 });
+        if (payload.text) {
+          if (payload.text.startsWith('Context is getting full')) showCompacting();
+          else if (payload.text.startsWith('Could not compact')) clearCompacting();
+          UI.toast(payload.text, payload.level === 'warn' ? 'warn' : 'info', { timeout: 5000 });
+        }
         break;
       case 'error':
         if (Chat.run) Chat.run.errorShown = true;
         appendError(payload.message, payload.hint);
         break;
       case 'compacted':
+        clearCompacting();
         if (Chat.session) {
           Chat.session.summary = payload.summary || 'Earlier context summarized.';
-          Chat.session.compactedCount = (Chat.session.compactedCount || 0) + (payload.compacted || 0);
+          Chat.session.compactedCount = payload.compacted;
+          Chat.session.contextTokens = payload.contextTokens;
         }
         appendDivider('Earlier context was summarized');
+        updateComposer();
         App.refreshRail();
         break;
       case 'approval:resolved': {
@@ -2113,6 +2154,7 @@
   }
 
   function handleRunDone(payload) {
+    clearCompacting();
     const isActive = Chat.run && payload.runId === Chat.run.id;
     if (!isActive) {
       if (payload.sessionId === Chat.session?.id) {

@@ -1437,8 +1437,20 @@ function getToolDefinition(name) {
   return TOOL_SPECS.find((tool) => tool.name === name) || null;
 }
 
+const RESEARCH_TOOLS = new Set([
+  'read_file', 'list_dir', 'glob', 'grep', 'project_map', 'git_diff',
+  'web_search', 'web_fetch', 'read_skill',
+  'memory_search', 'remember', 'todo_write', 'delegate',
+  'create_paper', 'update_paper', 'read_paper', 'list_papers',
+]);
+
 function getToolDefinitions({ mode = 'agent', mcpTools = [], config = null } = {}) {
   if (mode === 'ask') return [];
+  if (mode === 'research') {
+    return TOOL_SPECS
+      .filter((tool) => RESEARCH_TOOLS.has(tool.name))
+      .map(({ name, description, parameters, label }) => ({ name, description, parameters, label, source: 'local' }));
+  }
   const local = TOOL_SPECS
     .filter((tool) => (mode === 'plan' ? tool.planSafe : true))
     .filter((tool) => !tool.requiresTeam || Boolean(config?.team?.enabled))
@@ -1503,6 +1515,9 @@ async function executeTool(call, ctx) {
   const mode = ctx.mode || 'agent';
 
   if (mode === 'ask') return { content: 'Tools are disabled in Ask mode.', isError: true };
+  if (mode === 'research' && !RESEARCH_TOOLS.has(name)) {
+    return { content: `Tool "${name}" is unavailable in Research mode.`, isError: true };
+  }
   if (mode === 'plan' && spec?.mutating) {
     return { content: 'Plan mode is read-only. Describe the change in your plan; the user can switch to Agent mode to apply it.', isError: true };
   }
@@ -1547,8 +1562,8 @@ async function executeTool(call, ctx) {
     }
     if (name === 'delegate') {
       if (!ctx.delegate) return { content: 'Sub-agents are unavailable in this runner.', isError: true };
-      if (mode === 'plan' && args.write) {
-        return { content: 'Plan mode is read-only. Delegate research without write, or switch to Agent mode to hand out write work.', isError: true };
+      if ((mode === 'plan' || mode === 'research') && args.write) {
+        return { content: `${mode === 'plan' ? 'Plan' : 'Research'} mode is read-only. Delegate research without write, or switch to Agent mode to hand out write work.`, isError: true };
       }
       const output = await ctx.delegate(String(args.task || ''), {
         write: Boolean(args.write),

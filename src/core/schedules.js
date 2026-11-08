@@ -3,7 +3,7 @@
 const { appPaths, readJSON, writeJSON, uid } = require('./paths');
 const { isEffort } = require('./reasoning');
 const { CADENCES, normalizeTrigger, migrateRecord, createWebhookToken } = require('./triggers');
-const MODES = ['agent', 'coding', 'design', 'plan', 'ask'];
+const MODES = ['agent', 'coding', 'design', 'research', 'plan', 'ask'];
 const HISTORY_LIMIT = 12;
 
 function schedulesFile() {

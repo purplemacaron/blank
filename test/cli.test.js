@@ -59,7 +59,7 @@ test('resolveSession accepts numbers, ids, prefixes and unique titles', () => {
 test('completeLine completes commands and known arguments', () => {
   assert.deepEqual(completeLine('/mo'), [['/model', '/mode'], '/mo']);
   assert.deepEqual(completeLine('/'), [['/help', '/model', '/mode', '/new', '/sessions', '/resume', '/rename', '/compact', '/memory', '/skills', '/skill', '/mcp', '/learn', '/workspace', '/config', '/init', '/clear', '/exit', '/quit'], '/']);
-  assert.deepEqual(completeLine('/mode '), [['agent', 'coding', 'design', 'plan', 'ask'], '']);
+  assert.deepEqual(completeLine('/mode '), [['agent', 'coding', 'design', 'research', 'plan', 'ask'], '']);
   assert.deepEqual(completeLine('/mode pl'), [['plan'], 'pl']);
   assert.deepEqual(completeLine('/mcp '), [['example', 'refresh'], '']);
   assert.deepEqual(completeLine('/model opus', { models: ['anthropic/claude-opus-4', 'openai/gpt-5'] }), [['anthropic/claude-opus-4'], 'opus']);

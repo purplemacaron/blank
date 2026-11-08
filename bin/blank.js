@@ -153,7 +153,7 @@ function helpText() {
   const rows = [
     ['/help', 'Show this help'],
     ['/model [id]', 'List models or switch the session model'],
-    ['/mode [agent|coding|design|plan|ask]', 'Switch mode'],
+    ['/mode [agent|coding|design|research|plan|ask]', 'Switch mode'],
     ['/new', 'Start a new session'],
     ['/sessions', 'List recent sessions'],
     ['/resume [n|id]', 'Switch to a session'],
@@ -690,7 +690,7 @@ async function main() {
 
   ${dim('Options')}
     -m, --model <id>       Override the model
-        --mode <mode>      agent | coding | design | plan | ask
+        --mode <mode>      agent | coding | design | research | plan | ask
     -w, --workspace <dir>  Workspace for this run
     -c, --continue         Resume the most recent session
         --session <id>     Resume a specific session
