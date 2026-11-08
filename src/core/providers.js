@@ -60,22 +60,23 @@ function geminiUserParts(message) {
   return parts.length ? parts : [{ text: '' }];
 }
 
-function providerError(res, body) {
+function providerError(res, body, fields) {
   let detail = body || '';
   try {
     const json = JSON.parse(body);
     detail = json.error?.message || json.message || json.error || body;
     if (typeof detail === 'object') detail = JSON.stringify(detail);
   } catch {}
-  const error = new Error(`${res.status} ${res.statusText}${detail ? ` — ${String(detail).slice(0, 500)}` : ''}`);
+  const sent = Array.isArray(fields) && fields.length ? ` [sent: ${fields.join(', ')}]` : '';
+  const error = new Error(`${res.status} ${res.statusText}${detail ? ` — ${String(detail).slice(0, 500)}` : ''}${sent}`);
   error.status = res.status;
   return error;
 }
 
-async function readError(res) {
+async function readError(res, fields) {
   let body = '';
   try { body = await res.text(); } catch {}
-  throw providerError(res, body);
+  throw providerError(res, body, fields);
 }
 
 async function* sseEvents(response) {
@@ -187,7 +188,7 @@ async function* openaiStream({ resolved, apiKey, system, messages, tools, option
     body: JSON.stringify(body),
     signal: withTimeout(signal),
   });
-  if (!response.ok) await readError(response);
+  if (!response.ok) await readError(response, Object.keys(body));
 
   const pending = new Map();
   let finished = false;
@@ -542,7 +543,15 @@ async function* streamChat({ modelId, config, system, messages, tools, signal, o
     ? cachedHint
     : resolved.reasoningHint || cachedHint || null;
   const profile = reasoning.profileFor(resolved.providerId, resolved.id, hint);
-  const effort = reasoning.normalize(profile, options.reasoningEffort || config.agent?.reasoningEffort);
+  /* A custom endpoint may not document its reasoning ladder, and guessing a
+     stage means sending a parameter the upstream never agreed to accept.
+     Only an endpoint-reported ladder, a probe result, or an explicit user
+     choice may put an effort on the wire. */
+  const requestedEffort = options.reasoningEffort || config.agent?.reasoningEffort;
+  const guessed = profile?.source === 'fallback';
+  const effort = guessed && (!requestedEffort || requestedEffort === 'auto')
+    ? ''
+    : reasoning.normalize(profile, requestedEffort);
   const agentOptions = {
     temperature: options.temperature ?? config.agent?.temperature ?? null,
     maxTokens: options.maxTokens || 8192,

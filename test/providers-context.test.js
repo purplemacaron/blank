@@ -173,6 +173,99 @@ test('chat requests without an explicit cap leave max_tokens to the provider', a
   assert.equal(seen.reasoning_effort, undefined, 'normal runs keep the model thinking profile');
 });
 
+test('custom endpoints are not sent guessed reasoning efforts', async (t) => {
+  let seen = null;
+  const { server, origin } = await listening((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try { seen = JSON.parse(body); } catch { seen = null; }
+      res.setHeader('content-type', 'text/event-stream');
+      res.end(['data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}', 'data: [DONE]', ''].join('\n\n'));
+    });
+  });
+  t.after(() => server.close());
+  const config = {
+    customProviders: [{
+      id: 'custom_gateway', name: 'Gateway', protocol: 'openai', kind: 'cloud',
+      baseUrl: `${origin}/v1`, models: [{ id: 'gemma-4-31B-it-fp8', name: 'gemma' }],
+    }],
+    providers: { custom_gateway: { keys: [{ id: 'k1', key: 'test-key', label: 'Default' }] } },
+    agent: { reasoningEffort: 'auto' },
+  };
+  for await (const _event of providers.streamChat({
+    modelId: 'custom_gateway/gemma-4-31B-it-fp8',
+    config,
+    system: 'You are blank.',
+    messages: [{ role: 'user', content: 'hi' }],
+    tools: [{ name: 'read_file', description: 'read', parameters: { type: 'object', properties: {} } }],
+  })) { /* drain */ }
+  assert.equal(seen.reasoning_effort, undefined, 'an unverified endpoint gets no effort parameter');
+  assert.deepEqual(seen.stream_options, { include_usage: true }, 'the standard OpenAI usage field is still sent');
+  assert.equal(seen.tool_choice, 'auto', 'agent tools still travel with the request');
+});
+
+test('an explicit effort still reaches a custom endpoint', async (t) => {
+  let seen = null;
+  const { server, origin } = await listening((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try { seen = JSON.parse(body); } catch { seen = null; }
+      res.setHeader('content-type', 'text/event-stream');
+      res.end(['data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}', 'data: [DONE]', ''].join('\n\n'));
+    });
+  });
+  t.after(() => server.close());
+  const config = {
+    customProviders: [{
+      id: 'custom_gateway', name: 'Gateway', protocol: 'openai', kind: 'cloud',
+      baseUrl: `${origin}/v1`, models: [{ id: 'gemma-4-31B-it-fp8', name: 'gemma' }],
+    }],
+    providers: { custom_gateway: { keys: [{ id: 'k1', key: 'test-key', label: 'Default' }] } },
+    agent: { reasoningEffort: 'high' },
+  };
+  for await (const _event of providers.streamChat({
+    modelId: 'custom_gateway/gemma-4-31B-it-fp8',
+    config,
+    system: 'You are blank.',
+    messages: [{ role: 'user', content: 'hi' }],
+  })) { /* drain */ }
+  assert.equal(seen.reasoning_effort, 'high', 'a user choice is not a guess');
+});
+
+test('provider errors name the fields blank sent', async (t) => {
+  const { server, origin } = await listening((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.statusCode = 400;
+      res.end('{"error":{"message":"service failure: upstream request failed"}}');
+    });
+  });
+  t.after(() => server.close());
+  const config = {
+    customProviders: [{
+      id: 'custom_gateway', name: 'Gateway', protocol: 'openai', kind: 'cloud',
+      baseUrl: `${origin}/v1`, models: [{ id: 'gemma-4-31B-it-fp8', name: 'gemma' }],
+    }],
+    providers: { custom_gateway: { keys: [{ id: 'k1', key: 'secret-key-value', label: 'Default' }] } },
+    agent: {},
+  };
+  let error = null;
+  try {
+    for await (const _event of providers.streamChat({
+      modelId: 'custom_gateway/gemma-4-31B-it-fp8',
+      config,
+      system: 'You are blank.',
+      messages: [{ role: 'user', content: 'hi' }],
+    })) { /* drain */ }
+  } catch (err) { error = err; }
+  assert.ok(error, 'the 400 is surfaced');
+  assert.match(error.message, /400/);
+  assert.match(error.message, /\[sent: [^\]]*model[^\]]*\]/, 'the sent field names are reported');
+  assert.equal(error.message.includes('secret-key-value'), false, 'keys never leak into errors');
+});
+
 test('ollama models report the num_ctx the server actually uses', async (t) => {
   const { server, origin } = await listening((req, res) => {
     if (req.method === 'GET' && req.url === '/v1/models') {

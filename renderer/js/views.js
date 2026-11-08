@@ -505,7 +505,7 @@ Start writing, or ask the agent to draft it.
             </div>
             <div class="key-item-meta">
               ${key.lastUsedAt ? `Last used ${esc(U.relativeTime(key.lastUsedAt))}` : 'Not used yet'}
-              ${key.lastError ? `<span class="key-error">${icon('alert-circle', 9)} ${esc(U.truncate(key.lastError, 80))}</span>` : ''}
+              ${key.lastError ? `<span class="key-error">${icon('alert-circle', 9)} ${esc(U.truncate(key.lastError, 160))}</span>` : ''}
             </div>
           </div>
           ${!key.active && key.removable ? `<button class="btn btn-ghost btn-xs" type="button" data-key-use="${U.attr(key.id)}">Use</button>` : ''}
