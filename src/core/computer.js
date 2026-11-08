@@ -35,9 +35,10 @@ function setActor(name) {
   actorName = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 48);
 }
 
-function signalActivity(payload) {
+function signalActivity(payload = {}) {
   if (!activityListener) return;
-  try { activityListener({ actor: actorName, ...payload }); } catch {}
+  const actor = String(payload.actor || '').trim() || actorName;
+  try { activityListener({ ...payload, actor }); } catch {}
 }
 
 function computerDir() {
@@ -100,6 +101,36 @@ public static class BlankNative {
   [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+  [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Sequential)] public struct HARDWAREINPUT { public uint uMsg; public ushort wParamL; public ushort wParamH; }
+  [StructLayout(LayoutKind.Explicit)] public struct INPUTUNION { [FieldOffset(0)] public MOUSEINPUT mi; [FieldOffset(0)] public KEYBDINPUT ki; [FieldOffset(0)] public HARDWAREINPUT hi; }
+  [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public INPUTUNION u; }
+  [DllImport("user32.dll", SetLastError=true)] public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+  public static int TypeText(string text) {
+    if (text == null) return 0;
+    int size = Marshal.SizeOf(typeof(INPUT));
+    int sent = 0;
+    foreach (char ch in text) {
+      if (ch == '\r') continue;
+      INPUT down = new INPUT();
+      INPUT up = new INPUT();
+      down.type = 1;
+      up.type = 1;
+      if (ch == '\n') {
+        down.u.ki.wVk = 13;
+        up.u.ki.wVk = 13;
+        up.u.ki.dwFlags = 2;
+      } else {
+        down.u.ki.wScan = (ushort)ch;
+        down.u.ki.dwFlags = 4;
+        up.u.ki.wScan = (ushort)ch;
+        up.u.ki.dwFlags = 6;
+      }
+      sent += (int)SendInput(2, new INPUT[] { down, up }, size);
+    }
+    return sent;
+  }
 }
 "@
 try { [BlankNative]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch { [BlankNative]::SetProcessDPIAware() | Out-Null }
@@ -146,21 +177,6 @@ function Move-To([int]$x, [int]$y) {
 }
 function Mouse-Down([string]$button) { $flag = if ($button -eq 'right') { 0x0008 } elseif ($button -eq 'middle') { 0x0020 } else { 0x0002 }; [BlankNative]::mouse_event($flag, 0, 0, 0, [UIntPtr]::Zero) }
 function Mouse-Up([string]$button) { $flag = if ($button -eq 'right') { 0x0010 } elseif ($button -eq 'middle') { 0x0040 } else { 0x0004 }; [BlankNative]::mouse_event($flag, 0, 0, 0, [UIntPtr]::Zero) }
-function Escape-SendKeys([string]$text) {
-  $special = @{
-    '+'='{+}'; '^'='{^}'; '%'='{%}'; '~'='{~}'; '('='{(}'; ')'='{)}';
-    '['='{[}'; ']'='{]}'; '{'='{{}'; '}'='{}}'
-  }
-  $out = ''
-  foreach ($ch in $text.ToCharArray()) {
-    if ([int]$ch -eq 13) { continue }
-    elseif ([int]$ch -eq 10) { $out += '{ENTER}' }
-    elseif ([int]$ch -eq 9) { $out += '{TAB}' }
-    elseif ($special.ContainsKey([string]$ch)) { $out += $special[[string]$ch] }
-    else { $out += $ch }
-  }
-  return $out
-}
 switch ($action) {
   'move' { Move-To ([int]$spec.x) ([int]$spec.y) }
   'click' {
@@ -190,7 +206,7 @@ switch ($action) {
       Start-Sleep -Milliseconds 25
     }
   }
-  'type' { [System.Windows.Forms.SendKeys]::SendWait((Escape-SendKeys ([string]$spec.text))); Start-Sleep -Milliseconds 60 }
+  'type' { $sent = [BlankNative]::TypeText([string]$spec.text); Start-Sleep -Milliseconds 60; "Typed $($spec.text.Length) characters." }
   'key' { [System.Windows.Forms.SendKeys]::SendWait([string]$spec.combo); Start-Sleep -Milliseconds 60 }
   'keyvk' {
     $codes = @($spec.vk | ForEach-Object { [int]$_ })
@@ -639,7 +655,7 @@ function normalizeArgs(action, args = {}) {
   return base;
 }
 
-async function screenshot() {
+async function screenshot({ actor = '' } = {}) {
   const dir = computerDir();
   const file = path.join(dir, `screen-${stamp()}.png`);
   let dimensions = '';
@@ -679,7 +695,7 @@ async function screenshot() {
     }
   }
   const [width, height] = dimensions.split('x').map((value) => Number(value) || 0);
-  signalActivity({ kind: 'screenshot' });
+  signalActivity({ kind: 'screenshot', actor });
   return { path: file, width, height, bytes: stat.size, display: dimensions };
 }
 
@@ -688,10 +704,12 @@ async function perform(rawAction, rawArgs = {}) {
   if (!['move', 'click', 'drag', 'scroll', 'type', 'key', 'wait', 'focus', 'close', 'windows', 'launch'].includes(action)) {
     throw new Error(`Unknown computer action: ${action}`);
   }
+  const actor = String(rawArgs.actor || '');
   const args = normalizeArgs(action, rawArgs);
   const plain = ['windows', 'type', 'key', 'wait', 'launch', 'close'].includes(action);
   signalActivity({
     kind: action,
+    actor,
     x: plain ? undefined : args.x,
     y: plain ? undefined : args.y,
     toX: action === 'drag' ? args.to_x : undefined,

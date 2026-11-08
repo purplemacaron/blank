@@ -152,43 +152,36 @@ function registerIpc({ mcp, getWindow }) {
     try { pet.send(payload); } catch {}
   };
 
-  /* While the agent drives the desktop its memo tracks the pointer; the memo
-     returns to where it was a moment after the last computer action. */
-  const PET_FOLLOW_TOOLS = new Set(['computer_use', 'computer_screenshot']);
-  const petFollow = new Map();
-  const holdPetFollow = (runId) => {
-    const id = String(runId || '');
-    if (!id) return;
-    const current = petFollow.get(id);
-    if (current) {
-      clearTimeout(current.release);
-      current.release = null;
-      return;
-    }
-    const state = { timer: null, release: null };
-    state.timer = setInterval(() => {
-      try { pet.followCursor(id); } catch {}
+  /* While any agent drives the desktop, the primary memo rides beside the real
+     pointer and drifts back a moment after the last computer action. Computer
+     activity is the trigger because sub-agents never surface tool events here. */
+  let petFollowTimer = null;
+  let petFollowRelease = null;
+  const holdPetFollow = () => {
+    clearTimeout(petFollowRelease);
+    petFollowRelease = null;
+    if (petFollowTimer) return;
+    petFollowTimer = setInterval(() => {
+      try { pet.followCursor(); } catch {}
     }, 120);
-    petFollow.set(id, state);
-    try { pet.followCursor(id); } catch {}
+    try { pet.followCursor(); } catch {}
   };
-  const releasePetFollow = (runId, immediate = false) => {
-    const id = String(runId || '');
-    const state = petFollow.get(id);
-    if (!state) return;
-    clearTimeout(state.release);
-    state.release = setTimeout(() => {
-      clearInterval(state.timer);
-      petFollow.delete(id);
-      try { pet.stopFollow(id); } catch {}
+  const releasePetFollow = (immediate = false) => {
+    if (!petFollowTimer) return;
+    clearTimeout(petFollowRelease);
+    petFollowRelease = setTimeout(() => {
+      petFollowRelease = null;
+      clearInterval(petFollowTimer);
+      petFollowTimer = null;
+      try { pet.stopFollow(); } catch {}
     }, immediate ? 0 : 2500);
   };
   const stopAllPetFollow = () => {
-    for (const state of petFollow.values()) {
-      clearInterval(state.timer);
-      clearTimeout(state.release);
-    }
-    petFollow.clear();
+    clearTimeout(petFollowRelease);
+    petFollowRelease = null;
+    if (petFollowTimer) clearInterval(petFollowTimer);
+    petFollowTimer = null;
+    try { pet.stopFollow(); } catch {}
   };
 
   const petStreams = new Map();
@@ -237,11 +230,9 @@ function registerIpc({ mcp, getWindow }) {
         break;
       case 'tool:start':
         sendPet({ type: 'tool:start', ...common, name: payload.name });
-        if (PET_FOLLOW_TOOLS.has(payload.name)) holdPetFollow(payload.runId);
         break;
       case 'tool:end':
         sendPet({ type: 'tool:end', ...common, name: payload.name });
-        if (PET_FOLLOW_TOOLS.has(payload.name)) releasePetFollow(payload.runId);
         break;
       case 'agent:start': {
         const agent = payload.agent && typeof payload.agent === 'object' ? payload.agent : {};
@@ -297,7 +288,7 @@ function registerIpc({ mcp, getWindow }) {
       case 'run:done': {
         const outcome = payload.outcome || {};
         petStreams.delete(String(payload.runId || ''));
-        releasePetFollow(payload.runId, true);
+        releasePetFollow(true);
         sendPet({
           type: 'run:done',
           ...common,
@@ -396,9 +387,13 @@ function registerIpc({ mcp, getWindow }) {
   try { messengers.start(); } catch {}
   const overlay = createComputerOverlay({
     isEnabled: () => configModule.loadConfig().computer?.showCursor !== false,
-    isPetEnabled: () => configModule.loadConfig().pet?.enabled !== false,
+    theme: () => configModule.loadConfig().theme,
   });
-  computer.onActivity((activity) => overlay.flash(activity));
+  computer.onActivity((activity) => {
+    overlay.flash(activity);
+    holdPetFollow();
+    releasePetFollow();
+  });
 
   function pendingApprovals() {
     return [...state.approvals.entries()].map(([approvalId, approval]) => ({

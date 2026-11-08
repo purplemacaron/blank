@@ -77,6 +77,9 @@ function petPalette(model, theme) {
     edge: dark ? `hsl(${hue}, 18%, 46%)` : `hsl(${hue}, 30%, 70%)`,
     ink: dark ? `hsl(${hue}, 24%, 95%)` : `hsl(${hue}, 34%, 19%)`,
     glow: dark ? `hsla(${hue}, 65%, 65%, 0.34)` : `hsla(${hue}, 72%, 52%, 0.26)`,
+    accent: dark ? `hsl(${hue}, 74%, 62%)` : `hsl(${hue}, 78%, 52%)`,
+    accentSoft: dark ? `hsla(${hue}, 74%, 62%, 0.28)` : `hsla(${hue}, 78%, 52%, 0.22)`,
+    accentInk: '#ffffff',
   };
 }
 

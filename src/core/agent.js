@@ -149,17 +149,31 @@ async function compactSession({ session, config, signal, modelId }) {
   }
 }
 
+const RESEARCH_SUBAGENT_TOOLS = [
+  'read_file', 'list_dir', 'glob', 'grep', 'project_map', 'git_diff',
+  'web_search', 'web_fetch', 'computer_screenshot',
+];
+
+const WRITE_SUBAGENT_TOOLS = [
+  'read_file', 'write_file', 'edit_file', 'list_dir', 'glob', 'grep',
+  'run_command', 'run_checks', 'project_map', 'git_diff', 'api_request',
+  'web_search', 'web_fetch', 'read_skill', 'memory_search',
+  'computer_screenshot', 'computer_use',
+];
+
+function subagentTools(write) {
+  return write ? [...WRITE_SUBAGENT_TOOLS] : [...RESEARCH_SUBAGENT_TOOLS];
+}
+
 async function runSubagent({ task, parentSession, config, modelId, workspace, signal, usageOut, system, name, allowWrite = false, requestApproval = null, maxSteps = 0 }) {
   const write = Boolean(allowWrite);
   const role = name || (write ? 'a work sub-agent' : 'a read-only research sub-agent');
   const guidance = write
-    ? `You are ${role} inside blank. You can read and edit files and run commands in the workspace. Work independently, make the smallest correct changes, and verify them with a focused test or build when practical. Every write or command follows the user's approval policy, so do not ask questions. Finish with a compact report: what changed, file paths, and what you verified. Do not delegate further.`
-    : `You are ${role} inside blank. You have file and web tools, but cannot write or run commands. Investigate the task efficiently, using at most a few targeted tool calls. Return a compact report with concrete findings and file:line references. Do not restate the task. Do not ask questions.`;
+    ? `You are ${role} inside blank. You can read and edit files, run commands, and drive the desktop with computer_use and computer_screenshot. Work independently, make the smallest correct changes, and verify them with a focused test or build when practical. Every write, command or desktop action follows the user's approval policy, so do not ask questions. Finish with a compact report: what changed, file paths, and what you verified. Do not delegate further.`
+    : `You are ${role} inside blank. You have file, web and screenshot tools, but cannot write, run commands or control the pointer. Investigate the task efficiently, using at most a few targeted tool calls. Return a compact report with concrete findings and file:line references. Do not restate the task. Do not ask questions.`;
   const prompt = system ? `${system}\n\n${guidance}` : guidance;
   const messages = [{ role: 'user', content: task }];
-  const wanted = write
-    ? ['read_file', 'write_file', 'edit_file', 'list_dir', 'glob', 'grep', 'run_command', 'run_checks', 'project_map', 'git_diff', 'api_request', 'web_search', 'web_fetch', 'read_skill', 'memory_search']
-    : ['read_file', 'list_dir', 'glob', 'grep', 'project_map', 'git_diff', 'web_search', 'web_fetch'];
+  const wanted = subagentTools(write);
   const tools = getToolDefinitions({ mode: write ? 'agent' : 'plan', config }).filter((tool) => wanted.includes(tool.name));
   const limit = Math.max(4, Math.min(24, Number(maxSteps) || (write ? 14 : 8)));
   let final = '';
@@ -200,6 +214,7 @@ async function runSubagent({ task, parentSession, config, modelId, workspace, si
         session: { id: parentSession?.id || '', allowTools: [] },
         config,
         mode: write ? 'agent' : 'plan',
+        actorName: modelId,
         requestApproval,
         emit: () => {},
       });
@@ -345,6 +360,7 @@ async function runAgent({
     session,
     config,
     mode: session.mode,
+    actorName: activeModel,
     emit,
     signal,
     requestApproval: approve,
@@ -645,4 +661,4 @@ function providerHint(err) {
   return '';
 }
 
-module.exports = { runAgent, compactSession, runSubagent, providerHint, withScreenshotImage, shouldCompactContext };
+module.exports = { runAgent, compactSession, runSubagent, subagentTools, providerHint, withScreenshotImage, shouldCompactContext };

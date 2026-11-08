@@ -124,6 +124,17 @@ test('an unknown run id never drags another memo around', (t) => {
   assert.equal(pet.stopFollow('run_missing'), false);
 });
 
+test('computer activity follows the pointer on the primary memo', (t) => {
+  const { pet } = makePet();
+  t.after(() => pet.dispose());
+  const before = pet.position(pet.primaryKey());
+  const followed = pet.followCursor();
+  assert.deepEqual(followed, { x: 1026, y: 522 }, 'parked beside the real pointer without a run id');
+  assert.deepEqual(pet.position(pet.primaryKey()), followed);
+  assert.equal(pet.stopFollow(), true);
+  assert.deepEqual(pet.position(pet.primaryKey()), before, 'the memo goes back where it was');
+});
+
 test('a memo exposes the session of the run it shows so follow-ups can queue', (t) => {
   const firstWindow = windows.length;
   const { pet } = makePet();

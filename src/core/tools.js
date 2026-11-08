@@ -243,6 +243,7 @@ const TOOL_SPECS = [
       type: 'object',
       properties: {},
     },
+    planSafe: true,
   },
   {
     name: 'computer_use',
@@ -949,7 +950,7 @@ async function toolWebSearch(args, ctx) {
 
 async function toolComputerScreenshot(args, ctx) {
   try {
-    const shot = await computer().screenshot();
+    const shot = await computer().screenshot({ actor: ctx.actorName });
     const kb = (shot.bytes / 1024).toFixed(0);
     const vision = modelAcceptsImages(ctx);
     const modelName = String(ctx.modelName || ctx.session?.model || ctx.config?.defaultModel || 'the selected model');
@@ -1014,7 +1015,7 @@ function prepareScreenshot(shot) {
 
 async function toolComputerUse(args, ctx) {
   try {
-    const result = await computer().perform(args.action, args);
+    const result = await computer().perform(args.action, { ...args, actor: ctx.actorName });
     if (args.action === 'windows') {
       const items = (result.windows || []).slice(0, 60).map((win) => {
         const title = win.MainWindowTitle || win.title || '';
