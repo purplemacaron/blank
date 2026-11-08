@@ -40,6 +40,16 @@ const api = {
     install: () => invoke('updates:install'),
   },
 
+  audit: {
+    info: () => invoke('audit:info'),
+    export: () => invoke('audit:export'),
+  },
+
+  worktree: {
+    list: () => invoke('worktree:list'),
+    prune: () => invoke('worktree:prune'),
+  },
+
   messengers: {
     status: () => invoke('messengers:status'),
     configure: (input) => invoke('messengers:configure', input),

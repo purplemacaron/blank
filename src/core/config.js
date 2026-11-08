@@ -64,6 +64,11 @@ const DEFAULTS = {
     autoReflect: false,
     showReasoning: true,
     reasoningEffort: 'auto',
+    isolateWrites: false,
+  },
+  audit: {
+    enabled: true,
+    retentionDays: 30,
   },
   customInstructions: '',
   mcpServers: [],
@@ -497,6 +502,10 @@ function publicConfig(config, catalog) {
       mode: ['all', 'auto'].includes(config.approvals?.mode) ? config.approvals.mode : 'important',
     },
     agent: config.agent,
+    audit: {
+      enabled: config.audit?.enabled !== false,
+      retentionDays: Math.max(1, Math.min(365, Number(config.audit?.retentionDays) || 30)),
+    },
     dictation: {
       providerId: config.dictation?.providerId || '',
       model: config.dictation?.model || '',

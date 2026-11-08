@@ -177,7 +177,69 @@ async function remove(workspace, target, { force = false } = {}) {
   return { ...entry, removed: true };
 }
 
+async function summarize(target) {
+  if (!target) return { changed: 0, files: [], branch: '' };
+  const [status, branch] = await Promise.all([
+    git(target, ['status', '--porcelain']),
+    git(target, ['rev-parse', '--abbrev-ref', 'HEAD']),
+  ]);
+  const files = [...new Set((status.ok ? String(status.stdout).split('\n') : [])
+    .map((line) => line.slice(3).trim())
+    .filter(Boolean))];
+  return {
+    changed: files.length,
+    files: files.slice(0, 60),
+    branch: branch.stdout.trim() === 'HEAD' ? '' : branch.stdout.trim(),
+  };
+}
+
+async function repoWorktrees(workspace) {
+  const info = await context(workspace);
+  if (!info.isRepo) return { root: '', entries: [] };
+  return { root: info.root, entries: info.worktrees };
+}
+
+async function scan() {
+  const root = worktreeRoot();
+  let names = [];
+  try { names = fs.readdirSync(root, { withFileTypes: true }); } catch { return []; }
+  const entries = [];
+  for (const dirent of names.slice(0, 100)) {
+    if (!dirent.isDirectory()) continue;
+    const target = path.join(root, dirent.name);
+    if (!isManaged(target)) continue;
+    if (!fs.existsSync(path.join(target, '.git'))) continue;
+    const summary = await summarize(target);
+    entries.push({
+      path: target,
+      name: dirent.name,
+      managed: true,
+      branch: summary.branch,
+      changed: summary.changed,
+      files: summary.files,
+    });
+  }
+  return entries;
+}
+
+async function pruneEmpty(workspace) {
+  const { entries } = await repoWorktrees(workspace);
+  const managed = entries.filter((entry) => isManaged(entry.path) && fs.existsSync(entry.path));
+  let removed = 0;
+  let kept = 0;
+  for (const entry of managed) {
+    const summary = await summarize(entry.path);
+    if (summary.changed > 0) { kept += 1; continue; }
+    await remove(workspace, entry.path, { force: true });
+    removed += 1;
+  }
+  return { removed, kept };
+}
+
 module.exports = {
+  summarize,
+  scan,
+  pruneEmpty,
   BRANCH_PREFIX,
   sanitizeName,
   parsePorcelain,

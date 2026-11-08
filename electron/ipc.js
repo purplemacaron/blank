@@ -32,6 +32,9 @@ const dictation = require('../src/core/dictation');
 const codeModule = require('../src/core/code');
 const apisModule = require('../src/core/apis');
 const { runConsoleCommand, createTerminal } = require('../src/core/console');
+const auditModule = require('../src/core/audit');
+const worktreeModule = require('../src/core/worktree');
+const { createQueue, retryDelayMs } = require('../src/core/automation-queue');
 const { sendMode, enqueueInterrupt } = require('../src/core/turn-queue');
 const { appendStream, previewStream } = require('../src/core/stream-preview');
 
@@ -47,6 +50,8 @@ function createState() {
     approvals: new Map(),
     queues: new Map(),
     scheduleRuns: new Map(),
+    scheduleQueue: createQueue(),
+    scheduleRetries: new Map(),
     scheduleTimer: null,
     reflectionInFlight: false,
     disposed: false,
@@ -579,7 +584,7 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('messengers:test', async (_event, provider) => messengers.test(provider));
 
   require('electron').ipcMain.handle('config:update', async (_event, patch = {}) => {
-    const allowed = ['defaultModel', 'fallbackModel', 'theme', 'language', 'onboarded', 'agent', 'ui', 'customInstructions', 'disabledSkills', 'media', 'permissions', 'approvals', 'search', 'computer', 'pet', 'team', 'notifications', 'dictation', 'updates', 'triggers'];
+    const allowed = ['defaultModel', 'fallbackModel', 'theme', 'language', 'onboarded', 'agent', 'audit', 'ui', 'customInstructions', 'disabledSkills', 'media', 'permissions', 'approvals', 'search', 'computer', 'pet', 'team', 'notifications', 'dictation', 'updates', 'triggers'];
     const clean = {};
     for (const key of allowed) {
       if (patch[key] === undefined) continue;
@@ -626,6 +631,22 @@ function registerIpc({ mcp, getWindow }) {
         x: coord(incoming.x, current.x),
         y: coord(incoming.y, current.y),
         positions,
+      };
+    }
+    if (clean.agent) {
+      const incoming = clean.agent && typeof clean.agent === 'object' ? clean.agent : {};
+      const current = configModule.loadConfig().agent || {};
+      const next = { ...current, ...incoming };
+      next.isolateWrites = Boolean(next.isolateWrites);
+      next.maxSteps = Math.max(1, Math.min(64, Number(next.maxSteps) || 32));
+      clean.agent = next;
+    }
+    if (clean.audit) {
+      const incoming = clean.audit && typeof clean.audit === 'object' ? clean.audit : {};
+      const current = configModule.loadConfig().audit || {};
+      clean.audit = {
+        enabled: incoming.enabled === undefined ? current.enabled !== false : Boolean(incoming.enabled),
+        retentionDays: Math.max(1, Math.min(365, Number(incoming.retentionDays ?? current.retentionDays) || 30)),
       };
     }
     if (clean.approvals) {
@@ -2741,22 +2762,94 @@ ${commands}
     return { maximized: Boolean(win?.isMaximized()), fullscreen: Boolean(win?.isFullScreen()) };
   });
 
+  function auditAutomation(config, type, data) {
+    if (config?.audit?.enabled === false) return;
+    try { auditModule.record(type, data); } catch {}
+  }
+
   function publicSchedule(schedule) {
+    const retry = state.scheduleRetries.get(schedule.id);
     return {
       ...schedule,
       trigger: triggers.redactTrigger(schedule.trigger, schedule.id),
       running: state.scheduleRuns.has(schedule.id),
+      queued: state.scheduleQueue.countFor(schedule.id),
+      queuedTotal: state.scheduleQueue.size(),
+      retry: retry ? { attempt: retry.attempt, at: retry.at } : null,
     };
   }
 
-  function runAutomation(schedule, { event = null, chain = [] } = {}) {
-    if (!schedule || state.scheduleRuns.has(schedule.id)) return { started: false, reason: 'running' };
+  function clearRetry(id) {
+    const retry = state.scheduleRetries.get(id);
+    if (!retry) return false;
+    clearTimeout(retry.timer);
+    state.scheduleRetries.delete(id);
+    return true;
+  }
+
+  function scheduleRetry(schedule, event, chain, triggerSummary) {
+    const attempt = (Number(event.retryAttempt) || 0) + 1;
+    if (attempt > 3 || schedule.enabled === false) return;
+    const delay = retryDelayMs(attempt - 1);
+    const at = new Date(Date.now() + delay).toISOString();
+    const timer = setTimeout(() => {
+      state.scheduleRetries.delete(schedule.id);
+      const fresh = schedulesModule.getSchedule(schedule.id);
+      if (!fresh || fresh.enabled === false || state.disposed) return;
+      runAutomation(fresh, { event: { ...event, retryAttempt: attempt }, chain, fromQueue: false });
+    }, delay);
+    timer.unref?.();
+    state.scheduleRetries.set(schedule.id, { timer, attempt, at, event });
+    const minutes = Math.max(1, Math.round(delay / 60000));
+    broadcast({
+      type: 'notice',
+      level: 'warn',
+      text: `Automation “${schedule.title}” failed; retrying in ${minutes} min (attempt ${attempt} of 3).`,
+    });
+    broadcast({ type: 'schedules:refresh' });
+  }
+
+  function drainQueue() {
+    if (state.disposed) return;
+    while (state.scheduleQueue.size()) {
+      const active = [...state.scheduleRuns.values()].filter((entry) => entry.triggerStarted).length;
+      if (active >= 2) break;
+      const next = state.scheduleQueue.shift();
+      const record = schedulesModule.getSchedule(next.recordId);
+      if (!record || record.enabled === false) continue;
+      try {
+        runAutomation(record, { event: next.event, chain: next.chain, fromQueue: true });
+      } catch (err) {
+        schedulesModule.markRun(record.id, { status: 'error', error: err.message });
+      }
+    }
+    broadcast({ type: 'schedules:refresh' });
+  }
+
+  function runAutomation(schedule, { event = null, chain = [], fromQueue = false } = {}) {
+    if (!schedule) return { started: false, reason: 'invalid' };
+    if (state.scheduleRuns.has(schedule.id)) {
+      if (fromQueue) return { started: false, reason: 'running' };
+      return { started: false, reason: 'running' };
+    }
     if (!event) event = { type: 'manual', at: new Date().toISOString() };
     const triggerStarted = event.type !== 'manual';
     if (triggerStarted) {
       const active = [...state.scheduleRuns.values()].filter((entry) => entry.triggerStarted).length;
-      if (active >= 2) return { started: false, reason: 'busy' };
+      if (active >= 2) {
+        const queued = state.scheduleQueue.push({ recordId: schedule.id, event, chain });
+        if (!queued.ok) {
+          auditAutomation(configModule.loadConfig(), 'automation.queue_full', { scheduleId: schedule.id, reason: queued.reason });
+          broadcast({ type: 'notice', level: 'warn', text: `Automation “${schedule.title}” was skipped: the queue is full.` });
+          broadcast({ type: 'schedules:refresh' });
+          return { started: false, reason: 'queue_full' };
+        }
+        auditAutomation(configModule.loadConfig(), 'automation.queued', { scheduleId: schedule.id, ahead: queued.ahead });
+        broadcast({ type: 'schedules:refresh' });
+        return { started: false, reason: 'queued', ahead: queued.ahead };
+      }
     }
+    if (!fromQueue) clearRetry(schedule.id);
     const config = configModule.loadConfig();
     const model = schedule.model && catalog.findModel(schedule.model, config) ? schedule.model : config.defaultModel;
     const workspace = schedule.workspace && fs.existsSync(schedule.workspace) ? schedule.workspace : config.workspace;
@@ -2789,6 +2882,15 @@ ${commands}
       try { remote.publish(enriched); } catch {}
     };
     broadcast({ type: 'schedule:started', scheduleId: schedule.id, sessionId: session.id, title: schedule.title });
+    if (fromQueue) triggerEngine?.markQueuedRunStarted?.(schedule.id);
+    const startedAt = Date.now();
+    auditAutomation(config, 'automation.start', {
+      scheduleId: schedule.id,
+      sessionId: session.id,
+      trigger: triggerSummary,
+      queued: Boolean(fromQueue),
+      retry: Number(event.retryAttempt) || 0,
+    });
 
     runAgent({
       session,
@@ -2807,10 +2909,19 @@ ${commands}
       mcp,
     }).then((outcome) => {
       const fresh = store.getSession(session.id) || session;
+      const status = outcome.ok ? 'ok' : outcome.stopped ? 'stopped' : 'error';
       schedulesModule.markRun(schedule.id, {
-        status: outcome.ok ? 'ok' : outcome.stopped ? 'stopped' : 'error',
+        status,
         sessionId: session.id,
         trigger: triggerSummary,
+      });
+      auditAutomation(config, 'automation.end', {
+        scheduleId: schedule.id,
+        sessionId: session.id,
+        status,
+        steps: outcome.steps || 0,
+        durationMs: Date.now() - startedAt,
+        error: outcome.error || '',
       });
       emit({ type: 'run:done', outcome, usage: fresh.usage, contextTokens: fresh.contextTokens, title: fresh.title, tasks: fresh.tasks || [], files: fresh.files || [] });
       broadcast({ type: 'notice', level: outcome.ok ? 'info' : 'warn', text: `Automation “${schedule.title}” ${outcome.ok ? 'finished' : outcome.stopped ? 'stopped' : 'ended with an error'}.` });
@@ -2823,8 +2934,16 @@ ${commands}
       notifySession(fresh);
       triggerEngine?.notifySession({ sessionId: fresh.id, session: fresh, outcome });
       maybeReflect(getWindow(), fresh);
+      if (status === 'error' && triggerStarted) scheduleRetry(schedule, event, chain, triggerSummary);
     }).catch((err) => {
       schedulesModule.markRun(schedule.id, { status: 'error', error: err.message, sessionId: session.id, trigger: triggerSummary });
+      auditAutomation(config, 'automation.end', {
+        scheduleId: schedule.id,
+        sessionId: session.id,
+        status: 'error',
+        durationMs: Date.now() - startedAt,
+        error: err.message,
+      });
       emit({ type: 'run:done', outcome: { ok: false, error: err.message } });
       broadcast({ type: 'notice', level: 'warn', text: `Automation “${schedule.title}” failed: ${err.message}` });
       notifications.scheduleFinished({
@@ -2833,8 +2952,10 @@ ${commands}
         sessionId: session.id,
         failed: true,
       });
+      if (triggerStarted) scheduleRetry(schedule, event, chain, triggerSummary);
     }).finally(() => {
       state.scheduleRuns.delete(schedule.id);
+      drainQueue();
       broadcast({ type: 'schedules:refresh' });
       broadcast({ type: 'sessions:refresh' });
     });
@@ -2847,7 +2968,7 @@ ${commands}
       const event = { type: 'schedule', at: new Date().toISOString() };
       try {
         const result = runAutomation(schedule, { event, chain: [] });
-        if (result.reason === 'busy') break;
+        if (result.reason === 'queue_full') break;
       } catch (err) {
         schedulesModule.markRun(schedule.id, { status: 'error', error: err.message });
       }
@@ -2868,6 +2989,7 @@ ${commands}
   ipcMainHandle('schedules:list', async () => ({
     schedules: schedulesModule.listSchedules().map(publicSchedule),
     running: [...state.scheduleRuns.keys()],
+    queued: state.scheduleQueue.size(),
   }));
 
   ipcMainHandle('schedules:save', async (event, input = {}) => {
@@ -2892,6 +3014,8 @@ ${commands}
       try { run.controller.abort(); } catch {}
       state.scheduleRuns.delete(input.id);
     }
+    clearRetry(input.id);
+    state.scheduleQueue.clearRecord(input.id);
     const deleted = schedulesModule.deleteSchedule(input.id);
     void triggerEngine?.reconcile().catch(() => {});
     broadcast({ type: 'schedules:refresh' });
@@ -2907,6 +3031,60 @@ ${commands}
   ipcMainHandle('schedules:runtime', async () => (
     triggerEngine?.status() || { webhook: {}, automations: {} }
   ));
+
+  ipcMainHandle('audit:info', async () => {
+    const config = configModule.loadConfig();
+    const info = auditModule.info();
+    return {
+      ...info,
+      enabled: config.audit?.enabled !== false,
+      retentionDays: Math.max(1, Math.min(365, Number(config.audit?.retentionDays) || 30)),
+    };
+  });
+
+  ipcMainHandle('audit:export', async (event) => {
+    const win = winFromEvent(event) || getWindow();
+    const day = new Date().toISOString().slice(0, 10);
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Export audit log',
+      defaultPath: path.join(app.getPath('documents'), `blank-audit-${day}.jsonl`),
+      filters: [{ name: 'Audit log', extensions: ['jsonl'] }],
+    });
+    if (result.canceled || !result.filePath) return { saved: false };
+    fs.copyFileSync(auditModule.file(), result.filePath);
+    return { saved: true, path: result.filePath };
+  });
+
+  ipcMainHandle('worktree:list', async () => {
+    const config = configModule.loadConfig();
+    const worktrees = await worktreeModule.scan();
+    let repo = { isRepo: false, root: '', branch: '' };
+    if (config.workspace) {
+      try {
+        const info = await worktreeModule.context(config.workspace);
+        repo = { isRepo: info.isRepo, root: info.root, branch: info.branch };
+      } catch {}
+    }
+    return { worktrees, repo, root: worktreeModule.worktreeRoot() };
+  });
+
+  ipcMainHandle('worktree:prune', async () => {
+    const config = configModule.loadConfig();
+    if (!config.workspace) return { removed: 0, kept: 0 };
+    const result = await worktreeModule.pruneEmpty(config.workspace);
+    broadcast({ type: 'notice', level: 'info', text: `Removed ${result.removed} empty worktree${result.removed === 1 ? '' : 's'}; kept ${result.kept} with changes.` });
+    return result;
+  });
+
+  try {
+    const auditConfig = configModule.loadConfig().audit || {};
+    if (auditConfig.enabled !== false) {
+      auditModule.record('app.start', { version: app.getVersion(), platform: process.platform });
+    }
+    auditModule.createAudit({
+      retentionDays: Math.max(1, Math.min(365, Number(auditConfig.retentionDays) || 30)),
+    }).prune();
+  } catch {}
 
   ipcMainHandle('schedules:webhook-copy', async (event, input = {}) => {
     const schedule = schedulesModule.getSchedule(input.id);
@@ -3005,6 +3183,9 @@ ${commands}
       try { run.controller.abort(); } catch {}
     }
     state.scheduleRuns.clear();
+    for (const retry of state.scheduleRetries.values()) clearTimeout(retry.timer);
+    state.scheduleRetries.clear();
+    state.scheduleQueue.clear();
     try { oauthModule.closeAll(); } catch {}
     for (const run of state.runs.values()) run.controller.abort();
     denyApprovalsFor(() => true);

@@ -265,7 +265,7 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
     let entry = entries.get(DEFAULT_KEY);
     if (!entry) entry = createEntry({ key: DEFAULT_KEY, kind: 'model', model: id, order: 0 });
     entry.order = 0;
-    entry.model = id;
+    if (id) entry.model = id;
     if (petConfig().enabled) showEntry(entry);
     return entry;
   }
@@ -351,7 +351,8 @@ function createPet({ getConfig, getWindow, getModels, savePosition } = {}) {
     if (base && base.runId === String(runId)) {
       base.runId = '';
       base.sessionId = '';
-      refreshDefault(true);
+      /* The finished memo keeps the model that produced the result; only an
+         explicit default-model change in Settings relabels it. */
     }
   }
 

@@ -1088,6 +1088,18 @@
     'Let the agent save durable facts while it works.': '작업하는 동안 에이전트가 지속적인 사실을 저장하도록 합니다.',
     'Background reflection': '백그라운드 회고',
     'Periodically propose insights after longer sessions.': '긴 세션 후 주기적으로 인사이트를 제안합니다.',
+    'Isolated worktrees': '격리된 워크트리',
+    'Write sub-agents and team members edit a git worktree, so parallel runs cannot collide. Their changes stay on the branch for review.':
+      '쓰기 서브에이전트와 팀 멤버가 git 워크트리에서 편집하므로 병렬 실행이 서로 충돌하지 않습니다. 변경 사항은 검토할 수 있도록 브랜치에 남습니다.',
+    'What isolated write agents left behind. Changes are never deleted automatically.':
+      '격리된 쓰기 에이전트가 남긴 결과입니다. 변경 사항은 자동으로 삭제되지 않습니다.',
+    'Prune empty': '빈 워크트리 정리',
+    'Audit log': '감사 로그',
+    'Append-only local record of runs, tool calls and approvals. Keys and tokens are masked before writing.':
+      '실행, 도구 호출, 승인을 추가 전용으로 기록합니다. 키와 토큰은 기록 전에 마스킹됩니다.',
+    'Audit log enabled.': '감사 로그를 켰습니다.',
+    'Audit log disabled.': '감사 로그를 껐습니다.',
+    'Audit log exported.': '감사 로그를 내보냈습니다.',
     'Save agent settings': '에이전트 설정 저장',
     'Reasoning effort': '추론 강도',
     'Starting stage for new chats. Choices follow the default model\'s supported stages.':
@@ -1956,6 +1968,13 @@
     [/^· used (\d+)×$/, '· $1회 사용'],
     [/^next (.+)$/, '다음 $1'],
     [/^last (.+)$/, '최근 $1'],
+    [/^queued ×(\d+)$/, '대기 ×$1'],
+    [/^Queued ×(\d+)$/, '대기 ×$1'],
+    [/^Retry (\d+)\/3$/, '재시도 $1/3'],
+    [/^(\d+) worktrees?$/, '워크트리 $1개'],
+    [/^(\d+) worktrees? · (\d+) with changes$/, '워크트리 $1개 · 변경 $2개'],
+    [/^(.+) · (\d+) rotated · (\d+) day retention$/, '$1 · 순환 $2개 · $3일 보관'],
+    [/^Removed (\d+) empty worktrees?\.$/, '빈 워크트리 $1개를 정리했습니다.'],
     [/^Signed in( · .+)?$/, '로그인됨$1'],
     [/^Page · v(\d+)$/, '페이지 · v$1'],
     [/^Document · v(\d+)$/, '문서 · v$1'],

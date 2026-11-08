@@ -605,6 +605,11 @@ function createTriggerEngine(options = {}) {
     handleFileEvent,
     testTrigger,
     status,
+    markQueuedRunStarted(id) {
+      if (!running) return;
+      setRuntime(String(id || ''), { lastSkip: '', lastError: '' });
+      scheduleSave();
+    },
   };
 }
 

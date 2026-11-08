@@ -2174,11 +2174,19 @@ Start writing, or ask the agent to draft it.
           const lastText = schedule.lastRunAt ? new Date(schedule.lastRunAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
           const stateText = triggerStateLabel(runtimeEntry.state);
           const hasError = schedule.lastStatus === 'error' || runtimeEntry.state === 'error';
-          const badge = schedule.running ? 'Running' : hasError ? 'Error' : schedule.lastStatus === 'ok' ? 'OK' : 'Idle';
-          const badgeTone = schedule.running ? 'amber' : hasError ? 'red' : schedule.lastStatus === 'ok' ? 'green' : 'gray';
+          const retryAt = schedule.retry?.at ? new Date(schedule.retry.at) : null;
+          const retryText = retryAt && !Number.isNaN(retryAt.getTime())
+            ? retryAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+            : '';
+          const badge = schedule.running ? 'Running'
+            : schedule.retry ? `Retry ${schedule.retry.attempt}/3`
+              : schedule.queued ? `Queued${schedule.queued > 1 ? ` ×${schedule.queued}` : ''}`
+                : hasError ? 'Error'
+                  : schedule.lastStatus === 'ok' ? 'OK' : 'Idle';
+          const badgeTone = schedule.running || schedule.retry || schedule.queued ? 'amber' : hasError ? 'red' : schedule.lastStatus === 'ok' ? 'green' : 'gray';
           return `<article class="automation-card ${schedule.running ? 'running' : ''}" data-automation-id="${U.attr(schedule.id)}">
             <div class="automation-head">
-              <div><div class="automation-title">${esc(schedule.title)}</div><div class="automation-meta"><span class="automation-cadence">${esc(triggerLabel(schedule))}</span>${scheduleTrigger.type === 'schedule' ? (next ? ` · <span>next ${esc(nextText)}</span>` : ` · <span>${onceDone ? 'done' : 'Paused'}</span>`) : ''}${stateText ? ` · <span>${esc(stateText)}</span>` : ''}${lastText ? ` · <span>last ${esc(lastText)}</span>` : ''}</div></div>
+              <div><div class="automation-title">${esc(schedule.title)}</div><div class="automation-meta"><span class="automation-cadence">${esc(triggerLabel(schedule))}</span>${scheduleTrigger.type === 'schedule' ? (next ? ` · <span>next ${esc(nextText)}</span>` : ` · <span>${onceDone ? 'done' : 'Paused'}</span>`) : ''}${stateText ? ` · <span>${esc(stateText)}</span>` : ''}${schedule.queued ? ` · <span>queued ×${schedule.queued}</span>` : ''}${retryText ? ` · <span>retry ${esc(retryText)}</span>` : ''}${lastText ? ` · <span>last ${esc(lastText)}</span>` : ''}</div></div>
               <span class="badge ${badgeTone}">${badge}</span>
             </div>
             <p class="automation-prompt">${esc(U.truncate(schedule.prompt, 220))}</p>
@@ -2946,6 +2954,11 @@ Start writing, or ask the agent to draft it.
     const teamCfg = config.team || { enabled: false, members: [] };
     const teamMembers = Array.isArray(teamCfg.members) ? teamCfg.members : [];
     const schedules = Array.isArray(vstate.settings.schedules) ? vstate.settings.schedules : [];
+    const auditInfo = vstate.settings.audit || null;
+    const auditCfg = config.audit || {};
+    const worktreeData = vstate.settings.worktrees || null;
+    const worktreeEntries = Array.isArray(worktreeData?.worktrees) ? worktreeData.worktrees : [];
+    const worktreeChanged = worktreeEntries.filter((entry) => Number(entry.changed) > 0).length;
     const defaultProfile = U.reasoningProfile({ providers }, defaultModel);
     const defaultEffort = U.normalizeReasoning(defaultProfile, agent.reasoningEffort);
     const notificationsCfg = config.notifications || {};
@@ -3089,6 +3102,10 @@ Start writing, or ask the agent to draft it.
               <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Background reflection</div><div class="setting-desc">Periodically propose insights after longer sessions.</div></div>
                 <div class="setting-control">${UI.switchHtml(Boolean(agent.autoReflect), 'data-agent-toggle="autoReflect"')}</div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Isolated worktrees</div><div class="setting-desc">Write sub-agents and team members edit a git worktree, so parallel runs cannot collide. Their changes stay on the branch for review.</div></div>
+                <div class="setting-control">${UI.switchHtml(Boolean(agent.isolateWrites), 'data-agent-toggle="isolateWrites"')}</div>
               </div>
             </div>
             <div class="provider-actions"><button class="btn btn-primary btn-sm" type="button" data-save-agent>Save agent settings</button></div>
@@ -3393,6 +3410,14 @@ Start writing, or ask the agent to draft it.
               <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Media storage</div><div class="setting-desc">Generated and imported assets, plus thumbnails and waveforms.</div><div class="setting-note" id="media-storage-note">${vstate.media.storage ? `${vstate.media.storage.count} assets · ${U.fmtBytes(vstate.media.storage.bytes)}` : 'Loading…'}</div></div>
                 <div class="setting-control"><button class="btn btn-secondary btn-sm" type="button" data-open-media-studio>${icon('image', 12)} Create media</button></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Audit log</div><div class="setting-desc">Append-only local record of runs, tool calls and approvals. Keys and tokens are masked before writing.</div><div class="setting-note" id="audit-note">${auditInfo ? `${U.fmtBytes(auditInfo.bytes || 0)}${auditInfo.segments ? ` · ${auditInfo.segments} rotated` : ''} · ${auditInfo.retentionDays || 30} day retention` : 'Loading…'}</div></div>
+                <div class="setting-control">${UI.switchHtml(auditCfg.enabled !== false, 'data-audit-toggle')}<button class="btn btn-ghost btn-sm" type="button" data-audit-export>${icon('download', 12)} Export</button></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Isolated worktrees</div><div class="setting-desc">What isolated write agents left behind. Changes are never deleted automatically.</div><div class="setting-note" id="worktree-note">${worktreeData ? `${worktreeEntries.length} worktree${worktreeEntries.length === 1 ? '' : 's'}${worktreeChanged ? ` · ${worktreeChanged} with changes` : ''}` : 'Loading…'}</div></div>
+                <div class="setting-control"><button class="btn btn-ghost btn-sm" type="button" data-worktree-prune ${worktreeEntries.length ? '' : 'disabled'}>${icon('trash', 12)} Prune empty</button></div>
               </div>
             </div>
           </section>
@@ -3950,6 +3975,42 @@ Start writing, or ask the agent to draft it.
         } catch (error) { UI.toast(error.message, 'error'); }
         return;
       }
+      if (event.target.closest('[data-audit-export]')) {
+        const button = event.target.closest('[data-audit-export]');
+        button.disabled = true;
+        try {
+          const result = await API.audit.export();
+          if (result?.saved) UI.toast('Audit log exported.', 'success', { title: result.path, timeout: 8000 });
+        } catch (error) { UI.toast(error.message, 'error'); }
+        finally { button.disabled = false; }
+        return;
+      }
+      if (event.target.closest('[data-worktree-prune]')) {
+        const button = event.target.closest('[data-worktree-prune]');
+        button.disabled = true;
+        try {
+          const result = await API.worktree.prune();
+          vstate.settings.worktrees = await API.worktree.list().catch(() => vstate.settings.worktrees);
+          paintSettings(host);
+          UI.toast(`Removed ${result.removed} empty worktree${result.removed === 1 ? '' : 's'}.`, 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        return;
+      }
+      if (event.target.closest('[data-audit-toggle]')) {
+        const toggle = event.target.closest('[data-audit-toggle]');
+        const next = !toggle.classList.contains('on');
+        toggle.classList.toggle('on', next);
+        try {
+          const updated = await API.config.update({ audit: { enabled: next } });
+          applyConfig(updated);
+          vstate.settings.audit = await API.audit.info().catch(() => vstate.settings.audit);
+          UI.toast(next ? 'Audit log enabled.' : 'Audit log disabled.', 'success');
+        } catch (error) {
+          toggle.classList.toggle('on', !next);
+          UI.toast(error.message, 'error');
+        }
+        return;
+      }
       if (event.target.closest('[data-open-data]')) {
         API.app.openDataFolder().catch((error) => UI.toast(error.message, 'error'));
         return;
@@ -4035,13 +4096,15 @@ Start writing, or ask the agent to draft it.
     vstate.host = host;
     host.innerHTML = pageLoading('Settings', 'Preferences, approvals and local data.');
     try {
-      const [config, storage, remote, schedules, dictationOptions, updates] = await Promise.all([
+      const [config, storage, remote, schedules, dictationOptions, updates, auditInfo, worktreeData] = await Promise.all([
         API.config.get(),
         API.media.storage().catch(() => null),
         API.remote?.status ? API.remote.status().catch(() => null) : Promise.resolve(null),
         API.schedules?.list ? API.schedules.list().catch(() => null) : Promise.resolve(null),
         API.dictation?.options ? API.dictation.options().catch(() => null) : Promise.resolve(null),
         API.updates?.status ? API.updates.status().catch(() => null) : Promise.resolve(null),
+        API.audit?.info ? API.audit.info().catch(() => null) : Promise.resolve(null),
+        API.worktree?.list ? API.worktree.list().catch(() => null) : Promise.resolve(null),
       ]);
       if (!alive(host, 'settings')) return;
       vstate.media.storage = storage || vstate.media.storage;
@@ -4050,6 +4113,8 @@ Start writing, or ask the agent to draft it.
       vstate.settings.ssh = config?.ssh || null;
       vstate.settings.dictationOptions = Array.isArray(dictationOptions?.providers) ? dictationOptions : null;
       vstate.settings.updates = updates || null;
+      vstate.settings.audit = auditInfo || null;
+      vstate.settings.worktrees = worktreeData || null;
       applyConfig(config);
       paintSettings(host);
       if (vstate.settings.pending) {

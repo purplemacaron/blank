@@ -7,8 +7,15 @@ const { listSkills, searchMemory, saveSession, titleFrom } = require('./store');
 const { findModel } = require('./catalog');
 const { generateSessionTitle } = require('./title');
 const { grantSessionApproval } = require('./approvals');
+const audit = require('./audit');
+const worktree = require('./worktree');
 const { uid } = require('./paths');
 const fs = require('fs');
+
+function auditEvent(config, type, data) {
+  if (config?.audit?.enabled === false) return;
+  audit.record(type, data);
+}
 
 const MAX_SCREENSHOT_BYTES = 6 * 1024 * 1024;
 
@@ -219,6 +226,13 @@ async function runSubagent({ task, parentSession, config, modelId, workspace, si
         emit: () => {},
       });
       messages.push({ role: 'tool', toolCallId: call.id, name: call.name, content: result.content, isError: Boolean(result.isError) });
+      auditEvent(config, 'tool.call', {
+        sessionId: parentSession?.id || '',
+        agent: name || '',
+        tool: call.name,
+        ok: !result.isError,
+        args: summarizeArgs(call.name, call.args),
+      });
     }
   }
   return final.trim() || 'The sub-agent returned no findings.';
@@ -255,6 +269,13 @@ async function runAgent({
   }
 
   emit({ type: 'run:start', runId, sessionId, model: activeModel, mode: session.mode, title: session.title });
+  auditEvent(config, 'run.start', {
+    sessionId,
+    runId,
+    model: activeModel,
+    mode: session.mode,
+    source: session.messages?.[session.messages.length - 1]?.source || 'chat',
+  });
 
   if (mcp) {
     try {
@@ -268,11 +289,21 @@ async function runAgent({
 
   const approvals = new Map();
   async function approve(request) {
-    if (!requestApproval) return 'deny';
+    if (!requestApproval) {
+      auditEvent(config, 'approval', { sessionId, tool: request.tool, decision: 'deny', reason: 'no-approver' });
+      return 'deny';
+    }
     const approvalId = uid('a_');
     approvals.set(approvalId, request);
     const decision = await requestApproval({ ...request, approvalId });
     approvals.delete(approvalId);
+    auditEvent(config, 'approval', {
+      sessionId,
+      tool: request.tool,
+      decision: decision === 'deny' ? 'deny' : 'allow',
+      remembered: decision === 'always',
+      target: request.command || request.path || '',
+    });
     if (decision === 'always') {
       const scope = grantSessionApproval(session, request);
       const text = scope === 'command'
@@ -319,13 +350,26 @@ async function runAgent({
     const started = Date.now();
     let report;
     let status = 'ok';
+    let isolated = null;
+    let workdir = workspace;
+    if (write && config.agent?.isolateWrites && workspace) {
+      try {
+        const slug = `w-${id.replace(/^sub_/, '').toLowerCase()}`.slice(0, 40);
+        const made = await worktree.create(workspace, { name: slug });
+        isolated = { path: made.path, branch: made.branch };
+        workdir = made.path;
+        emit({ type: 'notice', level: 'info', text: `${name} is working in an isolated worktree · ${made.branch}.` });
+      } catch (err) {
+        emit({ type: 'notice', level: 'warn', text: `${name} could not open a worktree (${err.message}). Working in the main workspace.` });
+      }
+    }
     try {
       report = await runSubagent({
         task: text,
         parentSession: session,
         config,
         modelId: modelId || activeModel,
-        workspace,
+        workspace: workdir,
         signal,
         usageOut,
         system,
@@ -339,6 +383,23 @@ async function runAgent({
       report = `Sub-agent failed: ${err.message}`;
       status = 'error';
     }
+    if (isolated) {
+      try {
+        const summary = await worktree.summarize(isolated.path);
+        if (!summary.changed) {
+          try { await worktree.remove(workspace, isolated.path, { force: true }); } catch {}
+          isolated = null;
+          emit({ type: 'notice', level: 'info', text: `${name} left no changes; its worktree was removed.` });
+        } else {
+          isolated = { ...isolated, changed: summary.changed, files: summary.files };
+          report = `${report}\n\nIsolated worktree: ${isolated.path} (branch ${isolated.branch}, ${isolated.changed} changed file${isolated.changed === 1 ? '' : 's'}). Review it before merging.`;
+          emit({ type: 'notice', level: 'info', text: `${name} changed ${summary.changed} file${summary.changed === 1 ? '' : 's'} in ${isolated.branch}.` });
+          auditEvent(config, 'worktree.keep', { sessionId: session.id, agent: id, branch: isolated.branch, changed: isolated.changed });
+        }
+      } catch (err) {
+        isolated = { ...isolated, error: err.message };
+      }
+    }
     session.usage.input += usageOut.input;
     session.usage.output += usageOut.output;
     emit({ type: 'usage', usage: { ...session.usage } });
@@ -349,6 +410,7 @@ async function runAgent({
       durationMs: Date.now() - started,
       finishedAt: new Date().toISOString(),
     };
+    if (isolated) finished.worktree = isolated;
     saveAgentRecord(finished);
     emit({ type: 'agent:end', agent: finished });
     emit({ type: 'notice', level: status === 'ok' ? 'info' : 'warn', text: `${name} ${status === 'ok' ? 'finished' : 'failed'}.` });
@@ -597,6 +659,12 @@ async function runAgent({
         } catch (err) {
           result = { content: `Tool crashed: ${err.message}`, isError: true };
         }
+        auditEvent(config, 'tool.call', {
+          sessionId,
+          tool: call.name,
+          ok: !result.isError,
+          args: summarizeArgs(call.name, call.args),
+        });
         if (signal?.aborted && !result) result = { content: 'Stopped by the user.', isError: true };
         const toolMessage = {
           id: uid('tool_'),
@@ -648,6 +716,16 @@ async function runAgent({
     } catch {}
   }
   saveSession(session);
+  auditEvent(config, 'run.end', {
+    sessionId,
+    runId,
+    ok: outcome.ok,
+    stopped: Boolean(outcome.stopped),
+    steps: outcome.steps,
+    input: session.usage?.input || 0,
+    output: session.usage?.output || 0,
+    error: outcome.error || '',
+  });
   return outcome;
 }
 

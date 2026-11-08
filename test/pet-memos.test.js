@@ -93,7 +93,18 @@ test('concurrent runs get their own memo while an idle run reuses the base memo'
   pet.send({ type: 'run:done', runId: 'run_a' });
   keys = pet.keys();
   const stillBase = keys.find((entry) => entry.kind === 'model');
-  assert.equal(stillBase.model, 'vendor/model', 'the base memo returns to the default model');
+  assert.equal(stillBase.model, 'vendor/model', 'the finished memo keeps the model it ran');
+});
+
+test('a finished run keeps its own model on the result memo', (t) => {
+  const { pet } = makePet();
+  t.after(() => pet.dispose());
+
+  pet.send({ type: 'run:start', runId: 'schedule_auto', sessionId: 's1', model: 'vendor/schedule-model' });
+  assert.equal(pet.keys()[0].model, 'vendor/schedule-model');
+
+  pet.send({ type: 'run:done', runId: 'schedule_auto', outcome: { ok: true } });
+  assert.equal(pet.keys()[0].model, 'vendor/schedule-model', 'the memo does not fall back to the default model');
 });
 
 test('the run memo follows the cursor and returns when the run lets go', (t) => {

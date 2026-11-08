@@ -55,6 +55,9 @@ SSH is a built-in MCP server. Add hosts in **MCP → SSH** with sealed passwords
 **Agent team (MAS)**
 Enable a small team of read-only specialists — Scout, Architect and Critic by default — with per-member models and roles. `team_delegate` fans a brief out in parallel and returns the reports to the main agent. Configure it in **Settings → Agent team**.
 
+**Isolated worktrees**
+Turn on **Settings → Agent → Isolated worktrees** and write sub-agents edit their own git worktree instead of the shared folder, so parallel runs cannot collide. A run that leaves changes keeps its `blank/*` branch with a changed-file summary; a run that changes nothing is cleaned up. **Settings → Data & CLI** lists what is left and prunes empty worktrees. Worktrees live under `~/.blank/worktrees`.
+
 **Language**
 The interface ships in Korean and English and follows your system language by default. Pick **Auto (system)**, **한국어** or **English** in **Settings → General → Interface language**; an explicit choice persists, and switching reloads the window.
 
@@ -73,8 +76,14 @@ Open the media button in the chat composer (or `/media`) to generate and edit im
 **Paper**
 Agent-created pages, documents, graphics and code live in a local Paper library. `create_paper` and `update_paper` write versioned files under `~/.blank/papers`; chat shows a Paper card that opens the result. The viewer switches between Preview and Code and between desktop, tablet and phone widths. HTML and SVG render through a dedicated `blank-paper` protocol inside a sandboxed frame without same-origin access, so a page cannot reach the app or its data.
 
+**Automations**
+Run a prompt on a timer, on file changes, at startup, from a loopback webhook, from an MCP tool result, from a messenger message, or when a chat completes. Each run becomes a normal session. Runs beyond the two-concurrency limit wait in a bounded FIFO queue instead of being dropped, failed runs retry with 30 s → 2 min → 8 min backoff (up to three attempts), and every run is recorded in the automation's history. Configure them on the **Automations** page and in **Settings → Schedules**.
+
+**Audit log**
+An append-only local record of runs, tool calls, approvals and automations in `~/.blank/logs/audit.jsonl`. API keys, tokens, passwords and bearer headers are masked before anything is written; segments rotate at 5 MB with three kept and 30-day retention. Export it from **Settings → Data & CLI** or turn it off there. Nothing leaves the machine.
+
 **Schedules and notifications**
-Run a prompt on an hourly, daily or weekday timer from **Settings → Schedules**; each run becomes a normal session. Native desktop notifications report finished runs, pending approvals and scheduled results while the window is in the background, with per-category switches and a test action in **Settings → Notifications**.
+Native desktop notifications report finished runs, pending approvals and scheduled results while the window is in the background, with per-category switches and a test action in **Settings → Notifications**. The blank memo keeps the model that produced a result instead of snapping back to your default model.
 
 **Send while responding**
 Press send during a run and the message is queued in the composer tray. The queue drains automatically when the current run finishes; individual queued messages can be removed first. Press **Ctrl+Enter** (⌘+Enter on macOS) to stop the current run instead and send that message next, ahead of anything already queued.
@@ -140,8 +149,9 @@ memory.json      durable memories
 skills/          user skills (SKILL.md)
 media/           generated and imported assets
 papers/          Paper pages, documents, graphics and code
-schedules.json   timer definitions and last run state
-logs/            runtime logs
+schedules.json   timer and trigger definitions, run state and history
+logs/            runtime logs and audit.jsonl
+worktrees/       isolated git worktrees created by write sub-agents
 ```
 
 Set `BLANK_HOME` to use a different folder. Keys are stored locally in `config.json`; requests go directly from this machine to the provider you choose.
