@@ -205,7 +205,49 @@ test('custom endpoints are not sent guessed reasoning efforts', async (t) => {
   assert.equal(seen.tool_choice, 'auto', 'agent tools still travel with the request');
 });
 
-test('an explicit effort still reaches a custom endpoint', async (t) => {
+test('a stage picked from a guessed ladder never reaches the endpoint', async (t) => {
+  const requests = [];
+  const { server, origin } = await listening((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      let json = null;
+      try { json = JSON.parse(body); } catch {}
+      requests.push(json);
+      if (json?.reasoning_effort === 'medium') {
+        res.statusCode = 400;
+        res.end('{"error":{"message":"service failure: upstream request failed"}}');
+        return;
+      }
+      res.setHeader('content-type', 'text/event-stream');
+      res.end(['data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}', 'data: [DONE]', ''].join('\n\n'));
+    });
+  });
+  t.after(() => server.close());
+  const config = {
+    customProviders: [{
+      id: 'custom_gateway', name: 'Gateway', protocol: 'openai', kind: 'cloud',
+      baseUrl: `${origin}/v1`, models: [{ id: 'gemma-4-31B-it-fp8', name: 'gemma' }],
+    }],
+    providers: { custom_gateway: { keys: [{ id: 'k1', key: 'test-key', label: 'Default' }] } },
+    agent: {},
+  };
+  const events = [];
+  for await (const event of providers.streamChat({
+    modelId: 'custom_gateway/gemma-4-31B-it-fp8',
+    config,
+    system: 'You are blank.',
+    messages: [{ role: 'user', content: 'hi' }],
+    options: { reasoningEffort: 'medium' },
+  })) {
+    events.push(event);
+  }
+  assert.equal(requests.length, 1, 'one request answers the turn');
+  assert.equal(requests[0].reasoning_effort, undefined, 'the guessed stage stays off the wire');
+  assert.ok(events.some((event) => event.type === 'text'), 'the turn still streams');
+});
+
+test('a stage travels when the endpoint published its ladder', async (t) => {
   let seen = null;
   const { server, origin } = await listening((req, res) => {
     let body = '';
@@ -220,7 +262,12 @@ test('an explicit effort still reaches a custom endpoint', async (t) => {
   const config = {
     customProviders: [{
       id: 'custom_gateway', name: 'Gateway', protocol: 'openai', kind: 'cloud',
-      baseUrl: `${origin}/v1`, models: [{ id: 'gemma-4-31B-it-fp8', name: 'gemma' }],
+      baseUrl: `${origin}/v1`,
+      models: [{
+        id: 'gemma-4-31B-it-fp8',
+        name: 'gemma',
+        reasoningHint: { supported: true, levels: ['low', 'medium', 'high'], default: 'medium' },
+      }],
     }],
     providers: { custom_gateway: { keys: [{ id: 'k1', key: 'test-key', label: 'Default' }] } },
     agent: { reasoningEffort: 'high' },
@@ -231,7 +278,7 @@ test('an explicit effort still reaches a custom endpoint', async (t) => {
     system: 'You are blank.',
     messages: [{ role: 'user', content: 'hi' }],
   })) { /* drain */ }
-  assert.equal(seen.reasoning_effort, 'high', 'a user choice is not a guess');
+  assert.equal(seen.reasoning_effort, 'high', 'an advertised stage is not a guess');
 });
 
 test('provider errors name the fields blank sent', async (t) => {

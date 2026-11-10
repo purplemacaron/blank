@@ -72,22 +72,23 @@
   /* Custom and local endpoints report their stages late (capability probe).
      Share one request per model for the whole app session. */
   const reasoningChecks = new Map();
-  function reasoningCheckable(model, profile) {
-    return Boolean(model && profile?.source === 'fallback'
-      && (String(model.providerId || '').startsWith('custom_')
-        || ['ollama', 'lmstudio'].includes(String(model.providerId || ''))));
+  function reasoningCheckable(fullId, profile) {
+    const provider = U.providerOf(catalog(), fullId);
+    return Boolean(provider && profile?.source === 'fallback'
+      && (String(provider.id).startsWith('custom_')
+        || ['ollama', 'lmstudio'].includes(String(provider.id))));
   }
   function requestReasoningCheck(force = false) {
-    const model = U.modelOf(catalog(), currentModel());
-    const profile = model ? U.reasoningProfile(catalog(), model.fullId) : null;
-    if (!reasoningCheckable(model, profile)) return null;
-    if (!force && reasoningChecks.has(model.fullId)) return reasoningChecks.get(model.fullId);
-    const promise = API.models.reasoning({ model: model.fullId, force })
+    const fullId = currentModel();
+    const profile = U.reasoningProfile(catalog(), fullId);
+    if (!reasoningCheckable(fullId, profile)) return null;
+    if (!force && reasoningChecks.has(fullId)) return reasoningChecks.get(fullId);
+    const promise = API.models.reasoning({ model: fullId, force })
       .then((result) => (result?.ok ? result.profile || null : null))
       .catch(() => null);
-    reasoningChecks.set(model.fullId, promise);
+    reasoningChecks.set(fullId, promise);
     promise.finally(() => {
-      setTimeout(() => { if (reasoningChecks.get(model.fullId) === promise) reasoningChecks.delete(model.fullId); }, 10 * 60 * 1000);
+      setTimeout(() => { if (reasoningChecks.get(fullId) === promise) reasoningChecks.delete(fullId); }, 10 * 60 * 1000);
     });
     return promise;
   }
@@ -608,14 +609,15 @@
     if (reasoningButton) {
       const profile = reasoningProfile();
       const effort = currentReasoning();
-      const label = profile ? U.reasoningLabel(profile, effort) : 'Model decides';
+      const unverified = profile?.source === 'fallback' && profile.levels.length > 1;
+      const label = !profile || unverified ? 'Model decides' : U.reasoningLabel(profile, effort);
       const adjustable = Boolean(profile && profile.levels.length > 1);
       reasoningButton.hidden = false;
       reasoningButton.disabled = !adjustable;
       reasoningButton.classList.toggle('is-fixed', !adjustable);
       reasoningButton.innerHTML = `${icon('brain', 13)}<span>${U.esc(label)}</span>${adjustable ? `<span class="ws-caret">${icon('chevron-updown', 10)}</span>` : ''}`;
       reasoningButton.title = profile ? `Reasoning · ${label}` : 'Reasoning · this model does not expose stages';
-      reasoningButton.classList.toggle('active', adjustable && effort !== 'none');
+      reasoningButton.classList.toggle('active', adjustable && !unverified && effort !== 'none');
       if (profile?.source === 'fallback') requestReasoningCheck();
     }
     const approvalButton = document.getElementById('composer-approval');
@@ -1771,8 +1773,7 @@
   function openReasoningPicker(anchor) {
     if (!anchor) return;
     let profile = reasoningProfile();
-    const model = U.modelOf(catalog(), currentModel());
-    const checkable = reasoningCheckable(model, profile);
+    const checkable = reasoningCheckable(currentModel(), profile);
     const content = document.createElement('div');
     content.className = 'mode-picker';
     let checking = checkable;
@@ -1780,19 +1781,20 @@
 
     function noteText() {
       if (checking) return "Checking this endpoint's stages…";
-      if (noteExtra) return noteExtra;
-      return 'Only the stages this model supports.';
+      return noteExtra || 'This endpoint has not confirmed its stages, so the model decides.';
     }
 
     function render() {
-      if (!profile || profile.levels.length <= 1) {
+      const unverified = profile?.source === 'fallback' && profile.levels.length > 1;
+      if (!profile || profile.levels.length <= 1 || unverified) {
         const reason = !currentModel()
           ? 'Choose a model first.'
-          : profile?.fixedLabel
-            ? 'This model always reasons; the stage is fixed.'
-            : 'This model does not expose reasoning stages.';
-        content.innerHTML = `<div class="mode-picker-head">Reasoning</div><div class="mode-picker-note">${U.esc(reason)}</div>
-          ${checkable ? `<div class="mode-picker-note">${U.esc(noteText())}</div>` : ''}`;
+          : unverified
+            ? noteText()
+            : profile?.fixedLabel
+              ? 'This model always reasons; the stage is fixed.'
+              : 'This model does not expose reasoning stages.';
+        content.innerHTML = `<div class="mode-picker-head">Reasoning</div><div class="mode-picker-note">${U.esc(reason)}</div>`;
         return;
       }
       const stored = Chat.session?.reasoningEffort || Chat.draftReasoning || App.state.config?.agent?.reasoningEffort || '';
@@ -1804,7 +1806,7 @@
       <span class="mode-choice-name">${U.esc(item.label)}<span class="mode-choice-hint">${U.esc(item.hint)}</span></span>
       ${value === current ? `<span class="mode-choice-check">${icon('check', 13)}</span>` : ''}
     </button>`;
-      }).join('')}<div class="mode-picker-note">${U.esc(noteText())}</div>`;
+      }).join('')}<div class="mode-picker-note">Only the stages this model supports.</div>`;
     }
 
     render();
@@ -1829,14 +1831,14 @@
       requestReasoningCheck().then((fresh) => {
         checking = false;
         if (fresh) profile = fresh;
-        else noteExtra = 'This endpoint did not report its stages; showing the standard set.';
+        else noteExtra = 'This endpoint did not report its stages, so the model decides.';
         if (!content.isConnected) return;
         render();
         pop.reposition();
         updateComposer();
       }).catch(() => {
         checking = false;
-        noteExtra = 'Could not check this endpoint; showing the standard set.';
+        noteExtra = 'Could not check this endpoint, so the model decides.';
         if (content.isConnected) { render(); pop.reposition(); }
       });
     }

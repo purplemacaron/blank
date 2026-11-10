@@ -543,15 +543,15 @@ async function* streamChat({ modelId, config, system, messages, tools, signal, o
     ? cachedHint
     : resolved.reasoningHint || cachedHint || null;
   const profile = reasoning.profileFor(resolved.providerId, resolved.id, hint);
-  /* A custom endpoint may not document its reasoning ladder, and guessing a
-     stage means sending a parameter the upstream never agreed to accept.
-     Only an endpoint-reported ladder, a probe result, or an explicit user
-     choice may put an effort on the wire. */
+  /* A custom endpoint may not document its reasoning ladder, so the fallback
+     stages are a guess of ours, not a promise from the upstream. Sending one
+     is how gateways end up rejecting an otherwise valid request (InferX
+     answers 400 for a stage its backend does not take). Only a ladder the
+     endpoint reported, or one a probe confirmed, may put an effort on the
+     wire. Until then the stage is left to the model. */
   const requestedEffort = options.reasoningEffort || config.agent?.reasoningEffort;
   const guessed = profile?.source === 'fallback';
-  const effort = guessed && (!requestedEffort || requestedEffort === 'auto')
-    ? ''
-    : reasoning.normalize(profile, requestedEffort);
+  const effort = guessed ? '' : reasoning.normalize(profile, requestedEffort);
   const agentOptions = {
     temperature: options.temperature ?? config.agent?.temperature ?? null,
     maxTokens: options.maxTokens || 8192,
