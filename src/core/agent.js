@@ -244,6 +244,7 @@ async function runAgent({
   emit = () => {},
   signal,
   requestApproval,
+  requestUserInput,
   mcp = null,
 }) {
   if (!session) throw new Error('No session.');
@@ -426,6 +427,7 @@ async function runAgent({
     emit,
     signal,
     requestApproval: approve,
+    requestUserInput: requestUserInput || null,
     mcp: mcp ? { callTool: (server, tool, args) => mcp.callTool(server, tool, args) } : null,
     delegate: async (task, options = {}) => {
       const write = Boolean(options.write);

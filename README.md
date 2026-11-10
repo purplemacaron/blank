@@ -47,7 +47,7 @@ Streaming responses, tool calls with per-tool approvals, a live plan rail, check
 - Probe an endpoint to fetch its model list, and choose a fallback model used when the primary errors or rate-limits.
 
 **Tools**
-Workspace-scoped read/write/edit, glob, grep, shell commands, web fetch, configurable web search (DuckDuckGo, Brave, Tavily, Exa, Serper, SearXNG), todo plans, memory, media, MCP, and computer use.
+Workspace-scoped read/write/edit, glob, grep, shell commands, web fetch, configurable web search (DuckDuckGo, Brave, Tavily, Exa, Serper, SearXNG), todo plans, choice questions (`ask_user`) that pause the run until you pick an option or type an answer, memory, media, MCP, and computer use.
 
 **SSH over MCP**
 SSH is a built-in MCP server. Add hosts in **MCP → SSH** with sealed passwords or private keys, pin the host key fingerprint on first connect, and let the agent run approval-gated commands through `ssh_run`. Secrets stay on this device.

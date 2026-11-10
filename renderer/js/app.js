@@ -5,7 +5,8 @@
   const CHAT_EVENTS = new Set([
     'run:start', 'assistant:start', 'text', 'reasoning', 'tool:start', 'tool:end',
     'assistant:end', 'assistant:empty', 'tasks', 'usage', 'notice', 'error', 'compacted',
-    'approval', 'approval:resolved', 'approval:expired', 'run:done', 'title',
+    'approval', 'approval:resolved', 'approval:expired',
+    'question', 'question:resolved', 'question:expired', 'run:done', 'title',
     'chat:queued', 'chat:queued:sent', 'chat:queue:update', 'agent:start', 'agent:end',
   ]);
 

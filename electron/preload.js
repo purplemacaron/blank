@@ -85,6 +85,7 @@ const api = {
     send: (input) => invoke('chat:send', input),
     stop: (sessionId) => invoke('chat:stop', sessionId),
     approve: (input) => invoke('chat:approve', input),
+    answer: (input) => invoke('chat:answer', input),
     queue: (sessionId) => invoke('chat:queue', sessionId),
     removeQueued: (input) => invoke('chat:queue:remove', input),
     openWorkspace: () => invoke('chat:openWorkspace'),

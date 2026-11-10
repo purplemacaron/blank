@@ -295,6 +295,21 @@ const TOOL_SPECS = [
     planSafe: true,
   },
   {
+    name: 'ask_user',
+    label: 'Ask you',
+    description: 'Ask the user to choose between concrete options when the decision is theirs and you cannot settle it from the workspace or the conversation. The run pauses until they answer. Use it for a real fork in direction, scope or style, not for approvals, confirmations, or questions you can answer yourself.',
+    parameters: {
+      type: 'object',
+      properties: {
+        question: { type: 'string', description: 'One short question.' },
+        options: { type: 'array', items: { type: 'string' }, description: 'Two to six short, concrete choices.' },
+        multiple: { type: 'boolean', description: 'Let the user pick more than one option.' },
+      },
+      required: ['question', 'options'],
+    },
+    planSafe: true,
+  },
+  {
     name: 'remember',
     label: 'Save memory',
     description: 'Save a durable fact or preference about the user or project. Use sparingly for information that should survive this session.',
@@ -1058,6 +1073,28 @@ async function toolTodoWrite(args, ctx) {
   };
 }
 
+async function toolAskUser(args, ctx) {
+  const question = String(args.question || '').trim();
+  if (!question) return { content: 'A question is required.', isError: true };
+  const options = [...new Set((Array.isArray(args.options) ? args.options : [])
+    .map((option) => String(option || '').trim())
+    .filter(Boolean))].slice(0, 6);
+  if (options.length < 2) return { content: 'ask_user needs at least two distinct options.', isError: true };
+  if (!ctx.requestUserInput) {
+    return { content: 'The user cannot answer a choice card here. Ask the question in your reply instead.', isError: true };
+  }
+  const answer = await ctx.requestUserInput({ question, options, multiple: Boolean(args.multiple) });
+  if (!answer || answer.cancelled) return { content: 'The user did not answer.', isError: true };
+  const answers = (Array.isArray(answer.selected) ? answer.selected : []).filter((label) => options.includes(label));
+  const custom = String(answer.custom || '').trim().slice(0, 2000);
+  if (!answers.length && !custom) return { content: 'The user did not answer.', isError: true };
+  const parts = [answers.join(', '), custom ? `${answers.length ? '· ' : ''}typed: ${custom}` : ''].filter(Boolean);
+  return {
+    content: `The user answered: ${parts.join(' ')}`,
+    meta: { question, options, multiple: Boolean(args.multiple), answers, custom },
+  };
+}
+
 async function toolRemember(args, ctx) {
   const text = String(args.text || '').trim();
   if (!text) return { content: 'text is required.', isError: true };
@@ -1416,6 +1453,7 @@ const HANDLERS = {
   computer_screenshot: toolComputerScreenshot,
   computer_use: toolComputerUse,
   todo_write: toolTodoWrite,
+  ask_user: toolAskUser,
   remember: toolRemember,
   memory_search: toolMemorySearch,
   read_skill: toolReadSkill,
@@ -1441,7 +1479,7 @@ function getToolDefinition(name) {
 const RESEARCH_TOOLS = new Set([
   'read_file', 'list_dir', 'glob', 'grep', 'project_map', 'git_diff',
   'web_search', 'web_fetch', 'read_skill',
-  'memory_search', 'remember', 'todo_write', 'delegate',
+  'memory_search', 'remember', 'todo_write', 'ask_user', 'delegate',
   'create_paper', 'update_paper', 'read_paper', 'list_papers',
 ]);
 
@@ -1490,6 +1528,9 @@ function sessionAllows(name, ctx) {
 function permissionFor(name, args, ctx) {
   const configured = configuredPermission(name, ctx);
   if (configured === 'deny') return { level: 'deny', reason: 'blocked' };
+  // Asking the user is the confirmation itself; an approval card in front of it
+  // would just stack two prompts.
+  if (name === 'ask_user') return { level: 'allow', reason: '' };
   if (hasExactApproval(ctx.session, name, args)) return { level: 'allow', reason: '' };
 
   const risk = assessToolCall(name, args);
@@ -1606,6 +1647,7 @@ function summarizeArgs(name, args = {}) {
   if (name === 'glob' || name === 'grep') return args.pattern || args.glob || '';
   if (name === 'read_skill' || name === 'memory_search') return args.name || args.query || '';
   if (name === 'todo_write') return `${(args.todos || []).length} items`;
+  if (name === 'ask_user') return args.question || '';
   if (name === 'remember') return args.text || '';
   if (name === 'delegate') return `${args.write ? 'write worker · ' : ''}${args.task || ''}`;
   if (name === 'delegate_many') return `${(args.tasks || []).length} parallel workers · ${(args.tasks || []).map((task) => task.task || '').join(' / ')}`;

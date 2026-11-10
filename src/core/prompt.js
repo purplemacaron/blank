@@ -118,7 +118,7 @@ ${mode === 'ask' ? '' : '- Save a lasting user or project preference with rememb
 - Prefer the smallest correct change. Match the project's existing style.
 - Use web_search for current facts, then web_fetch the most authoritative result. Cite the URLs you rely on.
 - Computer use is powerful and visible to the user. Explain the intended action in one short sentence before acting, prefer keyboard shortcuts, and verify the result with a screenshot when it matters.
-- If genuinely blocked, ask one focused question. Otherwise proceed with a reasonable assumption and state it.
+${mode === 'ask' ? '- If genuinely blocked, ask one focused question in your reply. Otherwise proceed with a reasonable assumption and state it.' : '- If genuinely blocked, ask one focused question. When the answer is a choice between concrete routes, call ask_user with 2-6 options so the user can pick; the run pauses until they answer. Do not use it for approvals or to confirm what you can verify yourself. Otherwise proceed with a reasonable assumption and state it.'}
 </rules>`);
 
   sections.push(`<media>

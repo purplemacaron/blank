@@ -6,7 +6,7 @@
     read_file: 'Read file', write_file: 'Write file', edit_file: 'Edit file', deliver_file: 'Deliver file', list_dir: 'List folder',
     glob: 'Find files', grep: 'Search code', run_command: 'Run command', web_fetch: 'Fetch URL',
     web_search: 'Web search', computer_screenshot: 'Screenshot', computer_use: 'Computer',
-    todo_write: 'Update plan', remember: 'Save memory', memory_search: 'Search memory',
+    todo_write: 'Update plan', ask_user: 'Ask you', remember: 'Save memory', memory_search: 'Search memory',
     read_skill: 'Read skill', delegate: 'Sub-agent',
     list_media: 'Search media', generate_media: 'Generate media', edit_media: 'Edit media',
     create_paper: 'Create Paper', update_paper: 'Update Paper', read_paper: 'Read Paper', list_papers: 'List Papers',
@@ -64,6 +64,8 @@
     compactingSessions: new Set(),
     get compacting() { return Boolean(this.session && this.compactingSessions.has(this.session.id)); },
     pendingApprovals: new Map(),
+    pendingQuestions: new Map(),
+    pendingQuestionPayloads: new Map(),
     slashOpen: false,
     slashIndex: 0,
     loadToken: 0,
@@ -173,6 +175,7 @@
     if (name === 'list_papers') return value.query || value.kind || 'recent papers';
     if (name === 'deliver_file') return value.title || value.path || '';
     if (name === 'todo_write') return `${(value.todos || []).length} items`;
+    if (name === 'ask_user') return value.question || '';
     if (name.startsWith('mcp__')) {
       const entries = Object.entries(value).slice(0, 2).map(([key, val]) => `${key}: ${typeof val === 'object' ? JSON.stringify(val) : String(val)}`);
       return entries.join(' · ');
@@ -306,6 +309,16 @@
     } else if (meta.deliverable && meta.path) {
       html += `<div class="tool-section-label">File</div>${deliverableMarkup(meta)}`;
       if (content) html += `<div class="tool-section-label" style="margin-top:8px">Summary</div>${preBlock(clip(content, 2400))}`;
+    } else if (name === 'ask_user') {
+      const question = meta.question || args?.question || '';
+      const answers = Array.isArray(meta.answers) ? meta.answers : [];
+      const custom = String(meta.custom || '');
+      html += `<div class="tool-section-label">Question</div><div class="tool-question">${U.esc(question)}</div>`;
+      if (answers.length || custom) {
+        html += `<div class="tool-section-label" style="margin-top:8px">Answer</div>${preBlock([...answers, custom].filter(Boolean).join(' · '), 'tool-pre tool-answer')}`;
+      } else if (content) {
+        html += `<div class="tool-section-label" style="margin-top:8px">Result</div>${preBlock(clip(content, 2000))}`;
+      }
     } else if (name === 'todo_write') {
       const tasks = meta.tasks || args?.todos || [];
       html += `<div class="tool-section-label">Plan</div>${tasksMarkup(tasks)}`;
@@ -455,6 +468,109 @@
     const note = document.createElement('div');
     note.className = `approval-resolved ${tone}`;
     note.innerHTML = `${icon(tone === 'ok' ? 'check-circle' : 'alert-circle', 13)}<span>${text}</span>`;
+    card.appendChild(note);
+  }
+
+  function buildQuestionCard(payload) {
+    const card = document.createElement('div');
+    card.className = 'question-card';
+    card.dataset.questionId = payload.questionId;
+    const options = Array.isArray(payload.options) ? payload.options : [];
+    const multiple = Boolean(payload.multiple);
+    card.innerHTML = `
+      <div class="question-head">
+        <span class="question-icon">${icon('message', 14)}</span>
+        <div class="question-copy">
+          <div class="question-kicker">blank asks</div>
+          <div class="question-text">${U.esc(payload.question || '')}</div>
+        </div>
+      </div>
+      <div class="question-options">${options.map((option) => `<button class="question-option" type="button" aria-pressed="false" data-question-option="${U.attr(option)}">${U.esc(option)}</button>`).join('')}</div>
+      <div class="question-other">
+        <input class="question-input" type="text" maxlength="2000" placeholder="Type your own answer" aria-label="Your answer" />
+        <button class="btn btn-secondary btn-sm" type="button" data-question-send>Send answer</button>
+      </div>
+      <div class="question-foot">${multiple ? 'Pick one or more · the run waits for you' : 'Pick one · the run waits for you'}</div>`;
+
+    card.querySelectorAll('[data-question-option]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (card.dataset.resolved) return;
+        if (multiple) {
+          const on = !button.classList.contains('selected');
+          button.classList.toggle('selected', on);
+          button.setAttribute('aria-pressed', on ? 'true' : 'false');
+          return;
+        }
+        sendQuestionAnswer(card, [button.dataset.questionOption]);
+      });
+    });
+
+    const send = () => {
+      if (card.dataset.resolved) return;
+      const selected = [...card.querySelectorAll('.question-option.selected')].map((button) => button.dataset.questionOption);
+      const custom = card.querySelector('.question-input')?.value?.trim() || '';
+      if (!selected.length && !custom) {
+        UI.toast('Choose an option or type an answer.', 'warn');
+        return;
+      }
+      sendQuestionAnswer(card, selected, custom);
+    };
+    card.querySelector('[data-question-send]')?.addEventListener('click', send);
+    card.querySelector('.question-input')?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      send();
+    });
+    return card;
+  }
+
+  async function sendQuestionAnswer(card, selected, custom = '') {
+    if (!card || card.dataset.resolved) return;
+    card.dataset.resolved = 'sending';
+    const questionId = card.dataset.questionId;
+    card.querySelectorAll('button, input').forEach((node) => { node.disabled = true; });
+    try {
+      const result = await API.chat.answer({ questionId, selected, custom });
+      if (!result?.ok) throw new Error(result?.error || 'This question expired.');
+      markQuestion(card, result.selected || selected, result.custom ?? custom);
+      Chat.pendingQuestions.delete(questionId);
+    } catch (error) {
+      delete card.dataset.resolved;
+      card.querySelectorAll('button, input').forEach((node) => { node.disabled = false; });
+      UI.toast(error.message, 'error');
+    }
+  }
+
+  function markQuestion(card, selected = [], custom = '') {
+    if (!card || card.dataset.resolved === 'done') return;
+    card.dataset.resolved = 'done';
+    card.querySelectorAll('button, input').forEach((node) => { node.disabled = true; });
+    card.querySelector('.question-options')?.remove();
+    card.querySelector('.question-other')?.remove();
+    const answers = [...(Array.isArray(selected) ? selected : [])];
+    if (custom) answers.push(custom);
+    const note = document.createElement('div');
+    note.className = 'question-answered';
+    note.innerHTML = `${icon('check-circle', 13)}<span>${U.esc(answers.join(' · ') || 'Answered')}</span>`;
+    const foot = card.querySelector('.question-foot');
+    if (foot) foot.textContent = 'Answered';
+    card.appendChild(note);
+  }
+
+  function expireQuestion(card, reason) {
+    if (!card || card.dataset.resolved === 'done') return;
+    card.dataset.resolved = 'done';
+    card.querySelectorAll('button, input').forEach((node) => { node.disabled = true; });
+    card.querySelector('.question-options')?.remove();
+    card.querySelector('.question-other')?.remove();
+    const note = document.createElement('div');
+    note.className = 'question-answered expired';
+    const text = reason === 'timeout'
+      ? 'Question expired · the agent moved on'
+      : 'Question closed · the run ended';
+    note.innerHTML = `${icon('alert-circle', 13)}<span>${text}</span>`;
+    const foot = card.querySelector('.question-foot');
+    if (foot) foot.textContent = 'Expired';
     card.appendChild(note);
   }
 
@@ -1391,6 +1507,20 @@
     U.scrollToBottom(document.getElementById('chat-scroll'), true);
   }
 
+  function showQuestion(payload) {
+    const card = buildQuestionCard(payload);
+    Chat.pendingQuestions.set(payload.questionId, card);
+    let host = Chat.run?.live?.approvalHost;
+    if (!host) {
+      const thread = ensureThread();
+      host = document.createElement('div');
+      host.className = 'approval-host';
+      thread?.appendChild(host);
+    }
+    host.appendChild(card);
+    U.scrollToBottom(document.getElementById('chat-scroll'), true);
+  }
+
   async function decideApproval(button) {
     const card = button.closest('.approval-card');
     if (!card || card.dataset.resolved) return;
@@ -1664,6 +1794,8 @@
       }
       Chat.run = null;
       Chat.pendingApprovals.clear();
+      Chat.pendingQuestions.clear();
+      Chat.pendingQuestionPayloads.clear();
       beginRun(result.runId);
       if (Chat.lastRunNotice) Chat.lastRunNotice.remove();
       renderHead();
@@ -2045,6 +2177,33 @@
       Chat.running = true;
       updateComposer();
       showApproval(payload);
+      return;
+    }
+    if (payload.type === 'question') {
+      Chat.pendingQuestionPayloads.set(payload.questionId, payload);
+      if (payload.sessionId && payload.sessionId !== activeSessionId) {
+        UI.toast('Question asked in another session.', 'warn', {
+          title: 'blank needs you', timeout: 8000, actionLabel: 'Open session',
+          onAction: () => App.loadSession(payload.sessionId),
+        });
+        return;
+      }
+      Chat.running = true;
+      updateComposer();
+      showQuestion(payload);
+      return;
+    }
+    /* Answer and expiry arrive in every window. Close the card here if this
+       session has one, and drop the stored copy either way so a session opened
+       later never re-renders a question that is already settled. */
+    if (payload.type === 'question:resolved' || payload.type === 'question:expired') {
+      const card = Chat.pendingQuestions.get(payload.questionId);
+      if (card) {
+        if (payload.type === 'question:resolved') markQuestion(card, payload.selected, payload.custom);
+        else expireQuestion(card, payload.reason);
+        Chat.pendingQuestions.delete(payload.questionId);
+      }
+      Chat.pendingQuestionPayloads.delete(payload.questionId);
       return;
     }
     /* A draft has no session id. Events from a run that is still finishing in
@@ -2486,6 +2645,7 @@
     Chat.running = false;
     Chat.queue = [];
     Chat.pendingApprovals.clear();
+    Chat.pendingQuestions.clear();
     Chat.activeSessionId = id;
     Chat.session = null;
     const headMain = document.getElementById('chat-head-main');
@@ -2509,6 +2669,9 @@
       renderHead();
       updateComposer();
       renderThread({ smooth: false, keepScroll: Boolean(options.keepScroll) });
+      for (const payload of Chat.pendingQuestionPayloads.values()) {
+        if (payload.sessionId === Chat.session.id) showQuestion(payload);
+      }
       App.onChatLoaded(Chat.session);
     } catch (error) {
       if (token !== Chat.loadToken) return;
@@ -2526,6 +2689,7 @@
     Chat.buffer = [];
     Chat.queue = [];
     Chat.pendingApprovals.clear();
+    Chat.pendingQuestions.clear();
     Chat.activeSessionId = null;
     Chat.attachments = [];
     Chat.draftModel = App.state.config?.defaultModel || Chat.draftModel || '';

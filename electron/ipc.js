@@ -16,6 +16,7 @@ const { summarizeArgs, prepareScreenshot } = require('../src/core/tools');
 const search = require('../src/core/search');
 const computer = require('../src/core/computer');
 const { createRemoteService } = require('../src/core/remote');
+const { createQuestionBroker } = require('../src/core/questions');
 const { createMessengerService } = require('../src/core/messengers');
 const { createComputerOverlay } = require('./computer-overlay');
 const { createPet } = require('./pet');
@@ -83,6 +84,22 @@ function registerIpc({ mcp, getWindow }) {
   const broadcast = (payload) => {
     for (const win of BrowserWindow.getAllWindows()) sendEvent(win, payload);
   };
+
+  /* A question raised by the ask_user tool pauses the run until the user picks
+     an option. It can be answered from any window that shows it. */
+  const questions = createQuestionBroker({
+    onEvent: (payload) => {
+      const target = payload.win && !payload.win.isDestroyed() ? payload.win : getWindow();
+      const outgoing = { ...payload };
+      delete outgoing.win;
+      sendEvent(target, outgoing);
+      const main = getWindow();
+      if (main && main !== target) sendEvent(main, outgoing);
+      if (payload.type === 'question') {
+        notifications.notify({ title: 'blank has a question', body: payload.question, key: `question:${payload.questionId}` });
+      }
+    },
+  });
 
   const updater = createUpdater();
   updater.configure({
@@ -1445,6 +1462,7 @@ function registerIpc({ mcp, getWindow }) {
       run?.controller.abort();
       denyApprovalsFor((approval) => approval.sessionId === id);
     }
+    questions.cancel((entry) => entry.sessionId === id, 'session-deleted');
     store.deleteSession(id);
     broadcast({ type: 'sessions:refresh' });
     return { ok: true };
@@ -1562,12 +1580,15 @@ function registerIpc({ mcp, getWindow }) {
       notifications.approval({ label: payload.label, summary: payload.summary, sessionId: session.id });
     });
 
+    const requestUserInput = (request) => questions.ask(request, { sessionId: session.id, runId, win });
+
     runAgent({
       session,
       config,
       emit,
       signal: controller.signal,
       requestApproval,
+      requestUserInput,
       mcp,
     }).then((outcome) => {
       const fresh = store.getSession(session.id) || session;
@@ -1596,6 +1617,7 @@ function registerIpc({ mcp, getWindow }) {
       if (state.sessionRuns.get(session.id) === runId) state.sessionRuns.delete(session.id);
       state.runs.delete(runId);
       denyApprovalsFor((approval) => approval.runId === runId);
+      questions.cancel((entry) => entry.runId === runId, 'run-ended');
       setTimeout(() => {
         try { drainQueue(session.id); } catch {}
         broadcast({ type: 'sessions:refresh' });
@@ -1662,6 +1684,7 @@ function registerIpc({ mcp, getWindow }) {
     if (run) {
       run.controller.abort();
       denyApprovalsFor((approval) => approval.sessionId === sessionId);
+      questions.cancel((entry) => entry.sessionId === sessionId, 'stopped');
     }
     return run;
   }
@@ -1772,6 +1795,8 @@ function registerIpc({ mcp, getWindow }) {
   });
 
   require('electron').ipcMain.handle('chat:approve', async (_event, input = {}) => approveApproval(input.approvalId, input.decision));
+
+  require('electron').ipcMain.handle('chat:answer', async (_event, input = {}) => questions.answer(input.questionId, input));
 
   require('electron').ipcMain.handle('chat:stop', async (_event, sessionId) => stopSessionRun(sessionId));
 

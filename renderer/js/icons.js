@@ -142,6 +142,7 @@
     run_command: 'terminal',
     web_fetch: 'globe',
     todo_write: 'checklist',
+    ask_user: 'message',
     remember: 'brain',
     memory_search: 'database',
     read_skill: 'layers',
