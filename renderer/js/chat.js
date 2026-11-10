@@ -21,6 +21,35 @@
     ask: { label: 'Ask', icon: 'message' },
   };
 
+  const MAX_ATTACHMENTS = 8;
+  const MAX_ATTACH_BYTES = 160000;
+  const MAX_ATTACH_CHARS = 120000;
+
+  /* FileReader decodes any bytes, so a PDF or image arrives as mojibake instead
+     of failing. Samples with NULs or a run of replacement/control characters
+     are binary; text files occasionally contain neither check's enemy bytes. */
+  function looksBinary(text) {
+    const sample = String(text || '').slice(0, 4096);
+    if (!sample) return false;
+    if (sample.includes('\u0000')) return true;
+    let odd = 0;
+    for (let index = 0; index < sample.length; index += 1) {
+      const code = sample.charCodeAt(index);
+      if ((code < 9 && code >= 1) || (code > 13 && code < 32) || code === 127 || code === 0xfffd) odd += 1;
+    }
+    return odd / sample.length > 0.02;
+  }
+
+  /* Dropping a file anywhere else in the window would make Chromium navigate
+     the page to file://, which throws the running session away. */
+  let windowDropsGuarded = false;
+  function guardWindowDrops() {
+    if (windowDropsGuarded) return;
+    windowDropsGuarded = true;
+    window.addEventListener('dragover', (event) => event.preventDefault());
+    window.addEventListener('drop', (event) => event.preventDefault());
+  }
+
   const Chat = {
     session: null,
     running: false,
@@ -1505,27 +1534,28 @@
   }
 
   function attachFiles(files) {
+    const room = MAX_ATTACHMENTS - Chat.attachments.length;
+    if (room <= 0) { UI.toast('Attach up to 8 text files.', 'warn'); return; }
     const list = [...(files || [])];
-    const textFiles = list.slice(0, 8);
-    if (!textFiles.length) return;
-    let pending = textFiles.length;
-    for (const file of textFiles) {
-      if (Chat.attachments.length >= 8) { UI.toast('Attach up to 8 text files.', 'warn'); pending -= 1; continue; }
-      if (file.size > 160000) {
+    if (!list.length) return;
+    if (list.length > room) UI.toast('Attach up to 8 text files.', 'warn');
+    for (const file of list.slice(0, room)) {
+      if (file.size > MAX_ATTACH_BYTES) {
         UI.toast(`${file.name} is too large (over 160 KB).`, 'warn');
-        pending -= 1;
         continue;
       }
       const reader = new FileReader();
       reader.onload = () => {
-        const content = String(reader.result || '').slice(0, 120000);
-        if (content.trim()) {
-          Chat.attachments.push({ name: file.name, type: file.type || 'text/plain', size: file.size, content });
-          renderAttachments();
+        const content = String(reader.result || '').slice(0, MAX_ATTACH_CHARS);
+        if (!content.trim()) return;
+        if (looksBinary(content)) {
+          UI.toast(`${file.name} is not a text file.`, 'warn');
+          return;
         }
-        pending -= 1;
+        Chat.attachments.push({ name: file.name, type: file.type || 'text/plain', size: file.size, content });
+        renderAttachments();
       };
-      reader.onerror = () => { pending -= 1; UI.toast(`Could not read ${file.name}.`, 'error'); };
+      reader.onerror = () => UI.toast(`Could not read ${file.name}.`, 'error');
       reader.readAsText(file);
     }
   }
@@ -2262,10 +2292,14 @@
                 <span class="approval-hint" id="composer-approval-hint"></span>
                 <span class="hint-item" id="composer-enter-hint"><kbd>Enter</kbd> / <kbd>${U.isMac ? '⌘ Enter' : 'Ctrl Enter'}</kbd> send</span>
                 <span class="hint-item"><kbd>Shift Enter</kbd> newline</span>
+                <span class="hint-item">drop or paste files</span>
               </div>
               <span class="hint-item"><kbd>/</kbd> commands</span>
             </div>
           </div>
+        </div>
+        <div class="chat-drop-overlay" id="chat-drop-overlay" hidden>
+          <div class="chat-drop-card">${icon('paperclip', 18)}<b>Drop files to attach</b><span>Text files up to 160 KB</span></div>
         </div>
       </div>
       <input type="file" id="chat-file-input" multiple hidden accept=".txt,.md,.markdown,.json,.js,.jsx,.ts,.tsx,.css,.scss,.html,.py,.go,.rs,.java,.rb,.php,.sql,.yml,.yaml,.toml,.xml,.csv,.log,.sh,.ps1">`;
@@ -2286,13 +2320,39 @@
       fileInput.value = '';
     });
     const composer = document.getElementById('composer');
-    composer.addEventListener('dragover', (event) => { event.preventDefault(); composer.classList.add('drag-over'); });
-    composer.addEventListener('dragleave', () => composer.classList.remove('drag-over'));
-    composer.addEventListener('drop', (event) => {
+    const dropOverlay = document.getElementById('chat-drop-overlay');
+    let dragDepth = 0;
+    const carriesFiles = (event) => [...(event.dataTransfer?.types || [])].includes('Files');
+    shell.addEventListener('dragenter', (event) => {
+      if (!carriesFiles(event)) return;
       event.preventDefault();
-      composer.classList.remove('drag-over');
+      dragDepth += 1;
+      if (dropOverlay) dropOverlay.hidden = false;
+    });
+    shell.addEventListener('dragover', (event) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+    });
+    shell.addEventListener('dragleave', () => {
+      dragDepth -= 1;
+      if (dragDepth <= 0) {
+        dragDepth = 0;
+        if (dropOverlay) dropOverlay.hidden = true;
+      }
+    });
+    shell.addEventListener('drop', (event) => {
+      event.preventDefault();
+      dragDepth = 0;
+      if (dropOverlay) dropOverlay.hidden = true;
       if (event.dataTransfer?.files?.length) attachFiles(event.dataTransfer.files);
     });
+    composer.addEventListener('paste', (event) => {
+      const files = [...(event.clipboardData?.files || [])];
+      if (!files.length) return;
+      event.preventDefault();
+      attachFiles(files);
+    });
+    guardWindowDrops();
     renderHead();
     updateComposer();
     renderAttachments();

@@ -108,6 +108,10 @@
     'Change the default model': '기본 모델 변경',
     'Session options': '세션 옵션',
     'Attach text files': '텍스트 파일 첨부',
+    'Drop files to attach': '파일을 놓아 첨부',
+    'Text files up to 160 KB': '텍스트 파일 · 최대 160 KB',
+    'drop or paste files': '파일 드롭·붙여넣기',
+    'Could not read the file.': '파일을 읽지 못했습니다.',
     'Stop run': '실행 중지',
     'Send': '전송',
     'send': '전송',
@@ -2087,6 +2091,9 @@
     [/^Connected as (.+)\.$/, '$1 연결됨.'],
     [/^Webhook is running on (.+)\.$/, '웹훅이 $1에서 실행 중입니다.'],
     [/^(\d+)% left$/, '$1% 남음'],
+    [/^(.+) is too large \(over 160 KB\)\.$/, '$1 파일이 너무 큽니다(160 KB 초과).'],
+    [/^(.+) is not a text file\.$/, '$1 파일은 텍스트 파일이 아닙니다.'],
+    [/^Could not read (.+)\.$/, '$1 파일을 읽지 못했습니다.'],
   ];
 
   const ATTR_DICT = {

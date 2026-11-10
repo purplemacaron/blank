@@ -48,3 +48,16 @@ test('translated subtitles never match again (observer loop guard)', () => {
     assert.equal(lookup(output, ATTR_PATTERNS), null);
   }
 });
+
+test('attachment toasts translate the file name and never match again', () => {
+  assert.equal(lookup('notes.md is too large (over 160 KB).', PATTERNS), 'notes.md 파일이 너무 큽니다(160 KB 초과).');
+  assert.equal(lookup('photo.pdf is not a text file.', PATTERNS), 'photo.pdf 파일은 텍스트 파일이 아닙니다.');
+  assert.equal(lookup('Could not read notes.md.', PATTERNS), 'notes.md 파일을 읽지 못했습니다.');
+  for (const output of [
+    'notes.md 파일이 너무 큽니다(160 KB 초과).',
+    'photo.pdf 파일은 텍스트 파일이 아닙니다.',
+    'notes.md 파일을 읽지 못했습니다.',
+  ]) {
+    assert.equal(lookup(output, PATTERNS), null);
+  }
+});
