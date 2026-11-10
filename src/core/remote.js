@@ -52,17 +52,17 @@ function createRemoteService() {
   const rate = new Map();
 
   function status() {
-    const urls = server ? urlsFor(port, allowLan) : urlsFor(8787, false);
+    const urls = server ? urlsFor(port, allowLan) : [];
     return {
       running: Boolean(server),
-      port: server ? port : 8787,
+      port,
       allowLan,
       allowApprovals,
       token: server ? token : '',
       startedAt,
       connections,
-      urls: server ? urls : [],
-      url: server ? urls[0].url : '',
+      urls,
+      url: urls[0]?.url || '',
     };
   }
 

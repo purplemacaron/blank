@@ -80,9 +80,6 @@
             <button class="nav-item" data-page="code" type="button">
               <span class="nav-icon" data-icon="code"></span><span class="nav-label">Code</span>
             </button>
-            <button class="nav-item" data-page="browser" type="button">
-              <span class="nav-icon" data-icon="globe"></span><span class="nav-label">Browser</span>
-            </button>
             <button class="nav-item" data-page="console" type="button">
               <span class="nav-icon" data-icon="terminal"></span><span class="nav-label">Console</span>
             </button>
@@ -166,6 +163,7 @@
             <button class="rail-tab" data-rail="agents" role="tab" type="button" title="Agents" aria-label="Agents"><span data-icon="bot"></span><span class="rail-tab-label">Agents</span> <span class="tab-count" id="rail-agents-count">0</span></button>
             <button class="rail-tab" data-rail="files" role="tab" type="button" title="Files" aria-label="Files"><span data-icon="folder"></span><span class="rail-tab-label">Files</span> <span class="tab-count" id="rail-files-count">0</span></button>
             <button class="rail-tab" data-rail="context" role="tab" type="button" title="Context" aria-label="Context"><span data-icon="layers"></span><span class="rail-tab-label">Context</span></button>
+            <button class="rail-tab rail-tab-icon" data-rail="browser" role="tab" type="button" title="Browser" aria-label="Browser"><span data-icon="globe"></span></button>
             <button class="rail-tab rail-tab-icon" data-rail="terminal" role="tab" type="button" title="Terminal" aria-label="Terminal"><span data-icon="terminal"></span></button>
           </div>
           <button class="mini-icon rail-expand" id="rail-expand" type="button" title="Expand panel">
@@ -176,6 +174,7 @@
           </button>
         </div>
         <div class="rail-body" id="rail-body"></div>
+        <div class="rail-browser" id="rail-browser" hidden></div>
         <div class="rail-foot" id="rail-foot">
           <button class="rail-action" id="rail-open-editor" type="button"><span data-icon="code"></span> Open in VS Code</button>
           <button class="rail-action subtle" id="rail-open-folder" type="button"><span data-icon="folder"></span> Reveal</button>

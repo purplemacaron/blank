@@ -13,7 +13,6 @@
     chat: { label: 'Chat', icon: 'message' },
     paper: { label: 'Paper', icon: 'book' },
     code: { label: 'Code', icon: 'code' },
-    browser: { label: 'Browser', icon: 'globe' },
     console: { label: 'Console', icon: 'terminal' },
     team: { label: 'Team', icon: 'bot' },
     automations: { label: 'Automations', icon: 'clock' },
@@ -43,6 +42,7 @@
       railWide: false,
       railFile: '',
       railFileData: null,
+      browserUrl: '',
       sidebarOpen: false,
       sessionSearch: '',
       sessionSearchOpen: false,
@@ -957,6 +957,121 @@
     </div>`;
   }
 
+  /* ---------------------------------------------------------- rail browser */
+
+  const BROWSER_HOME = 'https://purplemacaron.github.io/blank/';
+
+  function normalizeBrowserUrl(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (/^https?:\/\//i.test(text)) return text;
+    if (/^[\w-]+(\.[\w-]+)+([/?#].*)?$/.test(text)) return `https://${text}`;
+    return `https://duckduckgo.com/?q=${encodeURIComponent(text)}`;
+  }
+
+  function browserView() {
+    return $('rail-browser')?.querySelector('webview') || null;
+  }
+
+  async function sendPageToComposer() {
+    const view = browserView();
+    let title = '';
+    let url = state.browserUrl;
+    try { title = view?.getTitle() || ''; url = view?.getURL() || url; } catch {}
+    let selection = '';
+    try { selection = await view?.executeJavaScript('String(window.getSelection ? window.getSelection().toString() : "").slice(0, 4000)'); } catch {}
+    const lines = [
+      'Use this page as context and answer my question.',
+      title ? `Title: ${title}` : '',
+      url ? `URL: ${url}` : '',
+      selection ? `Selection:\n${selection}` : '',
+      '',
+    ].filter((line) => line !== '').join('\n');
+    const input = document.getElementById('composer-input');
+    const existing = input?.value?.trim() ? `${input.value.replace(/\s+$/, '')}\n\n` : '';
+    window.ChatView?.focusComposer(`${existing}${lines}\n`);
+    UI.toast('Page added to the composer.', 'success');
+  }
+
+  function mountRailBrowser() {
+    const pane = $('rail-browser');
+    if (!pane || pane.dataset.mounted === 'true') return;
+    const start = state.browserUrl || BROWSER_HOME;
+    state.browserUrl = start;
+    pane.dataset.mounted = 'true';
+    pane.innerHTML = `
+      <div class="rail-browser-bar">
+        <button class="mini-icon" type="button" data-browser="back" title="Back" aria-label="Back">${icon('chevron-left', 13)}</button>
+        <button class="mini-icon" type="button" data-browser="forward" title="Forward" aria-label="Forward">${icon('chevron-right', 13)}</button>
+        <button class="mini-icon" type="button" data-browser="reload" title="Reload" aria-label="Reload">${icon('refresh', 13)}</button>
+        <input class="browser-address" id="rail-browser-url" type="text" spellcheck="false" value="${U.attr(start)}" aria-label="Address" />
+        <button class="mini-icon" type="button" data-browser="go" title="Open" aria-label="Open">${icon('arrow-right', 13)}</button>
+      </div>
+      <div class="browser-frame">
+        <webview id="blank-browser" src="${U.attr(start)}" partition="persist:blank-browser"></webview>
+      </div>
+      <div class="browser-status" id="rail-browser-status">
+        <span class="dot"></span>
+        <span class="browser-status-text" data-browser-status-text>Loading…</span>
+        <button class="mini-icon" type="button" data-browser="send" title="Send to chat" aria-label="Send to chat">${icon('message', 12)}</button>
+        <button class="mini-icon" type="button" data-browser="external" title="Open externally" aria-label="Open externally">${icon('external-link', 12)}</button>
+      </div>`;
+    Icons.hydrate(pane);
+
+    const view = pane.querySelector('webview');
+    const address = pane.querySelector('#rail-browser-url');
+    const status = pane.querySelector('[data-browser-status-text]');
+    const setStatus = (text, busy) => {
+      if (status) status.textContent = text;
+      pane.querySelector('.browser-status .dot')?.classList.toggle('busy', Boolean(busy));
+    };
+    const sync = () => {
+      try {
+        const url = view.getURL();
+        if (url && address) address.value = url;
+        if (url) state.browserUrl = url;
+      } catch {}
+    };
+    view.addEventListener('did-start-loading', () => setStatus('Loading…', true));
+    view.addEventListener('did-stop-loading', () => { sync(); setStatus(view.getTitle() || 'Ready', false); });
+    view.addEventListener('page-title-updated', (event) => { if (!view.isLoading()) setStatus(event.title || 'Ready', false); });
+    view.addEventListener('did-navigate', sync);
+    view.addEventListener('did-navigate-in-page', sync);
+    view.addEventListener('did-fail-load', (event) => {
+      if (event.errorCode === -3) return;
+      setStatus(`Could not load the page${event.errorDescription ? ` · ${event.errorDescription}` : ''}`, false);
+    });
+    const go = () => {
+      const url = normalizeBrowserUrl(address?.value);
+      if (!url) return;
+      if (address) address.value = url;
+      state.browserUrl = url;
+      view.loadURL(url).catch((error) => setStatus(error.message, false));
+    };
+    pane.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-browser]');
+      if (!button) return;
+      const action = button.dataset.browser;
+      if (action === 'go') { go(); return; }
+      if (action === 'send') { sendPageToComposer(); return; }
+      if (action === 'external') {
+        let url = state.browserUrl;
+        try { url = view.getURL() || url; } catch {}
+        if (/^https?:/i.test(url)) API.app.openExternal(url).catch((error) => UI.toast(error.message, 'error'));
+        return;
+      }
+      try {
+        if (action === 'back' && view.canGoBack()) view.goBack();
+        else if (action === 'forward' && view.canGoForward()) view.goForward();
+        else if (action === 'reload') view.reload();
+      } catch {}
+    });
+    address?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); go(); }
+    });
+    setStatus('Loading…', true);
+  }
+
   function renderRail() {
     const body = $('rail-body');
     if (!body) return;
@@ -969,6 +1084,12 @@
     if (fileCount) fileCount.textContent = String(countTreeFiles(state.tree));
     if (agentCount) agentCount.textContent = String(agents.length);
     for (const tab of qsa('[data-rail]')) tab.classList.toggle('active', tab.dataset.rail === state.railTab);
+    const browser = state.railTab === 'browser';
+    $('rail')?.classList.toggle('browser-mode', browser);
+    const pane = $('rail-browser');
+    if (pane) pane.hidden = !browser;
+    body.hidden = browser;
+    if (browser) { mountRailBrowser(); return; }
     body.classList.toggle('workbench', state.railTab === 'terminal');
     if (state.railTab === 'terminal' && body.querySelector('[data-terminal]')) return;
     const scrollTop = body.scrollTop;
@@ -987,6 +1108,7 @@
     if (state.page !== 'chat') openPage('chat');
     state.railOpen = true;
     if (isOverlayRail()) state.railOverlay = true;
+    if (tab === 'browser') setRailWide(true);
     applyRailVisibility();
     renderRail();
   }
@@ -1040,6 +1162,12 @@
         if (config) setConfig(config);
       }).catch(() => {});
     }
+  }
+
+  function setRailWide(wide) {
+    state.railWide = Boolean(wide);
+    document.body.classList.toggle('rail-wide', state.railWide);
+    $('rail-expand')?.classList.toggle('active', state.railWide);
   }
 
   App.toggleRail = toggleRail;
@@ -1100,7 +1228,7 @@
       { icon: 'wand', title: 'Create media', sub: 'Images, video, audio and 3D in chat', run: () => window.Views?.openStudio?.() },
       { icon: 'book', title: 'Open Paper', sub: 'Live pages, documents and graphics', run: () => openPage('paper') },
       { icon: 'code', title: 'Code & review', sub: 'Workspace map, changes and checks', run: () => openPage('code') },
-      { icon: 'globe', title: 'Browser', sub: 'Built-in browser with page context', run: () => openPage('browser') },
+      { icon: 'globe', title: 'Browser', sub: 'Open a page beside the session context', run: () => showRailTab('browser') },
       { icon: 'terminal', title: 'Console', sub: 'Run commands in the workspace', run: () => openPage('console') },
       { icon: 'bot', title: 'Agent team', sub: 'blank Team roster and briefs', run: () => openPage('team') },
       { icon: 'clock', title: 'Automations', sub: 'Scheduled and interval runs', run: () => openPage('automations') },
@@ -1665,14 +1793,11 @@
     $('rail-tabs')?.addEventListener('click', (event) => {
       const tab = event.target.closest('[data-rail]');
       if (!tab) return;
-      state.railTab = tab.dataset.rail;
-      renderRail();
+      showRailTab(tab.dataset.rail);
     });
     $('rail-close')?.addEventListener('click', toggleRail);
     $('rail-expand')?.addEventListener('click', () => {
-      state.railWide = !state.railWide;
-      document.body.classList.toggle('rail-wide', state.railWide);
-      $('rail-expand')?.classList.toggle('active', state.railWide);
+      setRailWide(!state.railWide);
       renderRail();
     });
     $('rail-body')?.addEventListener('click', (event) => {

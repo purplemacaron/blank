@@ -15,7 +15,6 @@
     console: { history: [], output: null, running: false, command: '' },
     team: { loading: false },
     automations: { schedules: [], running: [], loading: false, editing: '', runtime: null, mcp: [], messengers: null, config: null },
-    browserUrl: '',
     settings: { remote: null, ssh: null, schedules: [], dictationOptions: null, updates: null, messengers: null },
     paper: {
       loaded: false,
@@ -2416,113 +2415,6 @@ Start writing, or ask the agent to draft it.
     };
   }
 
-  /* ------------------------------------------------------------------ browser */
-
-  function normalizeBrowserUrl(value) {
-    const text = String(value || '').trim();
-    if (!text) return '';
-    if (/^https?:\/\//i.test(text)) return text;
-    if (/^[\w-]+(\.[\w-]+)+([/?#].*)?$/.test(text)) return `https://${text}`;
-    return `https://duckduckgo.com/?q=${encodeURIComponent(text)}`;
-  }
-
-  function mountBrowser(host) {
-    vstate.page = 'browser';
-    vstate.host = host;
-    const start = vstate.browserUrl || 'https://purplemacaron.github.io/blank/';
-    host.innerHTML = `<div class="page-inner browser-page">
-      ${UI.pageHeader({
-        title: 'Browser',
-        description: 'Read a page and hand it to the agent.',
-        actions: `<button class="btn btn-secondary btn-sm" type="button" data-browser-chat>${icon('message', 12)} Ask about this page</button><button class="btn btn-secondary btn-sm" type="button" data-browser-external>${icon('external-link', 12)} Open externally</button>`,
-        meta: '<span class="badge gray">Sandboxed</span>',
-      })}
-      <div class="browser-shell">
-        <div class="browser-bar">
-          <button class="mini-icon" type="button" data-browser="back" title="Back">${icon('chevron-left', 14)}</button>
-          <button class="mini-icon" type="button" data-browser="forward" title="Forward">${icon('chevron-right', 14)}</button>
-          <button class="mini-icon" type="button" data-browser="reload" title="Reload">${icon('refresh', 14)}</button>
-          <button class="mini-icon" type="button" data-browser="home" title="Home">${icon('globe', 14)}</button>
-          <input class="browser-address" id="browser-url" type="text" spellcheck="false" value="${U.attr(start)}" aria-label="Address" />
-          <button class="btn btn-secondary btn-sm" type="button" data-browser="go">Open</button>
-        </div>
-        <div class="browser-frame">
-          <webview id="blank-browser" src="${U.attr(start)}" partition="persist:blank-browser"></webview>
-        </div>
-        <div class="browser-status" id="browser-status"><span class="dot"></span><span data-browser-status-text>Loading…</span></div>
-      </div>
-      <div class="settings-permission-note">${icon('shield', 12)} Sandboxed. The agent sees a page only when you send it to chat.</div>
-    </div>`;
-    const view = host.querySelector('#blank-browser');
-    const address = host.querySelector('#browser-url');
-    const status = host.querySelector('[data-browser-status-text]');
-    if (!view) return;
-    vstate.browserUrl = start;
-    const setStatus = (text, busy) => {
-      if (status) status.textContent = text;
-      host.querySelector('#browser-status .dot')?.classList.toggle('busy', Boolean(busy));
-    };
-    const sync = () => {
-      try {
-        const url = view.getURL();
-        if (url && address) address.value = url;
-        if (url) vstate.browserUrl = url;
-      } catch {}
-    };
-    view.addEventListener('did-start-loading', () => setStatus('Loading…', true));
-    view.addEventListener('did-stop-loading', () => { sync(); setStatus(view.getTitle() || 'Ready', false); });
-    view.addEventListener('page-title-updated', (event) => { if (!view.isLoading()) setStatus(event.title || 'Ready', false); });
-    view.addEventListener('did-navigate', sync);
-    view.addEventListener('did-navigate-in-page', sync);
-    view.addEventListener('did-fail-load', (event) => {
-      if (event.errorCode === -3) return;
-      setStatus(`Could not load the page${event.errorDescription ? ` · ${event.errorDescription}` : ''}`, false);
-    });
-    const go = () => {
-      const url = normalizeBrowserUrl(address?.value);
-      if (!url) return;
-      if (address) address.value = url;
-      vstate.browserUrl = url;
-      view.loadURL(url).catch((error) => setStatus(error.message, false));
-    };
-    host.querySelectorAll('[data-browser]').forEach((button) => {
-      button.addEventListener('click', () => {
-        const action = button.dataset.browser;
-        if (action === 'go') { go(); return; }
-        try {
-          if (action === 'back' && view.canGoBack()) view.goBack();
-          else if (action === 'forward' && view.canGoForward()) view.goForward();
-          else if (action === 'reload') view.reload();
-          else if (action === 'home') { vstate.browserUrl = 'https://purplemacaron.github.io/blank/'; view.loadURL(vstate.browserUrl); }
-        } catch {}
-      });
-    });
-    address?.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') { event.preventDefault(); go(); }
-    });
-    host.querySelector('[data-browser-external]')?.addEventListener('click', () => {
-      const url = view.getURL() || vstate.browserUrl;
-      if (/^https?:/i.test(url)) API.app.openExternal(url).catch((error) => UI.toast(error.message, 'error'));
-    });
-    host.querySelector('[data-browser-chat]')?.addEventListener('click', async () => {
-      let title = '';
-      let url = vstate.browserUrl;
-      try { title = view.getTitle() || ''; url = view.getURL() || url; } catch {}
-      let selection = '';
-      try { selection = await view.executeJavaScript('String(window.getSelection ? window.getSelection().toString() : "").slice(0, 4000)'); } catch {}
-      App.newSession();
-      const lines = [
-        'Use this page as context and answer my question.',
-        title ? `Title: ${title}` : '',
-        url ? `URL: ${url}` : '',
-        selection ? `Selection:\n${selection}` : '',
-        '',
-      ].filter((line) => line !== '').join('\n');
-      ChatView.focusComposer(`${lines}\n`);
-    });
-    setStatus('Loading…', true);
-  }
-
   function dictationSuggestionsHtml(models = []) {
     if (!models.length) return '';
     return `<span class="dictation-suggest-label">Suggested:</span>${models.map((model, index) => `${index ? '<span class="dictation-suggest-sep">·</span>' : ''}<button class="link-btn" type="button" data-use-dictation-model="${U.attr(model)}">${esc(model)}</button>`).join('')}`;
@@ -3464,6 +3356,12 @@ Start writing, or ask the agent to draft it.
       </div>
     </div>`;
 
+    host.onkeydown = (event) => {
+      if (event.key === 'Enter' && event.target?.id === 'remote-port') {
+        event.preventDefault();
+        host.querySelector('[data-save-remote-port]')?.click();
+      }
+    };
     host.onclick = async (event) => {
       const go = event.target.closest('[data-settings-go]');
       if (go) {
@@ -3927,11 +3825,17 @@ Start writing, or ask the agent to draft it.
         return;
       }
       if (event.target.closest('[data-save-remote-port]')) {
+        const input = host.querySelector('#remote-port');
+        const typed = Number(input?.value);
+        if (!Number.isInteger(typed) || typed < 1024 || typed > 65535) {
+          UI.toast('Port must be a whole number between 1024 and 65535.', 'error');
+          input?.focus();
+          return;
+        }
         try {
-          const port = Math.max(1024, Math.min(65535, Number(host.querySelector('#remote-port').value) || 8787));
-          vstate.settings.remote = await API.remote.configure({ port });
+          vstate.settings.remote = await API.remote.configure({ port: typed });
           paintSettings(host);
-          UI.toast('Remote port saved.', 'success');
+          UI.toast(`Remote port set to ${typed}.`, 'success');
         } catch (error) { UI.toast(error.message, 'error'); }
         return;
       }
@@ -7076,7 +6980,6 @@ Start writing, or ask the agent to draft it.
     if (page === 'console') { mountConsole(host); return; }
     if (page === 'team') { mountTeam(host); return; }
     if (page === 'automations') { mountAutomations(host); return; }
-    if (page === 'browser') { mountBrowser(host); return; }
     host.innerHTML = `<div class="page-inner">${UI.emptyState({ iconName: 'alert-circle', title: 'Unknown page', description: 'This surface is not part of this build.' })}</div>`;
   }
 

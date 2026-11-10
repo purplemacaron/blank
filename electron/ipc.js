@@ -501,7 +501,16 @@ function registerIpc({ mcp, getWindow }) {
   }
 
   function remoteStatus() {
-    return { ...remote.status(), autoStart: Boolean(configModule.loadConfig().remote?.autoStart) };
+    const saved = configModule.loadConfig().remote || {};
+    const status = remote.status();
+    if (status.running) return { ...status, autoStart: Boolean(saved.autoStart) };
+    return {
+      ...status,
+      port: Number(saved.port) || status.port,
+      allowLan: Boolean(saved.allowLan),
+      allowApprovals: Boolean(saved.allowApprovals),
+      autoStart: Boolean(saved.autoStart),
+    };
   }
 
   function denyApprovalsFor(predicate) {
