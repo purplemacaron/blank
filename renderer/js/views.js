@@ -2974,6 +2974,10 @@ Start writing, or ask the agent to draft it.
                 <div class="setting-control"><input class="setting-inline-input" style="width:76px" id="agent-max-steps" type="number" min="1" max="64" value="${Number(agent.maxSteps) || 32}" /></div>
               </div>
               <div class="setting-row">
+                <div class="setting-copy"><div class="setting-label">Request timeout</div><div class="setting-desc">Minutes a model request may run before blank cancels it. Raise it for slow local models.</div></div>
+                <div class="setting-control"><input class="setting-inline-input" style="width:76px" id="agent-request-timeout" type="number" min="1" max="180" value="${Number(agent.requestTimeoutMin) || 10}" /> <span class="setting-value">minutes</span></div>
+              </div>
+              <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Reasoning effort</div><div class="setting-desc">Starting stage for new chats. Choices follow the default model's supported stages.</div></div>
                 <div class="setting-control">${defaultProfile && defaultProfile.levels.length > 1
                   ? `<select class="setting-inline-input" id="agent-reasoning">${defaultProfile.levels.map((value) => `<option value="${value}" ${defaultEffort === value ? 'selected' : ''}>${esc(U.REASONING_LEVELS[value]?.label || value)}</option>`).join('')}</select>`
@@ -3590,6 +3594,7 @@ Start writing, or ask the agent to draft it.
           const reasoningSelect = host.querySelector('#agent-reasoning');
           const updated = await API.config.update({ agent: {
             maxSteps: Math.max(1, Math.min(64, Number(host.querySelector('#agent-max-steps').value) || 32)),
+            requestTimeoutMin: Math.max(1, Math.min(180, Number(host.querySelector('#agent-request-timeout').value) || 10)),
             reasoningEffort: reasoningSelect ? reasoningSelect.value : (agent.reasoningEffort || 'auto'),
             compactAt: Math.max(0.5, Math.min(0.95, (Number(host.querySelector('#agent-compact-at').value) || 82) / 100)),
           } });

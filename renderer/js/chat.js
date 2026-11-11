@@ -1623,7 +1623,8 @@
 
   function handleComposerKeydown(event) {
     const input = event.target;
-    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    const keyAction = ComposerKey.action(event);
+    if (keyAction === 'send-now') {
       event.preventDefault();
       Chat.slashOpen = false;
       document.querySelector('.slash-menu')?.remove();
@@ -1651,13 +1652,13 @@
         document.querySelector('.slash-menu')?.remove();
         return;
       }
-      if ((event.key === 'Enter' || event.key === 'Tab') && matches.length) {
+      if ((keyAction === 'send-or-stop' || event.key === 'Tab') && matches.length) {
         event.preventDefault();
         executeCommand(matches[Chat.slashIndex]?.name || matches[0].name);
         return;
       }
     }
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (keyAction === 'send-or-stop') {
       event.preventDefault();
       sendOrStop();
     }

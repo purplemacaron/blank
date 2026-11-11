@@ -58,6 +58,7 @@ const DEFAULTS = {
   agent: {
     maxSteps: 32,
     temperature: null,
+    requestTimeoutMin: 10,
     autoCompact: true,
     compactAt: 0.82,
     autoMemory: true,

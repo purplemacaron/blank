@@ -115,6 +115,15 @@ function withTimeout(signal, ms = 600000) {
   }
 }
 
+function requestTimeoutMs(config) {
+  const raw = config?.agent?.requestTimeoutMin;
+  const n = Number(raw);
+  const minutes = raw === null || raw === undefined || raw === '' || !Number.isFinite(n)
+    ? 10
+    : Math.min(180, Math.max(1, n));
+  return minutes * 60000;
+}
+
 /* ------------------------------------------------------------------ OpenAI */
 
 async function* openaiStream({ resolved, apiKey, system, messages, tools, options, signal }) {
@@ -186,7 +195,7 @@ async function* openaiStream({ resolved, apiKey, system, messages, tools, option
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-    signal: withTimeout(signal),
+    signal: withTimeout(signal, options.timeoutMs),
   });
   if (!response.ok) await readError(response, Object.keys(body));
 
@@ -315,7 +324,7 @@ async function* anthropicStream({ resolved, apiKey, system, messages, tools, opt
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-    signal: withTimeout(signal),
+    signal: withTimeout(signal, options.timeoutMs),
   });
   if (!response.ok) await readError(response);
 
@@ -458,7 +467,7 @@ async function* geminiStream({ resolved, apiKey, system, messages, tools, option
       'x-goog-api-key': apiKey,
     },
     body: JSON.stringify(body),
-    signal: withTimeout(signal),
+    signal: withTimeout(signal, options.timeoutMs),
   });
   if (!response.ok) await readError(response);
 
@@ -559,6 +568,7 @@ async function* streamChat({ modelId, config, system, messages, tools, signal, o
     disableReasoning: Boolean(options.disableReasoning),
     reasoningEffort: effort,
     reasoningTransport: effort ? profile?.transport || '' : '',
+    timeoutMs: requestTimeoutMs(config),
   };
 
   const attempts = keys.length ? keys : [{ id: '', key: '', source: 'none' }];
@@ -864,4 +874,5 @@ module.exports = {
   openaiUserContent, anthropicUserContent, geminiUserParts,
   anthropicMessages, geminiContents, cleanGeminiSchema, isKeyRotationError,
   reasoningHintFrom, visionHintFrom, probeReasoningAt, probeModelReasoning,
+  requestTimeoutMs,
 };
