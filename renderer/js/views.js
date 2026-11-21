@@ -2971,7 +2971,7 @@ Start writing, or ask the agent to draft it.
             <div class="settings-group">
               <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Maximum steps</div><div class="setting-desc">Upper bound on model turns per request. Higher means deeper work.</div></div>
-                <div class="setting-control"><input class="setting-inline-input" style="width:76px" id="agent-max-steps" type="number" min="1" max="64" value="${Number(agent.maxSteps) || 32}" /></div>
+                <div class="setting-control"><input class="setting-inline-input" style="width:76px" id="agent-max-steps" type="number" min="1" max="256" value="${Number(agent.maxSteps) || 32}" /></div>
               </div>
               <div class="setting-row">
                 <div class="setting-copy"><div class="setting-label">Request timeout</div><div class="setting-desc">Minutes a model request may run before blank cancels it. Raise it for slow local models.</div></div>
@@ -3593,7 +3593,7 @@ Start writing, or ask the agent to draft it.
         try {
           const reasoningSelect = host.querySelector('#agent-reasoning');
           const updated = await API.config.update({ agent: {
-            maxSteps: Math.max(1, Math.min(64, Number(host.querySelector('#agent-max-steps').value) || 32)),
+            maxSteps: Math.max(1, Math.min(256, Number(host.querySelector('#agent-max-steps').value) || 32)),
             requestTimeoutMin: Math.max(1, Math.min(180, Number(host.querySelector('#agent-request-timeout').value) || 10)),
             reasoningEffort: reasoningSelect ? reasoningSelect.value : (agent.reasoningEffort || 'auto'),
             compactAt: Math.max(0.5, Math.min(0.95, (Number(host.querySelector('#agent-compact-at').value) || 82) / 100)),

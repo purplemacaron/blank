@@ -484,7 +484,7 @@ async function runAgent({
   };
 
   let autoCompactFailed = false;
-  const maxSteps = Math.max(1, Math.min(64, Number(config.agent?.maxSteps) || 32));
+  const maxSteps = Math.max(1, Math.min(256, Number(config.agent?.maxSteps) || 32));
 
   try {
     for (let step = 0; step < maxSteps; step += 1) {

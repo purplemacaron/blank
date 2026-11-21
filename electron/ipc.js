@@ -664,7 +664,7 @@ function registerIpc({ mcp, getWindow }) {
       const current = configModule.loadConfig().agent || {};
       const next = { ...current, ...incoming };
       next.isolateWrites = Boolean(next.isolateWrites);
-      next.maxSteps = Math.max(1, Math.min(64, Number(next.maxSteps) || 32));
+      next.maxSteps = Math.max(1, Math.min(256, Number(next.maxSteps) || 32));
       clean.agent = next;
     }
     if (clean.audit) {
@@ -743,7 +743,7 @@ function registerIpc({ mcp, getWindow }) {
     if (clean.agent) {
       clean.agent = {
         ...clean.agent,
-        maxSteps: Math.max(1, Math.min(64, Number(clean.agent.maxSteps) || 32)),
+        maxSteps: Math.max(1, Math.min(256, Number(clean.agent.maxSteps) || 32)),
         compactAt: Math.max(0.5, Math.min(0.95, Number(clean.agent.compactAt) || 0.82)),
         reasoningEffort: reasoning.isEffort(clean.agent.reasoningEffort)
           ? clean.agent.reasoningEffort
