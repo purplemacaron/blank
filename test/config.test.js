@@ -23,6 +23,17 @@ function blankConfig() {
   return { providers: {} };
 }
 
+test('public proxy settings migrate manual mode and hide proxy credentials', () => {
+  const config = structuredClone(DEFAULTS);
+  config.providers = { custom_demo: { proxy: { mode: 'manual', url: 'socks5://alice:secret@127.0.0.1:1080' } } };
+  const catalog = { allProviders: () => [{ id: 'custom_demo', kind: 'custom', keyEnv: '' }] };
+  const result = publicConfig(config, catalog);
+  assert.equal(result.providers.custom_demo.proxyMode, 'force');
+  assert.equal(result.providers.custom_demo.proxyType, 'socks5');
+  assert.equal(result.providers.custom_demo.proxyPreview, 'socks5://127.0.0.1:1080');
+  assert.equal(JSON.stringify(result).includes('alice:secret'), false);
+});
+
 test('legacy apiKey migrates into a key entry', () => {
   const config = { providers: { anthropic: { apiKey: 'sk-ant-legacy' } } };
   const changed = normalizeProviderKeys(config);
