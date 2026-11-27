@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const { appPaths, ensureHome, readJSON, writeJSON, uid } = require('./paths');
+const { maskProxyUrl } = require('./provider-proxy');
 
 const DEFAULTS = {
   version: 1,
@@ -449,6 +450,10 @@ function publicConfig(config, catalog) {
       activeKeyId: active?.id || '',
       keyCount: candidates.length,
       autoRotate: stored.autoRotate !== false,
+      proxyMode: stored.proxy?.mode === 'manual' ? 'force'
+        : stored.proxy?.mode || (stored.proxy?.enabled === true ? 'force' : 'direct'),
+      proxyType: stored.proxy?.type === 'socks5' || /^socks5h?:/i.test(stored.proxy?.url || '') ? 'socks5' : 'http',
+      proxyPreview: stored.proxy?.url ? maskProxyUrl(stored.proxy.url) : '',
       keys: candidates.map((key) => ({
         id: key.id,
         label: key.label,
