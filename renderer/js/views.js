@@ -161,6 +161,27 @@ Start writing, or ask the agent to draft it.
   function alive(host, page) { return vstate.host === host && vstate.page === page && host.isConnected !== false; }
   function esc(value) { return U.esc(value); }
 
+  function setProxyUrlVisible(body, inputId, visible) {
+    const input = body.querySelector(`#${inputId}`);
+    const button = body.querySelector(`[data-proxy-url-toggle="${inputId}"]`);
+    if (!input || !button) return;
+    input.type = visible ? 'text' : 'password';
+    button.setAttribute('aria-pressed', String(visible));
+    button.setAttribute('aria-label', visible ? 'Hide proxy URL' : 'Show proxy URL');
+    button.title = visible ? 'Hide proxy URL' : 'Show proxy URL';
+    button.innerHTML = icon(visible ? 'eye-off' : 'eye', 12);
+  }
+
+  function bindProxyUrlToggle(body) {
+    body.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-proxy-url-toggle]');
+      if (!button || !body.contains(button)) return;
+      const inputId = button.dataset.proxyUrlToggle;
+      const input = body.querySelector(`#${inputId}`);
+      if (input) setProxyUrlVisible(body, inputId, input.type === 'password');
+    });
+  }
+
   function pageLoading(title, description) {
     return `<div class="page-inner">
       <header class="page-head"><div class="page-head-copy"><div class="page-title-row"><h1>${esc(title)}</h1></div><p>${esc(description || '')}</p></div></header>
@@ -419,8 +440,9 @@ Start writing, or ask the agent to draft it.
               <option value="http" ${(entry.proxyType || 'http') === 'http' ? 'selected' : ''}>HTTP / HTTPS</option>
               <option value="socks5" ${entry.proxyType === 'socks5' ? 'selected' : ''}>SOCKS5</option>
             </select>
-            <input class="field-input" id="provider-proxy-url" type="text" autocomplete="off" spellcheck="false"
+            <input class="field-input" id="provider-proxy-url" type="password" aria-label="Proxy URL" autocomplete="off" spellcheck="false"
               placeholder="${U.attr(entry.proxyPreview ? `Saved: ${entry.proxyPreview} · enter a new URL to replace` : 'http://host:port or socks5://host:port')}" />
+            <button class="btn btn-secondary btn-sm proxy-url-toggle" type="button" data-proxy-url-toggle="provider-proxy-url" aria-label="Show proxy URL" aria-pressed="false" title="Show proxy URL">${icon('eye', 12)}</button>
           </div>
           <div class="setting-note">Examples: http://127.0.0.1:8080 · socks5://127.0.0.1:1080. Credentials may be included in the URL and are kept locally.</div>
         </div>
@@ -448,6 +470,8 @@ Start writing, or ask the agent to draft it.
       size: 'large',
       body,
     });
+
+    bindProxyUrlToggle(body);
 
     let discovering = false;
 
@@ -678,6 +702,7 @@ Start writing, or ask the agent to draft it.
             const input = body.querySelector('#provider-proxy-url');
             input.value = '';
             input.placeholder = `Saved: ${entry.proxyPreview} · enter a new URL to replace`;
+            setProxyUrlVisible(body, 'provider-proxy-url', false);
           }
           UI.toast(mode === 'force'
             ? `${type === 'socks5' ? 'SOCKS5' : 'HTTP'} proxy forced for ${provider.name}.`
@@ -826,7 +851,8 @@ Start writing, or ask the agent to draft it.
         <div id="custom-proxy-fields" hidden>
           <div class="key-row" style="margin-bottom:7px">
             <select class="field-input" id="custom-proxy-type"><option value="http">HTTP / HTTPS</option><option value="socks5">SOCKS5</option></select>
-            <input class="field-input" id="custom-proxy-url" type="text" autocomplete="off" spellcheck="false" placeholder="http://host:port or socks5://host:port" />
+            <input class="field-input" id="custom-proxy-url" type="password" aria-label="Proxy URL" autocomplete="off" spellcheck="false" placeholder="http://host:port or socks5://host:port" />
+            <button class="btn btn-secondary btn-sm proxy-url-toggle" type="button" data-proxy-url-toggle="custom-proxy-url" aria-label="Show proxy URL" aria-pressed="false" title="Show proxy URL">${icon('eye', 12)}</button>
           </div>
         </div>
         <div class="setting-note">The selected policy applies to both Fetch models and Test connection. Forced proxy does not fall back to direct.</div>
@@ -843,6 +869,7 @@ Start writing, or ask the agent to draft it.
     footer.style.cssText = 'display:flex;justify-content:flex-end;gap:6px;width:100%';
     footer.innerHTML = `<button class="btn btn-ghost btn-sm" data-cancel>Cancel</button><button class="btn btn-primary btn-sm" data-create>${icon('plus', 12)} Add provider</button>`;
     const modal = UI.modal({ title: 'Add a provider', description: 'Connect a built-in provider in one click or point blank at any compatible endpoint.', body, footer, size: 'large' });
+    bindProxyUrlToggle(body);
 
     const nameInput = body.querySelector('#custom-name');
     const protocolInput = body.querySelector('#custom-protocol');
