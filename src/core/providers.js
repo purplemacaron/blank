@@ -3,6 +3,7 @@
 const { findModel, getProvider } = require('./catalog');
 const { resolveKey, keyCandidates, noteKeyUsage } = require('./config');
 const reasoning = require('./reasoning');
+const { fetchForProvider } = require('./provider-proxy');
 
 const ANTHROPIC_VERSION = '2023-06-01';
 
@@ -126,7 +127,7 @@ function requestTimeoutMs(config) {
 
 /* ------------------------------------------------------------------ OpenAI */
 
-async function* openaiStream({ resolved, apiKey, system, messages, tools, options, signal }) {
+async function* openaiStream({ resolved, apiKey, system, messages, tools, options, signal, fetchImpl = globalThis.fetch }) {
   const base = trimBase(resolved.baseUrl);
   const body = {
     model: resolved.id,
@@ -191,7 +192,7 @@ async function* openaiStream({ resolved, apiKey, system, messages, tools, option
     headers['http-referer'] = 'https://blank.dev';
     headers['x-title'] = 'blank';
   }
-  const response = await fetch(`${base}/chat/completions`, {
+  const response = await fetchImpl(`${base}/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
@@ -276,7 +277,7 @@ function anthropicMessages(messages) {
   return out;
 }
 
-async function* anthropicStream({ resolved, apiKey, system, messages, tools, options, signal }) {
+async function* anthropicStream({ resolved, apiKey, system, messages, tools, options, signal, fetchImpl = globalThis.fetch }) {
   const base = trimBase(resolved.baseUrl);
   const body = {
     model: resolved.id,
@@ -320,7 +321,7 @@ async function* anthropicStream({ resolved, apiKey, system, messages, tools, opt
     'anthropic-version': ANTHROPIC_VERSION,
     'x-api-key': apiKey,
   };
-  const response = await fetch(`${base}/messages`, {
+  const response = await fetchImpl(`${base}/messages`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
@@ -432,7 +433,7 @@ function geminiContents(messages) {
   return out;
 }
 
-async function* geminiStream({ resolved, apiKey, system, messages, tools, options, signal }) {
+async function* geminiStream({ resolved, apiKey, system, messages, tools, options, signal, fetchImpl = globalThis.fetch }) {
   const base = trimBase(resolved.baseUrl);
   const body = {
     contents: geminiContents(messages),
@@ -460,7 +461,7 @@ async function* geminiStream({ resolved, apiKey, system, messages, tools, option
     }];
   }
   const url = `${base}/models/${encodeURIComponent(resolved.id)}:streamGenerateContent?alt=sse`;
-  const response = await fetch(url, {
+  const response = await fetchImpl(url, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -534,18 +535,19 @@ function isKeyRotationError(err) {
   return /invalid.*(api )?key|incorrect api key|unauthorized|quota|insufficient|rate.?limit|too many requests/i.test(String(err?.message || ''));
 }
 
-function protocolStream({ resolved, apiKey, system, messages, tools, agentOptions, signal }) {
+function protocolStream({ resolved, apiKey, system, messages, tools, agentOptions, signal, fetchImpl }) {
   if (resolved.protocol === 'anthropic') {
-    return anthropicStream({ resolved, apiKey, system, messages, tools, options: agentOptions, signal });
+    return anthropicStream({ resolved, apiKey, system, messages, tools, options: agentOptions, signal, fetchImpl });
   }
   if (resolved.protocol === 'gemini') {
-    return geminiStream({ resolved, apiKey, system, messages, tools, options: agentOptions, signal });
+    return geminiStream({ resolved, apiKey, system, messages, tools, options: agentOptions, signal, fetchImpl });
   }
-  return openaiStream({ resolved, apiKey, system, messages, tools, options: agentOptions, signal });
+  return openaiStream({ resolved, apiKey, system, messages, tools, options: agentOptions, signal, fetchImpl });
 }
 
 async function* streamChat({ modelId, config, system, messages, tools, signal, options = {} }) {
   const { resolved, provider, keys } = resolveRequest(modelId, config);
+  const fetchImpl = fetchForProvider(config, resolved.providerId);
   const fullId = `${resolved.providerId}/${resolved.id}`;
   const cachedHint = config.reasoningHints?.[fullId];
   const hint = cachedHint && (cachedHint.source === 'probe' || !resolved.reasoningHint)
@@ -579,7 +581,7 @@ async function* streamChat({ modelId, config, system, messages, tools, signal, o
     let started = false;
     try {
       for await (const event of protocolStream({
-        resolved, apiKey: candidate.key, system, messages, tools, agentOptions, signal,
+        resolved, apiKey: candidate.key, system, messages, tools, agentOptions, signal, fetchImpl,
       })) {
         started = true;
         yield event;
@@ -704,7 +706,7 @@ function visionHintFrom(entry = {}) {
   return undefined;
 }
 
-async function listModelsAt({ baseUrl: rawBaseUrl, apiKey, protocol = 'openai' }) {
+async function listModelsAt({ baseUrl: rawBaseUrl, apiKey, protocol = 'openai', fetchImpl = globalThis.fetch }) {
   const baseUrl = trimBase(rawBaseUrl);
   if (!/^https?:\/\//i.test(baseUrl)) throw new Error('A valid http(s) base URL is required.');
   const headers = { accept: 'application/json' };
@@ -717,7 +719,7 @@ async function listModelsAt({ baseUrl: rawBaseUrl, apiKey, protocol = 'openai' }
     headers.authorization = `Bearer ${apiKey}`;
   }
   const url = protocol === 'gemini' ? `${baseUrl}/models?pageSize=200` : `${baseUrl}/models`;
-  const response = await fetch(url, { headers, signal: AbortSignal.timeout(20000) });
+  const response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(20000) });
   if (!response.ok) await readError(response);
   const json = await response.json();
   const raw = Array.isArray(json.data) ? json.data : Array.isArray(json.models) ? json.models : [];
@@ -744,7 +746,7 @@ async function listModelsAt({ baseUrl: rawBaseUrl, apiKey, protocol = 'openai' }
  * is a tiny chat completion; a rejected parameter is the signal. Metadata wins
  * when an endpoint publishes it, and the answer is cached by the caller.
  */
-async function probeReasoningAt({ baseUrl: rawBaseUrl, apiKey, protocol = 'openai', modelId }) {
+async function probeReasoningAt({ baseUrl: rawBaseUrl, apiKey, protocol = 'openai', modelId, fetchImpl = globalThis.fetch }) {
   const baseUrl = trimBase(rawBaseUrl);
   if (protocol !== 'openai' || !modelId || !/^https?:\/\//i.test(baseUrl)) return null;
   const headers = { 'content-type': 'application/json', accept: 'application/json' };
@@ -763,7 +765,7 @@ async function probeReasoningAt({ baseUrl: rawBaseUrl, apiKey, protocol = 'opena
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 12000);
     try {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
+      const response = await fetchImpl(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -830,12 +832,12 @@ async function probeModelReasoning({ providerId, modelId, config }) {
   const baseUrl = config.providers?.[providerId]?.baseUrl || provider.baseUrl;
   const apiKey = resolveKey(config, providerId, provider);
   if (provider.keyEnv && !apiKey) throw new Error('Add an API key first.');
-  return probeReasoningAt({ baseUrl, apiKey, protocol: provider.protocol, modelId });
+  return probeReasoningAt({ baseUrl, apiKey, protocol: provider.protocol, modelId, fetchImpl: fetchForProvider(config, providerId) });
 }
 
-async function ollamaContextAt(root, modelId) {
+async function ollamaContextAt(root, modelId, fetchImpl = globalThis.fetch) {
   try {
-    const response = await fetch(`${root}/api/show`, {
+    const response = await fetchImpl(`${root}/api/show`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify({ model: modelId }),
@@ -850,10 +852,10 @@ async function ollamaContextAt(root, modelId) {
   }
 }
 
-async function addOllamaContexts(baseUrl, models) {
+async function addOllamaContexts(baseUrl, models, fetchImpl = globalThis.fetch) {
   const root = String(baseUrl || '').replace(/\/v1\/?$/i, '').replace(/\/+$/, '');
   await Promise.all(models.map(async (model) => {
-    const context = await ollamaContextAt(root, model.id);
+    const context = await ollamaContextAt(root, model.id, fetchImpl);
     if (context > 0) model.context = context;
   }));
 }
@@ -864,8 +866,9 @@ async function listModels({ providerId, config, apiKey: overrideKey, keyId }) {
   const baseUrl = config.providers?.[providerId]?.baseUrl || provider.baseUrl;
   const apiKey = overrideKey || resolveKey(config, providerId, provider, keyId);
   if (provider.keyEnv && !apiKey) throw new Error('Add an API key first.');
-  const models = await listModelsAt({ baseUrl, apiKey, protocol: provider.protocol });
-  if (providerId === 'ollama') await addOllamaContexts(baseUrl, models);
+  const fetchImpl = fetchForProvider(config, providerId);
+  const models = await listModelsAt({ baseUrl, apiKey, protocol: provider.protocol, fetchImpl });
+  if (providerId === 'ollama') await addOllamaContexts(baseUrl, models, fetchImpl);
   return models;
 }
 

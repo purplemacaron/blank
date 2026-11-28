@@ -44,6 +44,7 @@ Streaming responses, tool calls with per-tool approvals, a live plan rail, check
 - Built in: Anthropic, OpenAI, Google, OpenRouter, xAI, DeepSeek, Mistral, Groq, Together, Cerebras, Ollama and LM Studio.
 - Any OpenAI-, Anthropic-, or Gemini-compatible endpoint can be added with a base URL, protocol, and model list. One-click presets cover LiteLLM, vLLM, LocalAI, Open WebUI, and Jan.
 - Several API keys per provider, with labels, an active key, automatic rotation on 401/402/403/429, masked previews, and environment fallbacks (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …).
+- Per-provider proxy policy for model calls, discovery, and connection tests: force an HTTP/HTTPS or SOCKS5 proxy with no direct fallback, force a direct connection, or follow system settings. Desktop system mode uses the OS proxy and PAC configuration; CLI system mode uses proxy environment variables. Existing providers remain direct until their policy is changed. Proxy credentials stay local and are hidden from settings previews.
 - Probe an endpoint to fetch its model list, and choose a fallback model used when the primary errors or rate-limits.
 
 **Tools**

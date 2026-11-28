@@ -750,6 +750,26 @@
     'Add a key to start using this provider.': '이 제공자를 사용하려면 키를 추가하세요.',
     'Ready to route requests.': '요청을 보낼 준비가 되었습니다.',
     'API keys': 'API 키',
+    'Provider proxy': '제공자 프록시',
+    'Proxy policy': '프록시 정책',
+    'Proxy type': '프록시 유형',
+    'policy · only this provider': '정책 · 이 제공자에만 적용',
+    'used for model discovery and connection tests': '모델 검색과 연결 테스트에 사용',
+    'Force proxy': '프록시 강제 적용',
+    'Force direct connection': '프록시 강제 미적용',
+    'Follow system settings': '시스템 설정에 따라가기',
+    'Save proxy policy': '프록시 정책 저장',
+    'Forced proxy never falls back to direct. Forced direct ignores system proxy settings. In the desktop app, system mode follows the OS proxy and PAC configuration.': '프록시 강제 적용은 직접 연결로 우회하지 않습니다. 직접 연결 모드는 시스템 프록시를 무시합니다. 데스크톱 앱의 시스템 모드는 운영체제의 프록시와 PAC 설정을 따릅니다.',
+    'The selected policy applies to both Fetch models and Test connection. Forced proxy does not fall back to direct.': '선택한 정책은 모델 가져오기와 연결 테스트에 모두 적용됩니다. 프록시 강제 적용 시 직접 연결로 우회하지 않습니다.',
+    'Uses the endpoint and proxy settings above.': '위의 엔드포인트와 프록시 설정을 사용합니다.',
+    'Testing connection with the selected proxy policy…': '선택한 프록시 정책으로 연결을 테스트하는 중…',
+    'Save proxy': '프록시 저장',
+    'Saved: ': '저장됨: ',
+    ' · enter a new URL to replace': ' · 변경하려면 새 URL 입력',
+    'http://host:port or socks5://host:port': 'http://호스트:포트 또는 socks5://호스트:포트',
+    'Examples: http://127.0.0.1:8080 · socks5://127.0.0.1:1080. Credentials may be included in the URL and are kept locally.': '예: http://127.0.0.1:8080 · socks5://127.0.0.1:1080. URL에 인증 정보를 포함할 수 있으며 로컬에만 저장됩니다.',
+    'Enter a proxy URL first.': '먼저 프록시 URL을 입력하세요.',
+
     'Stored only on this machine.': '이 기기에만 저장됩니다.',
     'Rotate on failure': '실패 시 순환',
     'Retry with the next key on 401, 402, 403 or 429.': '401, 402, 403, 429 응답 시 다음 키로 재시도합니다.',
@@ -1953,6 +1973,9 @@
   };
 
   const PATTERNS = [
+    [/^(HTTP|SOCKS5) proxy forced for (.+)\.$/, '$2에 $1 프록시를 강제 적용합니다.'],
+    [/^Direct connection forced for (.+)\.$/, '$1에 직접 연결을 강제 적용합니다.'],
+    [/^(.+) will follow system proxy settings\.$/, '$1에 시스템 프록시 설정을 적용합니다.'],
     [/^blank (.+) is ready to install\. Open Settings → Updates\.$/, 'blank $1 설치 준비 완료. 설정 → 업데이트에서 설치하세요.'],
     [/^(\d+) providers$/, '$1개 제공자'],
     [/^(\d+) models$/, '$1개 모델'],
@@ -2172,6 +2195,7 @@
   };
 
   const ATTR_PATTERNS = [
+    [/^Saved: (.+) · enter a new URL to replace$/, '저장됨: $1 · 변경하려면 새 URL을 입력하세요'],
     [/^Session tokens · (\d+) of (.+) context$/, '세션 토큰 · $2 컨텍스트 중 $1'],
     [/^(\d+) messages? · Agent$/, '메시지 $1개 · 에이전트'],
     [/^(\d{4}-\d{2}-\d{2}) · (\d+) messages?$/, '$1 · 메시지 $2개'],

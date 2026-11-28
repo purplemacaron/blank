@@ -406,6 +406,29 @@ Start writing, or ask the agent to draft it.
           <button class="btn btn-secondary btn-sm" type="button" data-save-base>Save</button>
         </div>
       </div>
+      <div class="field" style="margin-top:14px">
+        <span class="field-label">Provider proxy <small>policy · only this provider</small></span>
+        <select class="field-input" id="provider-proxy-mode" aria-label="Proxy policy" style="margin-bottom:7px">
+          <option value="force" ${entry.proxyMode === 'force' ? 'selected' : ''}>Force proxy</option>
+          <option value="direct" ${(entry.proxyMode || 'direct') === 'direct' ? 'selected' : ''}>Force direct connection</option>
+          <option value="system" ${entry.proxyMode === 'system' ? 'selected' : ''}>Follow system settings</option>
+        </select>
+        <div id="provider-proxy-custom" ${entry.proxyMode === 'force' ? '' : 'hidden'}>
+          <div class="key-row" style="margin-bottom:7px">
+            <select class="field-input" id="provider-proxy-type" aria-label="Proxy type">
+              <option value="http" ${(entry.proxyType || 'http') === 'http' ? 'selected' : ''}>HTTP / HTTPS</option>
+              <option value="socks5" ${entry.proxyType === 'socks5' ? 'selected' : ''}>SOCKS5</option>
+            </select>
+            <input class="field-input" id="provider-proxy-url" type="text" autocomplete="off" spellcheck="false"
+              placeholder="${U.attr(entry.proxyPreview ? `Saved: ${entry.proxyPreview} · enter a new URL to replace` : 'http://host:port or socks5://host:port')}" />
+          </div>
+          <div class="setting-note">Examples: http://127.0.0.1:8080 · socks5://127.0.0.1:1080. Credentials may be included in the URL and are kept locally.</div>
+        </div>
+        <div class="setting-note" style="margin-top:6px">Forced proxy never falls back to direct. Forced direct ignores system proxy settings. In the desktop app, system mode follows the OS proxy and PAC configuration.</div>
+        <div class="provider-actions" style="margin-top:7px">
+          <button class="btn btn-secondary btn-sm" type="button" data-save-proxy>Save proxy policy</button>
+        </div>
+      </div>
       <div class="provider-actions" style="margin-top:10px">
         <button class="btn btn-secondary btn-sm" type="button" data-test-provider>${icon('zap', 12)} Test connection</button>
         <button class="btn btn-secondary btn-sm" type="button" data-discover>${icon('refresh', 12)} Discover models</button>
@@ -465,7 +488,14 @@ Start writing, or ask the agent to draft it.
       discovering = true;
       if (options.loading) paintModels('loading');
       try {
-        const result = await API.models.discover(provider.id);
+        const result = await API.models.discover(provider.id, {
+          proxy: (() => {
+            const mode = body.querySelector('#provider-proxy-mode')?.value || 'system';
+            const url = body.querySelector('#provider-proxy-url')?.value.trim() || '';
+            if (mode === 'force' && !url && mode === (entry.proxyMode || 'direct')) return undefined;
+            return { mode, type: body.querySelector('#provider-proxy-type')?.value || 'http', url };
+          })(),
+        });
         if (!result.ok) throw new Error(result.error || 'No models returned.');
         const fresh = await API.models.list();
         vstate.models.providers = fresh.providers || [];
@@ -540,6 +570,13 @@ Start writing, or ask the agent to draft it.
     }
 
     const testBox = body.querySelector('#provider-test');
+
+    body.addEventListener('change', (event) => {
+      if (event.target.id === 'provider-proxy-mode') {
+        const custom = body.querySelector('#provider-proxy-custom');
+        if (custom) custom.hidden = event.target.value !== 'force';
+      }
+    });
 
     body.addEventListener('click', async (event) => {
       if (event.target.closest('[data-add-key]')) {
@@ -626,6 +663,32 @@ Start writing, or ask the agent to draft it.
         return;
       }
 
+      if (event.target.closest('[data-save-proxy]')) {
+        const mode = body.querySelector('#provider-proxy-mode')?.value || 'system';
+        const url = body.querySelector('#provider-proxy-url')?.value.trim() || '';
+        const type = body.querySelector('#provider-proxy-type')?.value || 'http';
+        if (mode === 'force' && !url && entry.proxyMode !== 'force') { UI.toast('Enter a proxy URL first.', 'warn'); body.querySelector('#provider-proxy-url')?.focus(); return; }
+        const button = event.target.closest('[data-save-proxy]');
+        button.disabled = true;
+        try {
+          const config = await API.models.setProxy({ providerId: provider.id, mode, type, url });
+          applyConfig(config);
+          entry = (config.providers || {})[provider.id] || {};
+          if (mode === 'force') {
+            const input = body.querySelector('#provider-proxy-url');
+            input.value = '';
+            input.placeholder = `Saved: ${entry.proxyPreview} · enter a new URL to replace`;
+          }
+          UI.toast(mode === 'force'
+            ? `${type === 'socks5' ? 'SOCKS5' : 'HTTP'} proxy forced for ${provider.name}.`
+            : mode === 'direct'
+              ? `Direct connection forced for ${provider.name}.`
+              : `${provider.name} will follow system proxy settings.`, 'success');
+        } catch (error) { UI.toast(error.message, 'error'); }
+        finally { button.disabled = false; }
+        return;
+      }
+
       if (event.target.closest('[data-test-provider]')) {
         const button = event.target.closest('[data-test-provider]');
         button.disabled = true;
@@ -639,6 +702,12 @@ Start writing, or ask the agent to draft it.
             providerId: provider.id,
             apiKey: typed || undefined,
             baseUrl: body.querySelector('#provider-base')?.value.trim() || undefined,
+            proxy: (() => {
+              const mode = body.querySelector('#provider-proxy-mode')?.value || 'system';
+              const url = body.querySelector('#provider-proxy-url')?.value.trim() || '';
+              if (mode === 'force' && !url && mode === (entry.proxyMode || 'direct')) return undefined;
+              return { mode, type: body.querySelector('#provider-proxy-type')?.value || 'http', url };
+            })(),
           });
           if (result.ok) {
             testBox.className = 'test-result ok';
@@ -747,11 +816,28 @@ Start writing, or ask the agent to draft it.
         ${UI.field({ label: 'Key label', hint: 'optional', control: '<input class="field-input" id="custom-key-label" type="text" placeholder="Personal" maxlength="40" />' })}
       </div>
       ${UI.field({ label: 'Models', hint: 'one per line or comma separated', control: `<div class="model-fetch-row"><textarea class="field-textarea" id="custom-models" rows="3" placeholder="model-a\nmodel-b"></textarea></div><span class="setting-note" id="fetch-note"></span>` })}
-      <div class="provider-actions" style="margin-top:2px">
-        <button class="btn btn-secondary btn-sm" type="button" id="fetch-models">${icon('refresh', 12)} Fetch models</button>
-        <span class="setting-note" style="margin:0">Queries <code>/models</code> on the endpoint using the values above.</span>
+      <div class="field" style="margin-top:14px">
+        <span class="field-label">Provider proxy <small>used for model discovery and connection tests</small></span>
+        <select class="field-input" id="custom-proxy-mode" style="margin-bottom:7px">
+          <option value="force">Force proxy</option>
+          <option value="direct" selected>Force direct connection</option>
+          <option value="system">Follow system settings</option>
+        </select>
+        <div id="custom-proxy-fields" hidden>
+          <div class="key-row" style="margin-bottom:7px">
+            <select class="field-input" id="custom-proxy-type"><option value="http">HTTP / HTTPS</option><option value="socks5">SOCKS5</option></select>
+            <input class="field-input" id="custom-proxy-url" type="text" autocomplete="off" spellcheck="false" placeholder="http://host:port or socks5://host:port" />
+          </div>
+        </div>
+        <div class="setting-note">The selected policy applies to both Fetch models and Test connection. Forced proxy does not fall back to direct.</div>
       </div>
-      <p class="custom-note">Any OpenAI, Anthropic or Gemini compatible API works. Add several keys per provider later for rotation. Keys stay local, and requests go directly from this machine to your endpoint.</p>
+      <div class="provider-actions" style="margin-top:8px">
+        <button class="btn btn-secondary btn-sm" type="button" id="test-custom-provider">${icon('zap', 12)} Test connection</button>
+        <button class="btn btn-secondary btn-sm" type="button" id="fetch-models">${icon('refresh', 12)} Fetch models</button>
+        <span class="setting-note" style="margin:0">Uses the endpoint and proxy settings above.</span>
+      </div>
+      <div class="test-result" id="custom-test-note"></div>
+      <p class="custom-note">Any OpenAI, Anthropic or Gemini compatible API works. Add several keys per provider later for rotation. Keys stay local.</p>
     `;
     const footer = document.createElement('div');
     footer.style.cssText = 'display:flex;justify-content:flex-end;gap:6px;width:100%';
@@ -765,6 +851,15 @@ Start writing, or ask the agent to draft it.
     const keyLabelInput = body.querySelector('#custom-key-label');
     const modelsInput = body.querySelector('#custom-models');
     const fetchNote = body.querySelector('#fetch-note');
+    const customProxyMode = body.querySelector('#custom-proxy-mode');
+    const customProxyFields = body.querySelector('#custom-proxy-fields');
+    const customTestNote = body.querySelector('#custom-test-note');
+    const proxyOptions = () => ({
+      mode: customProxyMode.value,
+      type: body.querySelector('#custom-proxy-type').value,
+      url: body.querySelector('#custom-proxy-url').value.trim(),
+    });
+    customProxyMode.addEventListener('change', () => { customProxyFields.hidden = customProxyMode.value !== 'force'; });
 
     body.addEventListener('click', (event) => {
       const quick = event.target.closest('[data-quick-provider]');
@@ -788,6 +883,9 @@ Start writing, or ask the agent to draft it.
         if (!config.name) nameInput.focus();
         return;
       }
+      if (event.target.closest('#test-custom-provider')) {
+        testCustomProvider();
+      }
       if (event.target.closest('#fetch-models')) {
         probeModels();
       }
@@ -804,6 +902,7 @@ Start writing, or ask the agent to draft it.
           protocol: protocolInput.value,
           baseUrl,
           apiKey: keyInput.value.trim(),
+          proxy: proxyOptions(),
         });
         if (!result.ok) throw new Error(result.error || 'Could not list models.');
         const ids = (result.models || []).map((model) => model.id).filter(Boolean);
@@ -814,6 +913,33 @@ Start writing, or ask the agent to draft it.
         fetchNote.textContent = '';
         UI.toast(error.message, 'error');
       } finally { button.disabled = false; }
+    }
+
+    async function testCustomProvider() {
+      const baseUrl = baseInput.value.trim();
+      if (!/^https?:\/\//i.test(baseUrl)) { UI.toast('Enter a valid http(s) base URL first.', 'warn'); baseInput.focus(); return; }
+      const button = body.querySelector('#test-custom-provider');
+      button.disabled = true;
+      button.innerHTML = `<span class="spinner" style="width:11px;height:11px"></span> Testing…`;
+      customTestNote.className = 'test-result';
+      customTestNote.textContent = 'Testing connection with the selected proxy policy…';
+      try {
+        const result = await API.models.probe({
+          protocol: protocolInput.value,
+          baseUrl,
+          apiKey: keyInput.value.trim(),
+          proxy: proxyOptions(),
+        });
+        if (!result.ok) throw new Error(result.error || 'Connection test failed.');
+        customTestNote.className = 'test-result ok';
+        customTestNote.textContent = `Connected · ${result.models.length} models available.`;
+      } catch (error) {
+        customTestNote.className = 'test-result bad';
+        customTestNote.textContent = error.message;
+      } finally {
+        button.disabled = false;
+        button.innerHTML = `${icon('zap', 12)} Test connection`;
+      }
     }
 
     footer.querySelector('[data-cancel]').addEventListener('click', () => modal.close());
@@ -828,7 +954,7 @@ Start writing, or ask the agent to draft it.
       try {
         let models = modelsInput.value;
         if (!models.trim() && apiKey) {
-          const probe = await API.models.probe({ protocol: protocolInput.value, baseUrl, apiKey }).catch(() => null);
+          const probe = await API.models.probe({ protocol: protocolInput.value, baseUrl, apiKey, proxy: proxyOptions() }).catch(() => null);
           if (probe?.ok && probe.models?.length) {
             models = probe.models.slice(0, 40).map((model) => model.id).join('\n');
           }
@@ -840,6 +966,7 @@ Start writing, or ask the agent to draft it.
           models,
           apiKey,
           keyLabel: keyLabelInput.value.trim() || 'Default',
+          proxy: proxyOptions(),
         });
         modal.close();
         UI.toast(`${name} is ready.`, 'success');

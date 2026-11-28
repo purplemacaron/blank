@@ -1158,6 +1158,20 @@ function registerIpc({ mcp, getWindow }) {
     return configWithRuntime(config);
   });
 
+  require('electron').ipcMain.handle('providers:setProxy', async (_event, input = {}) => {
+    const config = configModule.loadConfig();
+    const provider = catalog.getProvider(input.providerId, config);
+    if (!provider) throw new Error('Unknown provider.');
+    const { validateProviderProxy } = require('../src/core/provider-proxy');
+    const current = config.providers?.[input.providerId]?.proxy;
+    const savedUrl = ['force', 'manual'].includes(current?.mode) || current?.enabled === true ? current.url : '';
+    const proxy = validateProviderProxy({ mode: input.mode, type: input.type, url: input.url || savedUrl });
+    configModule.setProvider(config, input.providerId, { proxy });
+    configModule.saveConfig(config);
+    broadcast({ type: 'config:updated' });
+    return configWithRuntime(config);
+  });
+
   require('electron').ipcMain.handle('providers:test', async (_event, input = {}) => {
     const config = configModule.loadConfig();
     const provider = catalog.getProvider(input.providerId, config);
@@ -1169,10 +1183,14 @@ function registerIpc({ mcp, getWindow }) {
       const apiKey = input.apiKey !== undefined
         ? String(input.apiKey).trim()
         : undefined;
+      const proxyConfig = input.proxy !== undefined
+        ? { ...config, providers: { ...(config.providers || {}), [input.providerId]: { ...(config.providers?.[input.providerId] || {}), proxy: require('../src/core/provider-proxy').validateProviderProxy(input.proxy) } } }
+        : config;
       const models = await providers.listModelsAt({
         baseUrl,
         apiKey: apiKey || configModule.resolveKey(config, input.providerId, provider, input.keyId),
         protocol: provider.protocol,
+        fetchImpl: require('../src/core/provider-proxy').fetchForProvider(proxyConfig, input.providerId),
       });
       return { ok: true, count: models.length, models: models.slice(0, 40).map((model) => ({ id: model.id, name: model.name })) };
     } catch (err) {
@@ -1183,10 +1201,15 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('providers:probe', async (_event, input = {}) => {
     try {
       const protocol = ['openai', 'anthropic', 'gemini'].includes(input.protocol) ? input.protocol : 'openai';
+      const proxy = require('../src/core/provider-proxy');
+      const proxyConfig = input.proxy !== undefined
+        ? { providers: { __probe__: { proxy: proxy.validateProviderProxy(input.proxy) } } }
+        : { providers: { __probe__: { proxy: proxy.validateProviderProxy(null) } } };
       const models = await providers.listModelsAt({
         baseUrl: input.baseUrl,
         apiKey: String(input.apiKey || '').trim(),
         protocol,
+        fetchImpl: proxy.fetchForProvider(proxyConfig, '__probe__'),
       });
       return { ok: true, models: models.slice(0, 100) };
     } catch (err) {
@@ -1197,7 +1220,13 @@ function registerIpc({ mcp, getWindow }) {
   require('electron').ipcMain.handle('providers:discover', async (_event, input = {}) => {
     const config = configModule.loadConfig();
     try {
-      const models = await discoverProviderModels(config, input.providerId);
+      const effectiveConfig = input.proxy !== undefined
+        ? { ...config, providers: { ...(config.providers || {}), [input.providerId]: { ...(config.providers?.[input.providerId] || {}), proxy: require('../src/core/provider-proxy').validateProviderProxy(input.proxy) } } }
+        : config;
+      const models = await discoverProviderModels(effectiveConfig, input.providerId);
+      if (effectiveConfig !== config) {
+        config.discoveredModels = effectiveConfig.discoveredModels;
+      }
       configModule.saveConfig(config);
       broadcast({ type: 'config:updated' });
       return { ok: true, models };
@@ -1224,6 +1253,7 @@ function registerIpc({ mcp, getWindow }) {
       context: 128000,
       tags: ['Custom'],
     }));
+    const proxy = require('../src/core/provider-proxy').validateProviderProxy(input.proxy);
     const provider = {
       id,
       name: String(input.name || 'Custom provider').slice(0, 60),
@@ -1238,6 +1268,8 @@ function registerIpc({ mcp, getWindow }) {
     };
     if (!/^https?:\/\//i.test(provider.baseUrl)) throw new Error('A valid http(s) base URL is required.');
     config.customProviders = [...(config.customProviders || []), provider];
+    config.providers = config.providers || {};
+    config.providers[id] = { ...(config.providers[id] || {}), proxy };
     if (input.apiKey) {
       configModule.addProviderKey(config, id, {
         key: String(input.apiKey).trim(),
