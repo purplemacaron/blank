@@ -2547,6 +2547,8 @@ html[data-theme="dark"] .pmono { background: var(--bg-subtle); color: var(--text
 .provider-detail-copy p { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; line-height: 1.5; }
 .key-row { display: flex; align-items: center; gap: 6px; }
 .key-row .field-input { flex: 1; font-family: var(--font-mono); font-size: 11px; }
+.key-row .field-input[id$="-proxy-url"] { min-width: 0; }
+.proxy-url-toggle { flex: 0 0 30px; width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .test-result {
   margin-top: 9px;
   border-radius: 7px;
